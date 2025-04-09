@@ -7,29 +7,13 @@ This project allows developers to create unique webhook endpoints, capture incom
 ⸻
 
 ✨ Features
-	•	📩 Receive Webhooks at unique, session-based URLs
-	•	🔍 Inspect Request Payloads (headers, body, method, query params)
-	•	💾 In-Memory Logging of webhook events
-	•	🛠️ Custom Responses (set status code, headers, body, and delay)
-	•	🔁 Replay Events to any external URL
-	•	🧱 RESTful API-first Architecture (UI coming soon)
-	•	🧪 Designed for testing, mocking, and debugging external integrations
-
-⸻
-
-📦 API Structure
-
-Method	Endpoint	Description
-POST	/api/webhooks	Create a new webhook session
-GET	/api/webhooks	List all sessions
-GET	/api/webhooks/{id}	View a specific webhook session
-PUT	/api/webhooks/{id}	Update response config
-DELETE	/api/webhooks/{id}	Delete a webhook session
-POST	/api/webhooks/{id}/events	Receive a webhook event
-GET	/api/webhooks/{id}/events	View captured events
-POST	/api/webhooks/{id}/replay	Replay captured events
-
-
+- 📩 Receive Webhooks at unique, session-based URLs
+- 🔍 Inspect Request Payloads (headers, body, method, query params)
+- 💾 In-Memory Logging of webhook events
+- 🛠️ Custom Responses (set status code, headers, body, and delay)
+- 🔁 Replay Events to any external URL
+- 🧱 RESTful API-first Architecture (UI coming soon)
+- 🧪 Designed for testing, mocking, and debugging external integrations
 
 ⸻
 
