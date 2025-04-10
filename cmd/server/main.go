@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"webhook-tester/config"
 	"webhook-tester/internal/api"
+	"webhook-tester/internal/db"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 )
 
-func main() {
+func NewRouter() *chi.Mux {
 	r := chi.NewRouter()
 
 	// Basic CORS
@@ -30,15 +32,21 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/health"))
 
-	// UI to be mounted here
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Welcome to the Webhook Tester UI (coming soon)"))
-	})
+	return r
+}
 
+func main() {
+	config.LoadEnv()
+	err := db.RunMigrations()
+	if err != nil {
+		log.Printf("failed to run migrations: %v", err)
+	}
+
+	r := NewRouter()
 	r.Mount("/api", api.NewRouter())
 
 	fmt.Println("Server running on http://localhost:3000")
-	err := http.ListenAndServe(":3000", r)
+	err = http.ListenAndServe(":3000", r)
 	if err != nil {
 		log.Fatal("Failed to start server", err)
 	}
