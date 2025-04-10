@@ -15,7 +15,7 @@ func NewRouter() http.Handler {
 
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", handlers.GetWebhook)
-			r.Put("/", handlers.UpdateWebhook)
+			r.Patch("/", handlers.UpdateWebhook)
 			r.Delete("/", handlers.DeleteWebhook)
 
 			r.Post("/events", handlers.ReceiveEvent)
