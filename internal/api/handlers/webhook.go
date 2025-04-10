@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 	"webhook-tester/internal/models"
 	memory "webhook-tester/internal/store"
+	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 
 	"github.com/go-chi/chi/v5"
@@ -22,7 +25,7 @@ func CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		ResponseDelay uint   `json:"response_delay"` // milliseconds
 		ContentType   string `json:"content_type"`
 		Payload       string `json:"payload"`
-		NofifyOnEvent bool   `json:"notify_on_event"`
+		NotifyOnEvent bool   `json:"notify_on_event"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -42,11 +45,16 @@ func CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		ResponseDelay: input.ResponseDelay,
 		ContentType:   input.ContentType,
 		Payload:       input.Payload,
-		CreatedAt:     time.Now().UTC().String(),
-		NofifyOnEvent: input.NofifyOnEvent,
+		CreatedAt:     time.Now().UTC(),
+		NofifyOnEvent: input.NotifyOnEvent,
 	}
 	// persist struct
-	memory.SaveWebhook(webhook)
+	err := sqlstore.InsertWebhook(webhook)
+
+	if err != nil {
+		renderer.JSON(w, http.StatusInternalServerError, "error inserting webhook")
+	}
+
 	renderer.JSON(w, http.StatusCreated, webhook)
 }
 
@@ -57,10 +65,14 @@ func ListWebhooks(w http.ResponseWriter, r *http.Request) {
 
 func GetWebhook(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
-	webhook, found := memory.GetWebhookByID(webhookID)
+	webhook, err := sqlstore.GetWebhook(webhookID)
 
-	if !found {
-		renderer.JSON(w, http.StatusNotFound, "webhook not found")
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			renderer.JSON(w, http.StatusNotFound, "webhook not found")
+		}
+
+		renderer.JSON(w, http.StatusInternalServerError, "error getting webhook")
 		return
 	}
 
@@ -71,7 +83,7 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	_, found := memory.GetWebhookByID(webhookID)
 	if !found {
-		renderer.JSON(w, http.StatusNotFound, "webhook with specifified id not found")
+		renderer.JSON(w, http.StatusNotFound, "webhook with specified id not found")
 		return
 	}
 
@@ -96,7 +108,7 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		ResponseDelay: input.ResponseDelay,
 		ContentType:   input.ContentType,
 		Payload:       input.Payload,
-		CreatedAt:     time.Now().UTC().String(),
+		CreatedAt:     time.Now().UTC(),
 		NofifyOnEvent: input.NofifyOnEvent,
 	}
 

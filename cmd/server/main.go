@@ -42,6 +42,11 @@ func main() {
 		log.Printf("failed to run migrations: %v", err)
 	}
 
+	err = db.Connect()
+	if err != nil {
+		log.Printf("failed to connect to database: %v", err)
+	}
+
 	r := NewRouter()
 	r.Mount("/api", api.NewRouter())
 
