@@ -9,6 +9,7 @@ type Webhook struct {
 	ResponseDelay uint      `json:"response_delay"` // milliseconds
 	ContentType   string    `json:"content_type"`
 	Payload       string    `json:"payload"`
+	NotifyOnEvent bool      `json:"notify_on_event"`
 	CreatedAt     time.Time `json:"created_at"`
-	NofifyOnEvent bool      `json:"notify_on_event"`
+	UpdatedAt     time.Time `json:"updated_at,omitempty"`
 }

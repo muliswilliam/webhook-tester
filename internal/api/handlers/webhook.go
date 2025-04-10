@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"time"
 	"webhook-tester/internal/models"
-	memory "webhook-tester/internal/store"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 
@@ -46,7 +47,7 @@ func CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		ContentType:   input.ContentType,
 		Payload:       input.Payload,
 		CreatedAt:     time.Now().UTC(),
-		NofifyOnEvent: input.NotifyOnEvent,
+		NotifyOnEvent: input.NotifyOnEvent,
 	}
 	// persist struct
 	err := sqlstore.InsertWebhook(webhook)
@@ -59,7 +60,14 @@ func CreateWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func ListWebhooks(w http.ResponseWriter, r *http.Request) {
-	webhooks := memory.ListWebhooks()
+	webhooks, err := sqlstore.GetAllWebhooks()
+	if err != nil {
+		renderer.JSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": err,
+		})
+		return
+	}
+
 	renderer.JSON(w, http.StatusOK, webhooks)
 }
 
@@ -72,6 +80,8 @@ func GetWebhook(w http.ResponseWriter, r *http.Request) {
 			renderer.JSON(w, http.StatusNotFound, "webhook not found")
 		}
 
+		log.Printf("error getting webhook: %v", err)
+
 		renderer.JSON(w, http.StatusInternalServerError, "error getting webhook")
 		return
 	}
@@ -81,9 +91,11 @@ func GetWebhook(w http.ResponseWriter, r *http.Request) {
 
 func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
-	_, found := memory.GetWebhookByID(webhookID)
-	if !found {
-		renderer.JSON(w, http.StatusNotFound, "webhook with specified id not found")
+	webhook, err := sqlstore.GetWebhook(webhookID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			renderer.JSON(w, http.StatusNotFound, fmt.Sprintf("webhook with id %s not found", webhookID))
+		}
 		return
 	}
 
@@ -93,7 +105,7 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		ResponseDelay uint   `json:"response_delay"` // milliseconds
 		ContentType   string `json:"content_type"`
 		Payload       string `json:"payload"`
-		NofifyOnEvent bool   `json:"notify_on_event"`
+		NotifyOnEvent bool   `json:"notify_on_event"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -101,27 +113,66 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	webhook := models.Webhook{
-		ID:            webhookID,
-		Title:         input.Title,
-		ResponseCode:  input.ResponseCode,
-		ResponseDelay: input.ResponseDelay,
-		ContentType:   input.ContentType,
-		Payload:       input.Payload,
-		CreatedAt:     time.Now().UTC(),
-		NofifyOnEvent: input.NofifyOnEvent,
+	if webhook.Title != input.Title && input.Title != "" {
+		webhook.Title = input.Title
 	}
 
-	updated, err := memory.UpdateWebhook(webhook)
+	if webhook.ResponseCode != input.ResponseCode && input.ResponseCode != 0 {
+		webhook.ResponseCode = input.ResponseCode
+	}
+
+	if webhook.ResponseDelay != input.ResponseDelay && input.ResponseDelay != 0 {
+		webhook.ResponseDelay = input.ResponseDelay
+	}
+
+	if webhook.ContentType != input.ContentType && input.ContentType != "" {
+		webhook.ContentType = input.ContentType
+	}
+
+	if webhook.Payload != input.Payload && webhook.Payload != "" {
+		webhook.Payload = input.Payload
+	}
+
+	if webhook.NotifyOnEvent != input.NotifyOnEvent {
+		webhook.NotifyOnEvent = input.NotifyOnEvent
+	}
+
+	webhook.UpdatedAt = time.Now().UTC()
+
+	err = sqlstore.UpdateWebhook(webhook)
 
 	if err != nil {
 		renderer.JSON(w, http.StatusInternalServerError, err)
 		return
 	}
 
+	updated, err := sqlstore.GetWebhook(webhookID)
+	if err != nil {
+		renderer.JSON(w, http.StatusInternalServerError, "error updating webhook")
+		return
+	}
+	log.Printf("%+v\n", webhook)
+
 	renderer.JSON(w, http.StatusOK, updated)
 }
 
 func DeleteWebhook(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Delete webook by ID"))
+	id := chi.URLParam(r, "id")
+
+	if err := sqlstore.DeleteWebhook(id); err != nil {
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			renderer.JSON(w, http.StatusNotFound, map[string]string{
+				"error": "webhook not found",
+			})
+		default:
+			log.Printf("error deleting webhook %q: %v", id, err)
+			renderer.JSON(w, http.StatusInternalServerError, map[string]string{
+				"error": "internal server error",
+			})
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
