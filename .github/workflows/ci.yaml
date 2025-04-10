@@ -29,9 +29,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
-      - name: 📥 Install Goose (migration tool)
-        run: go install github.com/pressly/goose/v3/cmd/goose@latest
-
       - name: ✅ Run build
         run: go build ./...
 
