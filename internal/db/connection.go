@@ -1,24 +1,25 @@
 package db
 
 import (
-	"database/sql"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 	"log"
-	"os"
+	"webhook-tester/internal/models"
 )
 
-var DB *sql.DB
+var DB *gorm.DB
 
-func Connect() error {
+func Connect() {
 	var err error
-	DB, err = sql.Open("sqlite3", os.Getenv("DATABASE_URL"))
-
+	DB, err = gorm.Open(sqlite.Open("webhook.db"), &gorm.Config{})
 	if err != nil {
-		log.Printf("error connecting to database: %v", err)
+		log.Fatalf("failed to connect to database: %v", err)
 	}
+}
 
-	if err = DB.Ping(); err != nil {
-		log.Printf("error pinging database: %v", err)
+func AutoMigrate() {
+	err := DB.AutoMigrate(&models.Webhook{}, &models.WebhookRequest{})
+	if err != nil {
+		log.Fatalf("failed to auto-migrate: %v", err)
 	}
-
-	return err
 }

@@ -1,10 +1,9 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"time"
@@ -44,9 +43,10 @@ func CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		Title:         input.Title,
 		ResponseCode:  code,
 		ResponseDelay: input.ResponseDelay,
-		ContentType:   input.ContentType,
-		Payload:       input.Payload,
+		ContentType:   &input.ContentType,
+		Payload:       &input.Payload,
 		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
 		NotifyOnEvent: input.NotifyOnEvent,
 	}
 	// persist struct
@@ -76,7 +76,7 @@ func GetWebhook(w http.ResponseWriter, r *http.Request) {
 	webhook, err := sqlstore.GetWebhook(webhookID)
 
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			renderer.JSON(w, http.StatusNotFound, "webhook not found")
 		}
 
@@ -91,12 +91,9 @@ func GetWebhook(w http.ResponseWriter, r *http.Request) {
 
 func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
-	webhook, err := sqlstore.GetWebhook(webhookID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			renderer.JSON(w, http.StatusNotFound, fmt.Sprintf("webhook with id %s not found", webhookID))
-		}
-		return
+
+	webhook := models.Webhook{
+		ID: webhookID,
 	}
 
 	var input struct {
@@ -125,12 +122,12 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		webhook.ResponseDelay = input.ResponseDelay
 	}
 
-	if webhook.ContentType != input.ContentType && input.ContentType != "" {
-		webhook.ContentType = input.ContentType
+	if webhook.ContentType != &input.ContentType && input.ContentType != "" {
+		webhook.ContentType = &input.ContentType
 	}
 
-	if webhook.Payload != input.Payload && webhook.Payload != "" {
-		webhook.Payload = input.Payload
+	if webhook.Payload != &input.Payload {
+		webhook.Payload = &input.Payload
 	}
 
 	if webhook.NotifyOnEvent != input.NotifyOnEvent {
@@ -139,7 +136,7 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	webhook.UpdatedAt = time.Now().UTC()
 
-	err = sqlstore.UpdateWebhook(webhook)
+	err := sqlstore.UpdateWebhook(webhook)
 
 	if err != nil {
 		renderer.JSON(w, http.StatusInternalServerError, err)
@@ -158,21 +155,6 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 
 func DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-
-	if err := sqlstore.DeleteWebhook(id); err != nil {
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			renderer.JSON(w, http.StatusNotFound, map[string]string{
-				"error": "webhook not found",
-			})
-		default:
-			log.Printf("error deleting webhook %q: %v", id, err)
-			renderer.JSON(w, http.StatusInternalServerError, map[string]string{
-				"error": "internal server error",
-			})
-		}
-		return
-	}
-
+	sqlstore.DeleteWebhook(id)
 	w.WriteHeader(http.StatusNoContent)
 }

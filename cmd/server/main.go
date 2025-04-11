@@ -38,15 +38,9 @@ func NewRouter() *chi.Mux {
 
 func main() {
 	config.LoadEnv()
-	err := db.RunMigrations()
-	if err != nil {
-		log.Printf("failed to run migrations: %v", err)
-	}
 
-	err = db.Connect()
-	if err != nil {
-		log.Printf("failed to connect to database: %v", err)
-	}
+	db.Connect()
+	db.AutoMigrate()
 
 	r := NewRouter()
 	r.Mount("/api", api.NewRouter())
@@ -55,7 +49,7 @@ func main() {
 	r.Mount("/", webhook.NewRouter())
 
 	fmt.Println("Server running on http://localhost:3000")
-	err = http.ListenAndServe(":3000", r)
+	err := http.ListenAndServe(":3000", r)
 	if err != nil {
 		log.Fatal("Failed to start server", err)
 	}

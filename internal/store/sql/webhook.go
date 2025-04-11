@@ -1,104 +1,48 @@
 package sqlstore
 
 import (
-	"database/sql"
-	"fmt"
 	"log"
 	"webhook-tester/internal/db"
 	"webhook-tester/internal/models"
 )
 
 func InsertWebhook(w models.Webhook) error {
-	_, err := db.DB.Exec(`
-		INSERT INTO webhooks (id, title, response_code, content_type, response_delay, payload, notify_on_event, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		w.ID, w.Title, w.ResponseCode, w.ContentType, w.ResponseDelay, w.Payload, w.NotifyOnEvent, w.CreatedAt,
-	)
-
-	if err != nil {
-		log.Printf("error inserting webhook: %v", err)
+	result := db.DB.Create(&w)
+	if result.Error != nil {
+		log.Printf("failed to create webhook: %v", result.Error)
 	}
-
-	return err
+	return result.Error
 }
 
 func GetWebhook(id string) (models.Webhook, error) {
 	var w models.Webhook
-	row := db.DB.QueryRow(`SELECT
-		id, title, response_code, content_type, response_delay, payload, notify_on_event, created_at, updated_at
-		FROM webhooks
-		WHERE id = ?`, id)
-
-	var updatedAt sql.NullTime
-
-	err := row.Scan(&w.ID, &w.Title, &w.ResponseCode, &w.ContentType, &w.ResponseDelay, &w.Payload, &w.NotifyOnEvent, &w.CreatedAt, &updatedAt)
-	if updatedAt.Valid {
-		w.UpdatedAt = updatedAt.Time
+	err := db.DB.First(&w, "id = ?", id).Error
+	if err != nil {
+		log.Printf("failed to get webhook: %v", err)
 	}
 	return w, err
 }
 
 func GetAllWebhooks() ([]models.Webhook, error) {
 	var webhooks []models.Webhook
-	rows, err := db.DB.Query(`SELECT
-	id, title, response_code, content_type, response_delay, payload, notify_on_event, created_at, updated_at
-	FROM webhooks`)
-	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-			log.Printf("error closing rows: %v", err)
-		}
-	}(rows)
-
+	err := db.DB.Model(&models.Webhook{}).Preload("Requests").Find(&webhooks).Error
 	if err != nil {
-		log.Printf("error getting all webhooks: %v", err)
-		return nil, err
+		log.Printf("failed to get webhooks: %v", err)
 	}
-
-	for rows.Next() {
-		var w models.Webhook
-		var updatedAt sql.NullTime
-		err = rows.Scan(&w.ID, &w.Title, &w.ResponseCode, &w.ContentType, &w.ResponseDelay, &w.Payload, &w.NotifyOnEvent, &w.CreatedAt, &updatedAt)
-		if updatedAt.Valid {
-			w.UpdatedAt = updatedAt.Time
-		}
-		if err != nil {
-			log.Printf("error scanning row: %v", err)
-			continue
-		}
-		webhooks = append(webhooks, w)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error in rows: %v", err)
-	}
-
-	return webhooks, nil
+	return webhooks, err
 }
 
 func UpdateWebhook(w models.Webhook) error {
-	sql := `UPDATE webhooks SET(title, response_code, content_type, response_delay, payload, notify_on_event, updated_at) = (?, ?, ?, ?, ?, ?, ?) WHERE id = ?`
-
-	_, err := db.DB.Exec(sql, w.Title, w.ResponseCode, w.ContentType, w.ResponseDelay, w.Payload, w.NotifyOnEvent, w.UpdatedAt, w.ID)
+	err := db.DB.Save(&w).Error
 	if err != nil {
-		log.Printf("error updating webhook: %v", err)
+		log.Printf("failed to update webhook: %v", err)
 	}
-
 	return err
 }
 
-func DeleteWebhook(id string) error {
-	res, err := db.DB.Exec(`DELETE FROM webhooks WHERE id = ?`, id)
+func DeleteWebhook(id string) {
+	err := db.DB.Delete(&models.Webhook{}, "id = ?", id).Error
 	if err != nil {
-		log.Printf("error deleting webhook: %v", err)
+		log.Printf("failed to delete webhook: %v", err)
 	}
-
-	rows, err := res.RowsAffected()
-	if err != nil {
-		log.Printf("error deleting webhooks: %v", err)
-	}
-	if rows == 0 {
-		return sql.ErrNoRows
-	}
-	return err
 }

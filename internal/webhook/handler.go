@@ -3,6 +3,7 @@ package webhook
 import (
 	"database/sql"
 	"errors"
+	"gorm.io/datatypes"
 	"io"
 	"log"
 	"net/http"
@@ -34,12 +35,12 @@ func HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	// Convert headers to a map[string]string
-	headers := make(map[string]string)
+	headers := datatypes.JSONMap{}
 	for k, v := range r.Header {
 		headers[k] = strings.Join(v, ",")
 	}
 
-	query := make(map[string]string)
+	query := datatypes.JSONMap{}
 	for k, v := range r.URL.Query() {
 		query[k] = strings.Join(v, ",")
 	}
@@ -68,9 +69,14 @@ func HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return custom response
-	w.Header().Set("Content-Type", webhook.ContentType)
+	if *webhook.ContentType != "" {
+		w.Header().Set("Content-Type", *webhook.ContentType)
+	} else {
+		// Default to application json if content type is not specified
+		w.Header().Set("Content-Type", "application/json")
+	}
 	w.WriteHeader(webhook.ResponseCode)
-	if webhook.Payload != "" {
-		w.Write([]byte(webhook.Payload))
+	if &webhook.Payload != nil {
+		w.Write([]byte(*webhook.Payload))
 	}
 }
