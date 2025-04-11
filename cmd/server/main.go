@@ -7,6 +7,7 @@ import (
 	"webhook-tester/config"
 	"webhook-tester/internal/api"
 	"webhook-tester/internal/db"
+	"webhook-tester/internal/webhook"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -49,6 +50,9 @@ func main() {
 
 	r := NewRouter()
 	r.Mount("/api", api.NewRouter())
+
+	// This must be the last route, for handling webhook calls
+	r.Mount("/", webhook.NewRouter())
 
 	fmt.Println("Server running on http://localhost:3000")
 	err = http.ListenAndServe(":3000", r)
