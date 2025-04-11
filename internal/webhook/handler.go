@@ -32,7 +32,12 @@ func HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Read body
 	body, _ := io.ReadAll(r.Body)
-	defer r.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Printf("error closing body: %s", err)
+		}
+	}(r.Body)
 
 	// Convert headers to a map[string]string
 	headers := datatypes.JSONMap{}
@@ -58,8 +63,8 @@ func HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	err = sqlstore.CreateWebhookRequest(wr)
 	if err != nil {
 		log.Printf("error creating webhook request: %s", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("error serving webhook request"))
+		utils.RenderJSON(w, http.StatusInternalServerError, nil)
+
 		return
 	}
 
@@ -77,6 +82,8 @@ func HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(webhook.ResponseCode)
 	if &webhook.Payload != nil {
-		w.Write([]byte(*webhook.Payload))
+		if _, err := w.Write([]byte(*webhook.Payload)); err != nil {
+			log.Printf("error writing payload: %s", err)
+		}
 	}
 }

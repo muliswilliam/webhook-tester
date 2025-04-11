@@ -40,9 +40,10 @@ func UpdateWebhook(w models.Webhook) error {
 	return err
 }
 
-func DeleteWebhook(id string) {
+func DeleteWebhook(id string) error {
 	err := db.DB.Delete(&models.Webhook{}, "id = ?", id).Error
 	if err != nil {
 		log.Printf("failed to delete webhook: %v", err)
 	}
+	return err
 }

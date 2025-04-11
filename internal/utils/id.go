@@ -1,9 +1,8 @@
 package utils
 
 import (
-	"log"
-
 	gonanoid "github.com/matoous/go-nanoid/v2"
+	"log"
 )
 
 func GenerateID() string {

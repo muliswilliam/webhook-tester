@@ -12,10 +12,7 @@ import (
 	"webhook-tester/internal/utils"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/unrolled/render"
 )
-
-var renderer = render.New()
 
 func CreateWebhook(w http.ResponseWriter, r *http.Request) {
 	// create webhook struct
@@ -29,7 +26,7 @@ func CreateWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		utils.RenderJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -49,44 +46,48 @@ func CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:     time.Now().UTC(),
 		NotifyOnEvent: input.NotifyOnEvent,
 	}
-	// persist struct
-	err := sqlstore.InsertWebhook(webhook)
 
-	if err != nil {
-		renderer.JSON(w, http.StatusInternalServerError, "error inserting webhook")
-	}
-
-	renderer.JSON(w, http.StatusCreated, webhook)
-}
-
-func ListWebhooks(w http.ResponseWriter, r *http.Request) {
-	webhooks, err := sqlstore.GetAllWebhooks()
-	if err != nil {
-		renderer.JSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": err,
+	if err := sqlstore.InsertWebhook(webhook); err != nil {
+		utils.RenderJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": err.Error(),
 		})
 		return
 	}
 
-	renderer.JSON(w, http.StatusOK, webhooks)
+	utils.RenderJSON(w, http.StatusCreated, webhook)
 }
 
+func ListWebhooks(w http.ResponseWriter, _ *http.Request) {
+	webhooks, err := sqlstore.GetAllWebhooks()
+	if err != nil {
+		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	utils.RenderJSON(w, http.StatusOK, webhooks)
+}
 func GetWebhook(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	webhook, err := sqlstore.GetWebhook(webhookID)
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			renderer.JSON(w, http.StatusNotFound, "webhook not found")
+			utils.RenderJSON(w, http.StatusNotFound, map[string]string{
+				"error": "webhook not found",
+			})
 		}
 
 		log.Printf("error getting webhook: %v", err)
 
-		renderer.JSON(w, http.StatusInternalServerError, "error getting webhook")
+		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
 		return
 	}
 
-	renderer.JSON(w, http.StatusOK, webhook)
+	utils.RenderJSON(w, http.StatusOK, webhook)
 }
 
 func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +107,9 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		renderer.JSON(w, http.StatusBadRequest, "invalid JSON body")
+		utils.RenderJSON(w, http.StatusBadRequest, map[string]string{
+			"error": err.Error(),
+		})
 		return
 	}
 
@@ -136,25 +139,32 @@ func UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	webhook.UpdatedAt = time.Now().UTC()
 
-	err := sqlstore.UpdateWebhook(webhook)
-
-	if err != nil {
-		renderer.JSON(w, http.StatusInternalServerError, err)
+	if err := sqlstore.UpdateWebhook(webhook); err != nil {
+		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
 		return
 	}
 
 	updated, err := sqlstore.GetWebhook(webhookID)
 	if err != nil {
-		renderer.JSON(w, http.StatusInternalServerError, "error updating webhook")
+		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
 		return
 	}
-	log.Printf("%+v\n", webhook)
 
-	renderer.JSON(w, http.StatusOK, updated)
+	utils.RenderJSON(w, http.StatusOK, updated)
 }
 
 func DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	sqlstore.DeleteWebhook(id)
+	if err := sqlstore.DeleteWebhook(id); err != nil {
+		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
