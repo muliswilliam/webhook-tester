@@ -30,3 +30,6 @@ go.work.sum
 # sqlite db
 *.db
 *.sqlite
+
+# tmp
+tmp/
