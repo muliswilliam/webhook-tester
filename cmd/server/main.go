@@ -7,6 +7,7 @@ import (
 	"webhook-tester/config"
 	"webhook-tester/internal/api"
 	"webhook-tester/internal/db"
+	"webhook-tester/internal/web/handlers"
 	"webhook-tester/internal/webhook"
 
 	"github.com/go-chi/chi/v5"
@@ -43,8 +44,10 @@ func main() {
 	db.AutoMigrate()
 
 	r := NewRouter()
-	r.Mount("/api", api.NewRouter())
 
+	r.Get("/", handlers.Home)
+
+	r.Mount("/api", api.NewRouter())
 	// This must be the last route, for handling webhook calls
 	r.Mount("/", webhook.NewRouter())
 
