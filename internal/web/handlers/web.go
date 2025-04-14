@@ -7,7 +7,6 @@ import (
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web"
 
-	"html/template"
 	"log"
 	"net/http"
 	"os"
@@ -113,9 +112,5 @@ func Request(w http.ResponseWriter, r *http.Request) {
 		Year:    time.Now().Year(),
 	}
 
-	templates := template.Must(template.ParseFiles("internal/web/templates/base.html", "internal/web/templates/request.html"))
-	err = templates.Execute(w, data)
-	if err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
-	}
+	web.Render(w, "request", data)
 }
