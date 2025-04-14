@@ -20,5 +20,9 @@ func NewRouter() http.Handler {
 		})
 	})
 
+	r.Route("/users", func(r chi.Router) {
+		r.Post("/", handlers.CreateUser)
+	})
+
 	return r
 }
