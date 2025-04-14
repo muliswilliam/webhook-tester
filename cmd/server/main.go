@@ -45,6 +45,10 @@ func main() {
 
 	r := NewRouter()
 
+	// Static file server for /static/*
+	fs := http.FileServer(http.Dir("static"))
+	r.Handle("/static/*", http.StripPrefix("/static/", fs))
+
 	r.Get("/", handlers.Home)
 	r.Get("/requests/{id}", handlers.Request)
 

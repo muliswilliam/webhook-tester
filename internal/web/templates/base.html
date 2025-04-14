@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8" />
     <title>{{ block "title" . }}Webhook Tester{{ end }}</title>
-
-    <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs" defer></script>
+    <script src="/static/js/script.js"></script>
 </head>
 <body class="bg-gray-100 text-gray-900 flex flex-col min-h-screen">
 
 <!-- Top Navbar -->
 <header class="bg-white border-b shadow-sm py-3 px-6 flex justify-between items-center">
-    <div class="text-xl font-bold text-blue-600">
+    <a href="/" class="text-xl font-bold text-blue-600">
         Webhook Tester
-    </div>
+    </a>
     <nav class="space-x-4 text-sm text-gray-700">
         <a href="/" class="hover:text-blue-600">Home</a>
         <a href="/how-to" class="hover:text-blue-600">How To</a>
@@ -85,5 +85,6 @@
         </footer>
     </div>
 </div>
+
 </body>
 </html>
