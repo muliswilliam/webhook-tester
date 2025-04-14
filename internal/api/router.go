@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"webhook-tester/internal/api/handlers"
+	"webhook-tester/internal/webhook"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -15,6 +16,7 @@ func NewRouter() http.Handler {
 
 		r.Route("/{id}", func(r chi.Router) {
 			r.Get("/", handlers.GetWebhook)
+			r.Get("/stream", webhook.StreamWebhookEvents)
 			r.Put("/", handlers.UpdateWebhook)
 			r.Delete("/", handlers.DeleteWebhook)
 		})

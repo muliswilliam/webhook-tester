@@ -22,7 +22,7 @@
                         x-ref="url"
                         readonly
                         type="text"
-                        :value="'https://yourdomain.com/{{ .Webhook.ID }}'"
+                        value="{{ .Domain }}/{{ .Webhook.ID }}"
                         class="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-100 text-sm font-mono"
                 />
                 <button
@@ -58,7 +58,7 @@
         <!-- Curl Command -->
         <pre x-ref="curl" class="text-sm overflow-x-auto font-mono leading-6 whitespace-pre-wrap">
 <span class="text-green-400">curl</span> -X POST <span
-                class="text-blue-400">https://yourdomain.com/{{ .Webhook.ID }}</span> \
+                class="text-blue-400">{{ .Domain }}/{{ .Webhook.ID }}</span> \
   -H <span class="text-yellow-300">"Content-Type: application/json"</span> \
   -d <span class="text-purple-300">'{"event":"test","status":"success"}'</span>
   </pre>
@@ -93,16 +93,4 @@
     </div>
 </div>
 
-<script>
-    function copyCurl() {
-        return {
-            copied: false,
-            copy(el) {
-                navigator.clipboard.writeText(el.innerText);
-                this.copied = true;
-                setTimeout(() => this.copied = false, 1500);
-            }
-        }
-    }
-</script>
 {{ end }}

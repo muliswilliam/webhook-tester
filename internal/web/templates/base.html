@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
+    <meta charset="UTF-8"/>
     <title>{{ block "title" . }}Webhook Tester{{ end }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/alpinejs" defer></script>
@@ -28,19 +28,26 @@
     <!-- Sidebar -->
     <aside class="w-80 bg-white border-r flex flex-col">
         <!-- Default Webhook Info -->
-        <div class="px-6 pt-6 pb-2 text-xs text-gray-500 uppercase tracking-wide">Default Webhook
+        <div class="px-6 pt-6 pb-2 text-xs text-gray-500 uppercase tracking-wide">
+            Webhooks
         </div>
-        <div class="px-6 pb-4">
-            <a href="/?address={{ .Webhook.ID }}" class="w-full flex bg-gray-100 p-2 rounded text-sm font-mono break-all">
+        <div
+                x-data="sseRequestStream('{{ .Webhook.ID }}')"
+                x-init="connect()"
+                class="px-6 pb-4"
+        >
+            <a href="/?address={{ .Webhook.ID }}"
+               class="w-full flex bg-gray-100 p-2 rounded text-sm font-mono break-all">
                 {{ .Webhook.ID }}
             </a>
         </div>
 
         <!-- Recent Requests  -->
         <div class="px-6 pb-2 text-xs text-gray-500 uppercase tracking-wide">Recent Requests</div>
-        <div class="flex-1 overflow-y-auto px-6 space-y-2 text-sm">
+        <div class="flex-1 overflow-y-auto px-6 space-y-2 text-sm" id="request-log">
             {{ range .Webhook.Requests }}
-            <a href="/requests/{{ .ID }}?address={{ .WebhookID }}" class="flex flex-row gap-2  p-2 rounded border hover:bg-blue-50 hover:border-blue-200 cursor-pointer">
+            <a href="/requests/{{ .ID }}?address={{ .WebhookID }}"
+               class="flex flex-row gap-2  p-2 rounded border hover:bg-blue-50 hover:border-blue-200 cursor-pointer">
                 <div class="text-xs text-gray-600 font-medium">{{ .Method }}</div>
                 <div class="text-blue-600 font-mono text-xs break-all">{{ .ID }}</div>
             </a>
