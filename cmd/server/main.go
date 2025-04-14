@@ -46,6 +46,7 @@ func main() {
 	r := NewRouter()
 
 	r.Get("/", handlers.Home)
+	r.Get("/requests/{id}", handlers.Request)
 
 	r.Mount("/api", api.NewRouter())
 	// This must be the last route, for handling webhook calls

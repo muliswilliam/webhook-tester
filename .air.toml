@@ -1,0 +1,25 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# Build the main Go binary from cmd/server
+cmd = "go build -o ./tmp/server ./cmd/server"
+bin = "tmp/server"
+full_bin = ""
+delay = 1000
+exclude_dir = ["tmp", "static", "node_modules", "dist"]
+include_ext = ["go", "tpl", "tmpl", "html"]
+exclude_ext = ["swp", "tmp"]
+log = "air.log"
+
+[log]
+time = true
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+clean_on_exit = true

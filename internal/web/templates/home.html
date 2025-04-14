@@ -1,14 +1,77 @@
-{{ define "title" }}Home - Webhook Tester{{ end }}
+{{ define "title" }}Home - Webhook Tester {{ end }}
 
 {{ define "content" }}
-<div class="max-w-4xl mx-auto p-6">
-    <h1 class="text-3xl font-bold mb-4">🧪 Webhook Tester</h1>
-    <p class="text-lg text-gray-600">
-        Create and test webhook endpoints, inspect payloads, and replay events.
-    </p>
+<div class=" max-w-5xl w-full mx-auto">
 
-    <a href="/webhooks" class="mt-6 inline-block bg-blue-600 text-white px-4 py-2 rounded shadow">
-        View My Webhooks →
-    </a>
+    <!-- Alert -->
+    <div class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded mb-6">
+        <p><strong>Note:</strong> Incoming webhook data will be stored temporarily.
+            <a href="/register" class="underline text-blue-600">Create a free account</a> to retain request logs and
+            enable
+            advanced features like replay.
+        </p>
+    </div>
+
+    <!-- Webhook URL Box -->
+    <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-6">
+        <h2 class="text-md font-medium text-gray-700 mb-2">Your Webhook URL</h2>
+
+        <div class="flex items-center space-x-2">
+            <input
+                    id="webhook-url"
+                    readonly
+                    class="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-100 text-sm font-mono"
+                    value="{{ .Domain }}/{{ .Webhook.ID }}"
+            />
+            <button
+                    onclick="navigator.clipboard.writeText(document.getElementById('webhook-url').value)"
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded text-sm"
+            >
+                📋 Copy
+            </button>
+        </div>
+
+        <p class="text-xs text-gray-500 mt-2">
+            Use this endpoint to capture any HTTP request. We'll log and display the details in real-time.
+        </p>
+    </div>
+
+    <!-- Curl Example -->
+    <div class="bg-gray-900 rounded-lg text-white p-4 shadow-sm mb-6">
+        <div class="mb-2 text-sm text-gray-300 font-semibold">Send a request with <code>curl</code></div>
+        <pre class="text-sm overflow-x-auto font-mono leading-6">
+<span class="text-green-400">curl</span> -X POST <span class="text-blue-400">{{ .Domain }}/{{ .Webhook.ID }}</span> \
+  -H <span class="text-yellow-300">"Content-Type: application/json"</span> \
+  -d <span class="text-purple-300">'{"event":"test","status":"success"}'</span>
+  </pre>
+    </div>
+
+    <!-- About the Tool -->
+    <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm mb-6">
+        <h3 class="text-xl font-semibold mb-4">What is Webhook Tester?</h3>
+        <p class="text-sm text-gray-700 mb-4">
+            Webhook Tester is a lightweight platform that lets developers create temporary webhook endpoints to inspect
+            and
+            debug HTTP requests in real-time.
+            Whether you're integrating with Stripe, GitHub, Twilio, or any custom service, this tool gives you full
+            visibility into the requests your app is sending or receiving.
+        </p>
+        <p class="text-sm text-gray-700">
+            Capture headers, query parameters, request bodies, and more — all without writing a single line of backend
+            code.
+            Tailor responses, simulate delays, and replay requests to your own servers.
+        </p>
+    </div>
+
+    <!-- How It Works Section -->
+    <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm">
+        <h3 class="text-xl font-semibold mb-4">How it works</h3>
+        <ol class="list-decimal pl-6 space-y-2 text-gray-700 text-sm">
+            <li>Click <strong>Create Webhook</strong> to generate a unique URL.</li>
+            <li>Send an HTTP request (POST, GET, PUT, etc.) to the URL from any tool or service.</li>
+            <li>Watch the request appear instantly in your dashboard.</li>
+            <li>Inspect headers, body, method, and more — replay or forward the request if needed.</li>
+        </ol>
+    </div>
 </div>
 {{ end }}

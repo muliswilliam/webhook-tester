@@ -74,7 +74,7 @@ func HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return custom response
-	if *webhook.ContentType != "" {
+	if webhook.ContentType != nil {
 		w.Header().Set("Content-Type", *webhook.ContentType)
 	} else {
 		// Default to application json if content type is not specified
