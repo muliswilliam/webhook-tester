@@ -1,96 +1,109 @@
-{{ define "title" }}Home - Webhook Tester {{ end }}
+{{ define "title" }}Home - Webhook Tester {{ end }} {{ define "content" }}
+<div class="max-w-5xl w-full mx-auto">
+  <!-- Alert -->
+  <div
+    class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded mb-6"
+  >
+    <p>
+      <strong>Note:</strong> Incoming webhook data will be stored temporarily.
+      <a href="/register" class="underline text-blue-600"
+        >Create a free account</a
+      >
+      to retain request logs and enable advanced features like replay.
+    </p>
+  </div>
 
-{{ define "content" }}
-<div class=" max-w-5xl w-full mx-auto">
+  <!-- Webhook URL Box -->
+  <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-6">
+    <h2 class="text-md font-medium text-gray-700 mb-2">Your Webhook URL</h2>
 
-    <!-- Alert -->
-    <div class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded mb-6">
-        <p><strong>Note:</strong> Incoming webhook data will be stored temporarily.
-            <a href="/register" class="underline text-blue-600">Create a free account</a> to retain request logs and
-            enable
-            advanced features like replay.
-        </p>
-    </div>
-
-    <!-- Webhook URL Box -->
-    <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-6">
-        <h2 class="text-md font-medium text-gray-700 mb-2">Your Webhook URL</h2>
-
-        <div x-data="{ copied: false }">
-            <div class="flex items-center space-x-2">
-                <input
-                        x-ref="url"
-                        readonly
-                        type="text"
-                        value="{{ .Domain }}/{{ .Webhook.ID }}"
-                        class="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-100 text-sm font-mono"
-                />
-                <button
-                        @click="
+    <div x-data="{ copied: false }">
+      <div class="flex items-center space-x-2">
+        <input
+          x-ref="url"
+          readonly
+          type="text"
+          value="{{ .Domain }}/{{ .Webhook.ID }}"
+          class="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-100 text-sm font-mono"
+        />
+        <button
+          @click="
         navigator.clipboard.writeText($refs.url.value);
         copied = true;
         setTimeout(() => copied = false, 1500);
       "
-                        class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded text-sm"
-                        x-text="copied ? '✅ Copied' : '📋 Copy'"
-                ></button>
-            </div>
-        </div>
-
-        <p class="text-xs text-gray-500 mt-2">
-            Use this endpoint to capture any HTTP request. We'll log and display the details in real-time.
-        </p>
+          class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded text-sm"
+          x-text="copied ? '✅ Copied' : '📋 Copy'"
+        ></button>
+      </div>
     </div>
 
-    <div
-            x-data="copyCurl()"
-            class="relative bg-gray-900 rounded-lg text-white p-4 shadow-sm mb-6"
+    <p class="text-xs text-gray-500 mt-2">
+      Use this endpoint to capture any HTTP request. We'll log and display the
+      details in real-time.
+    </p>
+  </div>
+
+  <div
+    x-data="copyCurl()"
+    class="relative bg-gray-900 rounded-lg text-white p-4 shadow-sm mb-6"
+  >
+    <div class="mb-2 text-sm text-gray-300 font-semibold">
+      Try it with <code>curl</code>
+    </div>
+
+    <!-- Copy Button -->
+    <button
+      @click="copy($refs.curl)"
+      x-text="copied ? '✅ Copied!' : '📋 Copy'"
+      class="absolute right-4 top-4 bg-gray-700 hover:bg-gray-600 text-white text-xs px-2 py-1 rounded"
+    ></button>
+
+    <!-- Curl Command -->
+    <pre
+      x-ref="curl"
+      class="text-sm overflow-x-auto font-mono leading-6 whitespace-pre-wrap"
     >
-        <div class="mb-2 text-sm text-gray-300 font-semibold">Try it with <code>curl</code></div>
-
-        <!-- Copy Button -->
-        <button
-                @click="copy($refs.curl)"
-                x-text="copied ? '✅ Copied!' : '📋 Copy'"
-                class="absolute right-4 top-4 bg-gray-700 hover:bg-gray-600 text-white text-xs px-2 py-1 rounded"
-        ></button>
-
-        <!-- Curl Command -->
-        <pre x-ref="curl" class="text-sm overflow-x-auto font-mono leading-6 whitespace-pre-wrap">
 <span class="text-green-400">curl</span> -X POST <span
                 class="text-blue-400">{{ .Domain }}/{{ .Webhook.ID }}</span> \
   -H <span class="text-yellow-300">"Content-Type: application/json"</span> \
   -d <span class="text-purple-300">'{"event":"test","status":"success"}'</span>
   </pre>
-    </div>
+  </div>
 
-    <!-- About the Tool -->
-    <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm mb-6">
-        <h3 class="text-xl font-semibold mb-4">What is Webhook Tester?</h3>
-        <p class="text-sm text-gray-700 mb-4">
-            Webhook Tester is a lightweight platform that lets developers create temporary webhook endpoints to inspect
-            and
-            debug HTTP requests in real-time.
-            Whether you're integrating with Stripe, GitHub, Twilio, or any custom service, this tool gives you full
-            visibility into the requests your app is sending or receiving.
-        </p>
-        <p class="text-sm text-gray-700">
-            Capture headers, query parameters, request bodies, and more — all without writing a single line of backend
-            code.
-            Tailor responses, simulate delays, and replay requests to your own servers.
-        </p>
-    </div>
+  <!-- About the Tool -->
+  <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm mb-6">
+    <h3 class="text-xl font-semibold mb-4">What is Webhook Tester?</h3>
+    <p class="text-sm text-gray-700 mb-4">
+      Webhook Tester is a lightweight platform that lets developers create
+      temporary webhook endpoints to inspect and debug HTTP requests in
+      real-time. Whether you're integrating with Stripe, GitHub, Twilio, or any
+      custom service, this tool gives you full visibility into the requests your
+      app is sending or receiving.
+    </p>
+    <p class="text-sm text-gray-700">
+      Capture headers, query parameters, request bodies, and more — all without
+      writing a single line of backend code. Tailor responses, simulate delays,
+      and replay requests to your own servers.
+    </p>
+  </div>
 
-    <!-- How It Works Section -->
-    <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm">
-        <h3 class="text-xl font-semibold mb-4">How it works</h3>
-        <ol class="list-decimal pl-6 space-y-2 text-gray-700 text-sm">
-            <li>Click <strong>Create Webhook</strong> to generate a unique URL.</li>
-            <li>Send an HTTP request (POST, GET, PUT, etc.) to the URL from any tool or service.</li>
-            <li>Watch the request appear instantly in your dashboard.</li>
-            <li>Inspect headers, body, method, and more — replay or forward the request if needed.</li>
-        </ol>
-    </div>
+  <!-- How It Works Section -->
+  <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm">
+    <h3 class="text-xl font-semibold mb-4">How it works</h3>
+    <ol class="list-decimal pl-6 space-y-2 text-gray-700 text-sm">
+      <li>Click <strong>Create Webhook</strong> to generate a unique URL.</li>
+      <li>
+        Send an HTTP request (POST, GET, PUT, etc.) to the URL from any tool or
+        service.
+      </li>
+      <li>Watch the request appear instantly in your dashboard.</li>
+      <li>
+        Inspect headers, body, method, and more — replay or forward the request
+        if needed.
+      </li>
+    </ol>
+  </div>
 </div>
 
 {{ end }}

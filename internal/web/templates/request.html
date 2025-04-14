@@ -1,64 +1,78 @@
-{{ define "title" }}Request {{ .Request.ID }}{{ end }}
-
-{{ define "content" }}
+{{ define "title" }}Request {{ .Request.ID }}{{ end }} {{ define "content" }}
 
 <!-- Timestamp -->
-<div class="text-sm text-gray-500 mb-2">{{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}</div>
+<div class="text-sm text-gray-500 mb-2">
+  {{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
+</div>
 
 <!-- Method + Request ID -->
 <div class="flex items-center justify-between mb-4">
-    <div class="flex items-center space-x-2">
-        <span class="bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded">{{ .Request.Method }}</span>
-        <span class="text-gray-700 font-mono text-sm break-all">{{ .Request.ID }}</span>
-    </div>
-    <form method="POST" action="/requests/{{ .Request.ID }}/delete">
-        <button class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700">Delete</button>
-    </form>
+  <div class="flex items-center space-x-2">
+    <span class="bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded"
+      >{{ .Request.Method }}</span
+    >
+    <span class="text-gray-700 font-mono text-sm break-all"
+      >{{ .Request.ID }}</span
+    >
+  </div>
+  <form method="POST" action="/requests/{{ .Request.ID }}/delete">
+    <button
+      class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
+    >
+      Delete
+    </button>
+  </form>
 </div>
 
 <!-- Headers Table -->
 <h2 class="text-md font-semibold mb-2">Request Headers</h2>
 <div class="overflow-x-auto mb-6">
-    <table class="w-full text-sm text-left">
-        <tbody>
-        {{ range $key, $val := .Request.Headers }}
-        <tr class="border-t">
-            <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">{{ $key }}</td>
-            <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-        </tr>
-        {{ end }}
-        </tbody>
-    </table>
+  <table class="w-full text-sm text-left">
+    <tbody>
+      {{ range $key, $val := .Request.Headers }}
+      <tr class="border-t">
+        <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+          {{ $key }}
+        </td>
+        <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
 </div>
 
 <!-- Query Params -->
 {{ if .Request.Query }}
 <h2 class="text-md font-semibold mb-2">Params</h2>
 <div class="overflow-x-auto mb-6">
-    <table class="w-full text-sm text-left">
-        <tbody>
-        {{ range $key, $val := .Request.Query }}
-        <tr class="border-t">
-            <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">{{ $key }}</td>
-            <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-        </tr>
-        {{ end }}
-        </tbody>
-    </table>
+  <table class="w-full text-sm text-left">
+    <tbody>
+      {{ range $key, $val := .Request.Query }}
+      <tr class="border-t">
+        <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+          {{ $key }}
+        </td>
+        <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
 </div>
 {{ end }}
 
 <!-- Body -->
 <h2 class="text-md font-semibold mb-2">Body</h2>
-<div class="bg-white border rounded p-3 text-sm font-mono whitespace-pre-wrap break-words min-h-[120px] relative">
-    {{ .Request.Body }}
-    <div class="absolute bottom-2 right-2 text-xs flex gap-4 text-gray-500">
-        <label class="inline-flex items-center space-x-1">
-            <input type="checkbox" disabled checked />
-            <span>Format JSON</span>
-        </label>
-        <button class="hover:underline text-blue-600">Copy</button>
-    </div>
+<div
+  class="bg-white border rounded p-3 text-sm font-mono whitespace-pre-wrap break-words min-h-[120px] relative"
+>
+  {{ .Request.Body }}
+  <div class="absolute bottom-2 right-2 text-xs flex gap-4 text-gray-500">
+    <label class="inline-flex items-center space-x-1">
+      <input type="checkbox" disabled checked />
+      <span>Format JSON</span>
+    </label>
+    <button class="hover:underline text-blue-600">Copy</button>
+  </div>
 </div>
 
 {{ end }}
