@@ -7,6 +7,7 @@ import (
 	"webhook-tester/config"
 	"webhook-tester/internal/api"
 	"webhook-tester/internal/db"
+	"webhook-tester/internal/web"
 	"webhook-tester/internal/web/handlers"
 	"webhook-tester/internal/webhook"
 
@@ -44,6 +45,7 @@ func main() {
 	db.AutoMigrate()
 
 	r := NewRouter()
+	web.CreateSessionStore()
 
 	// Static file server for /static/*
 	fs := http.FileServer(http.Dir("static"))
@@ -51,6 +53,9 @@ func main() {
 
 	r.Get("/", handlers.Home)
 	r.Get("/requests/{id}", handlers.Request)
+	r.Get("/login", handlers.Login)
+	r.Post("/login", handlers.Login)
+	r.Get("/logout", handlers.Logout)
 
 	r.Mount("/api", api.NewRouter())
 	// This must be the last route, for handling webhook calls

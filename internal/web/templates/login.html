@@ -1,9 +1,7 @@
-{{ define "title" }}Login{{ end }} {{ define "content" }}
+{{ define "title" }}Login{{ end }} {{ define "body" }}
 <!-- Login Form Container -->
-<div class="max-w-md mx-auto mt-16 bg-white border rounded-lg shadow p-8">
-  <h1 class="text-2xl font-semibold mb-6 text-center text-blue-600">
-    Sign in to Webhook Tester
-  </h1>
+<div class="w-[400px] mx-auto mt-16 bg-white border rounded-lg shadow p-8">
+  <h1 class="text-2xl font-semibold mb-6 text-center text-blue-600">Sign in</h1>
 
   {{ if .Error }}
   <div class="mb-4 p-3 text-sm text-red-700 bg-red-100 rounded">
@@ -38,7 +36,7 @@
         id="password"
         required
         class="w-full border border-gray-300 px-3 py-2 rounded shadow-sm focus:outline-none focus:ring focus:border-blue-400"
-        placeholder="••••••••"
+        placeholder="password"
       />
     </div>
 
