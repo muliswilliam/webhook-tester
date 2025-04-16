@@ -28,6 +28,7 @@
     <div class="px-6 pt-6 text-xs text-gray-500 uppercase tracking-wide">
       Webhooks
     </div>
+    {{ $activeID := .Webhook.ID }}
     {{ range .Webhooks}}
     <div
       x-data="sseRequestStream('{{ .ID }}')"
@@ -36,7 +37,8 @@
     >
       <a
         href="/?address={{ .ID }}"
-        class="w-full flex bg-gray-100 p-2 rounded text-sm font-mono break-all"
+        class='w-full flex p-2 rounded text-sm font-mono break-all
+        {{ if eq .ID $activeID }} bg-blue-100 {{ else }} bg-gray-100 {{ end }}'
       >
         {{ or .Title .ID }}
       </a>

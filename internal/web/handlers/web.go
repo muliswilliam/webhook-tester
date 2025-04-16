@@ -112,17 +112,19 @@ func Home(w http.ResponseWriter, r *http.Request) {
 
 	// Render the home page
 	data := struct {
-		User     models.User
-		Webhooks []models.Webhook
-		Webhook  models.Webhook
-		Domain   string
-		Year     int
+		User          models.User
+		Webhooks      []models.Webhook
+		Webhook       models.Webhook
+		RequestsCount uint
+		Domain        string
+		Year          int
 	}{
-		User:     web.GetLoggedInUser(r),
-		Webhooks: webhooks,
-		Webhook:  activeWebhook,
-		Domain:   os.Getenv("DOMAIN"),
-		Year:     time.Now().Year(),
+		User:          web.GetLoggedInUser(r),
+		Webhooks:      webhooks,
+		Webhook:       activeWebhook,
+		RequestsCount: uint(len(activeWebhook.Requests)),
+		Domain:        os.Getenv("DOMAIN"),
+		Year:          time.Now().Year(),
 	}
 
 	web.Render(w, "home", data)
@@ -151,17 +153,19 @@ func Request(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		ID      string
-		Year    int
-		User    models.User
-		Webhook models.Webhook
-		Request models.WebhookRequest
+		ID       string
+		Year     int
+		User     models.User
+		Webhooks []models.Webhook
+		Webhook  models.Webhook
+		Request  models.WebhookRequest
 	}{
-		ID:      requestId,
-		Webhook: webhook,
-		User:    web.GetLoggedInUser(r),
-		Request: request,
-		Year:    time.Now().Year(),
+		ID:       requestId,
+		Webhooks: []models.Webhook{webhook},
+		Webhook:  webhook,
+		User:     web.GetLoggedInUser(r),
+		Request:  request,
+		Year:     time.Now().Year(),
 	}
 
 	web.Render(w, "request", data)

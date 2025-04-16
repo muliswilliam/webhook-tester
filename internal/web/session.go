@@ -47,10 +47,7 @@ func GetLoggedInUser(r *http.Request) models.User {
 		log.Printf("error getting session %s", err)
 	}
 
-	log.Printf("%+v\n", sess.Values)
-
 	userID, ok := sess.Values["user_id"]
-	log.Printf("userid %s", userID)
 	if !ok || userID == "" {
 		log.Printf("no logged in user")
 		return user

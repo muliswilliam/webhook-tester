@@ -1,5 +1,5 @@
 {{ define "title" }}Home - Webhook Tester {{ end }} {{ define "content" }}
-<div class="max-w-5xl w-full mx-auto">
+<div class="max-w-6xl w-full mx-auto">
   <!-- Alert -->
   {{ if not .User.ID }}
   <div
@@ -8,7 +8,7 @@
     <p>
       <strong>Note:</strong> Incoming webhook data will be stored temporarily.
       <a href="/register" class="underline text-blue-600"
-        >Create a free account</a
+      >Create a free account</a
       >
       to retain request logs and enable advanced features like replay.
     </p>
@@ -67,12 +67,94 @@
       class="text-sm overflow-x-auto font-mono leading-6 whitespace-pre-wrap"
     >
 <span class="text-green-400">curl</span> -X POST <span
-                class="text-blue-400">{{ .Domain }}/{{ .Webhook.ID }}</span> \
+      class="text-blue-400">{{ .Domain }}/{{ .Webhook.ID }}</span> \
   -H <span class="text-yellow-300">"Content-Type: application/json"</span> \
   -d <span class="text-purple-300">'{"event":"test","status":"success"}'</span>
   </pre>
   </div>
 
+  {{ if .Webhook.Requests }}
+  <h2 class="text-xl font-medium text-gray-900 mb-2">{{ .RequestsCount }} Requests Received</h2>
+  {{ end }}
+  {{ range .Webhook.Requests }}
+  <div class="my-6 bg-white rounded-lg p-2">
+    <!-- Method + Request ID -->
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center space-x-2">
+    <span class="bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded"
+    >{{ .Method }}</span
+    >
+        <span class="text-gray-700 font-mono text-sm break-all">
+          {{ .ID }}
+        </span>
+        <span class="text-sm text-gray-500 italic">
+          {{ .ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
+        </span>
+      </div>
+      <form method="POST" action="/requests/{{ .ID }}/delete">
+        <button
+          class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
+        >
+          Delete
+        </button>
+      </form>
+    </div>
+
+    <!-- Headers Table -->
+    <h2 class="text-md font-semibold mb-2">Request Headers</h2>
+    <div class="overflow-x-auto mb-6">
+      <table class="w-full text-sm text-left">
+        <tbody>
+        {{ range $key, $val := .Headers }}
+        <tr class="border-t">
+          <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+            {{ $key }}
+          </td>
+          <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+        </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Query Params -->
+    {{ if .Query }}
+    <h2 class="text-md font-semibold mb-2">Params</h2>
+    <div class="overflow-x-auto mb-6">
+      <table class="w-full text-sm text-left">
+        <tbody>
+        {{ range $key, $val := .Query }}
+        <tr class="border-t">
+          <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+            {{ $key }}
+          </td>
+          <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+        </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+
+    <!-- Body -->
+    <h2 class="text-md font-semibold mb-2">Body</h2>
+    <div
+      class="bg-white border rounded p-3 text-sm font-mono whitespace-pre-wrap break-words min-h-[120px] relative"
+    >
+      {{ .Body }}
+      <div class="absolute bottom-2 right-2 text-xs flex gap-4 text-gray-500">
+        <label class="inline-flex items-center space-x-1">
+          <input type="checkbox" disabled checked/>
+          <span>Format JSON</span>
+        </label>
+        <button class="hover:underline text-blue-600">Copy</button>
+      </div>
+    </div>
+
+    <hr class="my-6 border-t-2 border-gray-400"/>
+  </div>
+
+  {{ else }}
   <!-- About the Tool -->
   <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm mb-6">
     <h3 class="text-xl font-semibold mb-4">What is Webhook Tester?</h3>
@@ -106,6 +188,8 @@
       </li>
     </ol>
   </div>
+
+  {{ end }}
 </div>
 
 {{ end }}
