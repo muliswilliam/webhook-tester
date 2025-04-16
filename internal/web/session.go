@@ -23,21 +23,21 @@ func CreateSessionStore() {
 	go SessionStore.PeriodicCleanup(48*time.Hour, quit)
 }
 
-func Authorize(r *http.Request) error {
+func Authorize(r *http.Request) (uint, error) {
 	authError := errors.New("unauthorized")
 	sess, err := SessionStore.Get(r, SessionName)
 
 	if err != nil {
-		return authError
+		return 0, authError
+	}
+	userIDRaw := sess.Values["user_id"]
+	userID, ok := userIDRaw.(uint)
+
+	if !ok {
+		return 0, authError
 	}
 
-	userID, ok := sess.Values["user_id"].(string)
-
-	if !ok || userID == "" {
-		return authError
-	}
-
-	return nil
+	return userID, nil
 }
 
 func GetLoggedInUser(r *http.Request) models.User {

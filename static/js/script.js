@@ -23,7 +23,7 @@ function sseRequestStream(webhookID) {
                         <div class="text-blue-600 font-mono text-xs break-all">${req.id}</div>
                     `;
 
-                const container = document.getElementById("request-log");
+                const container = document.getElementById(`request-log-${webhookID}`);
                 container.insertBefore(wrapper, container.firstChild);
             };
         }

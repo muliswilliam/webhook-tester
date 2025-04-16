@@ -15,7 +15,7 @@
     {{ else }}
     <a href="/login" class="hover:text-blue-600">Login</a>
     <a href="/register" class="text-blue-600 font-medium hover:underline"
-      >Register</a
+    >Register</a
     >
     {{ end }}
   </nav>
@@ -25,29 +25,26 @@
 <div class="flex flex-1 overflow-hidden">
   <!-- Sidebar -->
   <aside class="w-80 bg-white border-r flex flex-col">
-    <!-- Default Webhook Info -->
-    <div class="px-6 pt-6 pb-2 text-xs text-gray-500 uppercase tracking-wide">
+    <div class="px-6 pt-6 text-xs text-gray-500 uppercase tracking-wide">
       Webhooks
     </div>
+    {{ range .Webhooks}}
     <div
-      x-data="sseRequestStream('{{ .Webhook.ID }}')"
+      x-data="sseRequestStream('{{ .ID }}')"
       x-init="connect()"
-      class="px-6 pb-4"
+      class="px-6 py-2"
     >
       <a
-        href="/?address={{ .Webhook.ID }}"
+        href="/?address={{ .ID }}"
         class="w-full flex bg-gray-100 p-2 rounded text-sm font-mono break-all"
       >
-        {{ .Webhook.ID }}
+        {{ or .Title .ID }}
       </a>
     </div>
 
     <!-- Recent Requests  -->
-    <div class="px-6 pb-2 text-xs text-gray-500 uppercase tracking-wide">
-      Recent Requests
-    </div>
-    <div class="flex-1 overflow-y-auto px-6 space-y-2 text-sm" id="request-log">
-      {{ range .Webhook.Requests }}
+    <div class="overflow-y-auto px-6 space-y-2 pb-4 text-sm" id="request-log-{{ .ID }}">
+      {{ range .Requests }}
       <a
         href="/requests/{{ .ID }}?address={{ .WebhookID }}"
         class="flex flex-row gap-2 p-2 rounded border hover:bg-blue-50 hover:border-blue-200 cursor-pointer"
@@ -56,17 +53,19 @@
         <div class="text-blue-600 font-mono text-xs break-all">{{ .ID }}</div>
       </a>
       {{ else }}
-      <p class="text-xs text-gray-400 italic">No requests yet.</p>
+      <p class="text-xs text-gray-400 italic pl-2">No requests yet.</p>
       {{ end }}
     </div>
+
+    {{ end }}
 
     <!-- Sidebar Footer -->
     <div class="p-6 border-t text-sm space-y-2">
       <a href="/feedback" class="block text-blue-600 hover:underline"
-        >⭐ Feedback</a
+      >⭐ Feedback</a
       >
       <a href="/feature-request" class="block text-blue-600 hover:underline"
-        >🛠 Feature Request</a
+      >🛠 Feature Request</a
       >
     </div>
   </aside>
@@ -83,7 +82,7 @@
           <ul class="space-y-1">
             <li>
               <a href="/about" class="hover:underline"
-                >What is Webhook Tester?</a
+              >What is Webhook Tester?</a
               >
             </li>
             <li>
