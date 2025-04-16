@@ -45,7 +45,7 @@
     </div>
 
     <!-- Recent Requests  -->
-    <div class="overflow-y-auto px-6 space-y-2 pb-4 text-sm" id="request-log-{{ .ID }}">
+    <div class="overflow-y-auto h-[300px] px-6 space-y-2 pb-4 text-sm" id="request-log-{{ .ID }}">
       {{ range .Requests }}
       <a
         href="/requests/{{ .ID }}?address={{ .WebhookID }}"

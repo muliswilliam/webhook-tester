@@ -54,7 +54,7 @@ func fetchWebhookWithRequests(id string) (models.Webhook, error) {
 func fetchUserWebhooks(userID interface{}) []models.Webhook {
 	var webhooks []models.Webhook
 	err := db.DB.Preload("Requests", func(db *gorm.DB) *gorm.DB {
-		return db.Order("received_at DESC").Limit(10)
+		return db.Order("received_at DESC").Limit(1000)
 	}).
 		Where("user_id = ?", userID).Find(&webhooks).
 		Order("created_at DESC").Error
