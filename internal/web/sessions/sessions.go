@@ -1,4 +1,4 @@
-package web
+package sessions
 
 import (
 	"errors"
@@ -12,20 +12,20 @@ import (
 	"github.com/wader/gormstore/v2"
 )
 
-var SessionStore *gormstore.Store
-var SessionName = "_webhook_tester_session_id"
+var Store *gormstore.Store
+var Name = "_webhook_tester_session_id"
 
 func CreateSessionStore() {
-	SessionStore = gormstore.New(db.DB, []byte(os.Getenv("AUTH_SECRET")))
+	Store = gormstore.New(db.DB, []byte(os.Getenv("AUTH_SECRET")))
 	// db cleanup every 2 days
 	// close quit channel to stop cleanup
 	quit := make(chan struct{})
-	go SessionStore.PeriodicCleanup(48*time.Hour, quit)
+	go Store.PeriodicCleanup(48*time.Hour, quit)
 }
 
 func Authorize(r *http.Request) (uint, error) {
 	authError := errors.New("unauthorized")
-	sess, err := SessionStore.Get(r, SessionName)
+	sess, err := Store.Get(r, Name)
 
 	if err != nil {
 		return 0, authError
@@ -42,7 +42,7 @@ func Authorize(r *http.Request) (uint, error) {
 
 func GetLoggedInUser(r *http.Request) models.User {
 	var user models.User
-	sess, err := SessionStore.Get(r, SessionName)
+	sess, err := Store.Get(r, Name)
 	if err != nil {
 		log.Printf("error getting session %s", err)
 	}

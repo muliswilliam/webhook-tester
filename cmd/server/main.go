@@ -8,7 +8,7 @@ import (
 	"webhook-tester/internal/api"
 	"webhook-tester/internal/db"
 	"webhook-tester/internal/web"
-	"webhook-tester/internal/web/handlers"
+	"webhook-tester/internal/web/sessions"
 	"webhook-tester/internal/webhook"
 
 	"github.com/go-chi/chi/v5"
@@ -45,21 +45,15 @@ func main() {
 	db.AutoMigrate()
 
 	r := NewRouter()
-	web.CreateSessionStore()
+	sessions.CreateSessionStore()
 
 	// Static file server for /static/*
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
-	r.Get("/", handlers.Home)
-	r.Get("/requests/{id}", handlers.Request)
-	r.Get("/login", handlers.Login)
-	r.Post("/login", handlers.Login)
-	r.Get("/logout", handlers.Logout)
-
+	r.Mount("/", web.NewRouter())
 	r.Mount("/api", api.NewRouter())
-	// This must be the last route, for handling webhook calls
-	r.Mount("/", webhook.NewRouter())
+	r.Mount("/webhooks", webhook.NewRouter())
 
 	fmt.Println("Server running on http://localhost:3000")
 	err := http.ListenAndServe(":3000", r)

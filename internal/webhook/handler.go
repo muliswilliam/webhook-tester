@@ -22,7 +22,7 @@ var webhookStreams = make(map[string][]chan string)
 var mu sync.Mutex
 
 func HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
-	webhookID := strings.TrimPrefix(r.URL.Path, "/")
+	webhookID := strings.TrimPrefix(r.URL.Path, "/webhooks/")
 	log.Printf("Handling webhook request for %s", webhookID)
 	var webhook models.Webhook
 	webhook, err := sqlstore.GetWebhook(webhookID)
