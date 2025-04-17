@@ -21,6 +21,8 @@ func NewRouter() http.Handler {
 	r.Post("/delete-webhook/{id}", handlers.DeleteWebhook)
 	r.Post("/update-webhook/{id}", handlers.UpdateWebhook)
 
+	r.Get("/register", handlers.Register)
+	r.Post("/register", handlers.Register)
 	r.Get("/login", handlers.Login)
 	r.Post("/login", handlers.Login)
 	r.Get("/logout", handlers.Logout)

@@ -5,11 +5,69 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"webhook-tester/internal/db"
 	"webhook-tester/internal/models"
+	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
 )
+
+func Register(w http.ResponseWriter, r *http.Request) {
+	tmplRoot := filepath.Join("internal", "web", "templates")
+	tmplPath := filepath.Join(tmplRoot, "register.html")
+	templates := template.Must(template.ParseFiles(filepath.Join(tmplRoot, "base.html"), tmplPath))
+
+	if r.Method == "GET" {
+		err := templates.Execute(w, nil)
+		if err != nil {
+			http.Error(w, "template error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, "parse error", http.StatusInternalServerError)
+		return
+	}
+
+	fullName := r.FormValue("name")
+	email := r.FormValue("email")
+	password := r.FormValue("password")
+
+	passwordHash, err := utils.HashPassword(password)
+	if err != nil {
+		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	u := models.User{
+		FullName: fullName,
+		Email:    email,
+		Password: passwordHash,
+		APIKey:   utils.GenerateApiKey(),
+	}
+
+	if err := sqlstore.InsertUser(&u); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			_ = templates.Execute(w, struct {
+				Error string
+			}{
+				Error: "Email already in use",
+			})
+
+		} else {
+			log.Printf("Error inserting user: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
 
 func Login(w http.ResponseWriter, r *http.Request) {
 	tmplRoot := filepath.Join("internal", "web", "templates")
