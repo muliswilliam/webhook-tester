@@ -25,6 +25,7 @@ function sseRequestStream(webhookID) {
 
                 const container = document.getElementById(`request-log-${webhookID}`);
                 container.insertBefore(wrapper, container.firstChild);
+                location.reload()
             };
         }
     }
