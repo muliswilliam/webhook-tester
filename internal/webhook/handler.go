@@ -136,7 +136,11 @@ func StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case msg := <-eventChan:
-			fmt.Fprintf(w, "data: %s\n\n", msg)
+			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
+			if err != nil {
+				log.Printf("error writing data: %s", err)
+				return
+			}
 			flusher.Flush()
 		case <-r.Context().Done():
 			mu.Lock()
