@@ -102,7 +102,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
 		}
-	} else {
+	} else if len(webhooks) > 0 {
 		activeWebhook = webhooks[0]
 	}
 

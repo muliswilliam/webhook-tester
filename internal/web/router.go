@@ -16,6 +16,8 @@ func NewRouter() http.Handler {
 		r.Post("/{id}/delete", handlers.DeleteRequest)
 	})
 
+	r.Post("/create-webhook", handlers.CreateWebhook)
+
 	r.Get("/login", handlers.Login)
 	r.Post("/login", handlers.Login)
 	r.Get("/logout", handlers.Logout)

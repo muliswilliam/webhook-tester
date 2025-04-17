@@ -22,12 +22,23 @@
 </header>
 
 <!-- Main Layout: Sidebar + Main Content -->
-<div class="h-[calc(100vh-53px)] flex overflow-hidden">
+<div x-data="{ showModal: false }" class="h-[calc(100vh-53px)] flex overflow-hidden">
   <!-- Sidebar -->
   <aside class="w-80 bg-white border-r flex flex-col">
     <!-- Sidebar Header -->
-    <div class="px-6 pt-6 text-xs text-gray-500 uppercase tracking-wide">
-      Webhooks
+    <div class="flex justify-between px-6 pt-6 items-center">
+      <p class="text-xs text-gray-500 uppercase tracking-wide">
+        Webhooks
+      </p>
+
+      {{ if .User.ID }}
+      <button
+        @click="showModal = true"
+        class="bg-blue-600 text-white text-sm px-3 py-1 rounded hover:bg-blue-700"
+      >
+        New
+      </button>
+      {{ end }}
     </div>
 
     {{ $activeID := .Webhook.ID }}
@@ -123,6 +134,122 @@
       </p>
     </footer>
   </div>
+
+  <!--  Create webhook modal -->
+  <div>
+    <!-- Modal Backdrop -->
+    <div
+      x-show="showModal"
+      x-transition.opacity
+      class="fixed inset-0 bg-black/40 z-40"
+      @click="showModal = false"
+      @keydown.escape.window="showModal = false"
+    ></div>
+
+    <!-- Modal Box -->
+    <div
+      x-show="showModal"
+      x-transition
+      class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white w-full max-w-lg rounded-lg shadow-lg p-6 relative"
+        @click.away="showModal = false"
+      >
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Create Webhook</h2>
+
+        <form method="POST" action="/create-webhook" class="space-y-4 text-sm">
+          <div>
+            <label for="title" class="block font-medium mb-1">Title</label>
+            <input
+              id="title"
+              type="text"
+              name="title"
+              class="w-full border rounded px-3 py-2"
+              required
+            />
+          </div>
+
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <label for="response_code" class="block font-medium mb-1">Response Code</label>
+              <input
+                id="response_code"
+                type="number"
+                name="response_code"
+                class="w-full border rounded px-3 py-2"
+                value="200"
+                required
+              />
+            </div>
+            <div class="flex-1">
+              <label for="content_type" class="block font-medium mb-1">Content Type</label>
+              <select
+                id="content_type"
+                name="content_type"
+                class="w-full border rounded px-3 py-2"
+              >
+                <option value="application/json">application/json</option>
+                <option value="text/plain">text/plain</option>
+                <option value="text/html">text/html</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label for="response_delay" class="block font-medium mb-1">Delay (ms)</label>
+            <input
+              id="response_delay"
+              type="number"
+              name="response_delay"
+              class="w-full border rounded px-3 py-2"
+              value="0"
+            />
+          </div>
+
+          <div>
+            <label for="payload" class="block font-medium mb-1">Payload</label>
+            <textarea
+              id="payload"
+              name="payload"
+              rows="4"
+              class="w-full border rounded px-3 py-2 font-mono"
+            >{"message":"ok"}</textarea>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="notify"
+              name="notify_on_event"
+              value="true"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label for="notify" class="text-sm text-gray-700 font-medium">
+              Notify on Request
+            </label>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-4">
+            <button
+              type="button"
+              @click="showModal = false"
+              class="px-4 py-2 rounded border text-gray-600 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            >
+              Create
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <!--  End create webhook modal -->
 </div>
 
 {{ end }}
