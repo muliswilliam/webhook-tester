@@ -58,6 +58,8 @@ func DeleteRequest(w http.ResponseWriter, r *http.Request) {
 
 	db.DB.Delete(&models.WebhookRequest{}, "id = ?", requestId)
 
+	// if
+
 	referer := r.Referer()
 	if referer == "" {
 		referer = "/" // fallback

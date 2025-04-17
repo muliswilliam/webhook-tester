@@ -1,5 +1,5 @@
 {{ define "title" }}Home - Webhook Tester {{ end }} {{ define "content" }}
-<div class="max-w-6xl w-full mx-auto">
+<div class="max-w-8xl w-full mx-auto" x-data="{ showEditModal : false }">
   <!-- Alert -->
   {{ if not .User.ID }}
   <div
@@ -13,7 +13,44 @@
       to retain request logs and enable advanced features like replay.
     </p>
   </div>
+  {{ else }}
+
+  <!-- Webhook Actions -->
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-xl font-semibold text-gray-800">{{ .Webhook.Title }}</h2>
+
+    <div class="flex flex-wrap gap-2 h-[28px]">
+      <!-- Edit -->
+      <button
+        class="bg-blue-600 text-white text-sm px-3 py-1 rounded hover:bg-blue-700 h-[28px]"
+        @click="showEditModal = true"
+      >
+        Edit
+      </button>
+
+      <!-- Delete All Requests -->
+      <form method="POST" action="/delete-requests/{{ .Webhook.ID }}">
+        <button
+          type="submit"
+          class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
+        >
+          Reset requests
+        </button>
+      </form>
+
+      <!-- Delete Webhook -->
+      <form method="POST" action="/delete-webhook/{{ .Webhook.ID }}">
+        <button
+          type="submit"
+          class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
+        >
+          Delete webhook
+        </button>
+      </form>
+    </div>
+  </div>
   {{ end }}
+
 
   <!-- Webhook URL Box -->
   <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-6">
@@ -190,6 +227,126 @@
   </div>
 
   {{ end }}
+
+  <!--  Edit webhook modal -->
+  <div>
+    <!-- Modal Backdrop -->
+    <div
+      x-show="showEditModal"
+      x-transition.opacity
+      class="fixed inset-0 bg-black/40 z-40"
+      @click="showEditModal = false"
+      @keydown.escape.window="showEditModal = false"
+    ></div>
+
+    <!-- Modal Box -->
+    <div
+      x-show="showEditModal"
+      x-transition
+      class="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white w-full max-w-lg rounded-lg shadow-lg p-6 relative"
+        @click.away="showEditModal = false"
+      >
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Update Webhook</h2>
+
+        <form method="POST" action="/update-webhook/{{ .Webhook.ID }}" class="space-y-4 text-sm">
+          <div>
+            <label for="title" class="block font-medium mb-1">Title</label>
+            <input
+              id="title"
+              type="text"
+              name="title"
+              class="w-full border rounded px-3 py-2"
+              value="{{ .Webhook.Title }}"
+              required
+            />
+          </div>
+
+          <div class="flex gap-4">
+            <div class="flex-1">
+              <label for="response_code" class="block font-medium mb-1">Response Code</label>
+              <input
+                id="response_code"
+                type="number"
+                name="response_code"
+                class="w-full border rounded px-3 py-2"
+                value="{{ .Webhook.ResponseCode }}"
+                required
+              />
+            </div>
+            <div class="flex-1">
+              <label for="content_type" class="block font-medium mb-1">Content Type</label>
+              <select
+                id="content_type"
+                name="content_type"
+                class="w-full border rounded px-3 py-2"
+                value="{{ .Webhook.ContentType }}"
+              >
+                <option value="application/json">application/json</option>
+                <option value="text/plain">text/plain</option>
+                <option value="text/html">text/html</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label for="response_delay" class="block font-medium mb-1">Delay (ms)</label>
+            <input
+              id="response_delay"
+              type="number"
+              name="response_delay"
+              class="w-full border rounded px-3 py-2"
+              value="{{ .Webhook.ResponseDelay }}"
+            />
+          </div>
+
+          <div>
+            <label for="payload" class="block font-medium mb-1">Payload</label>
+            <textarea
+              id="payload"
+              name="payload"
+              rows="4"
+              class="w-full border rounded px-3 py-2 font-mono"
+            >{{ .Webhook.Payload }}</textarea>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="notify"
+              name="notify_on_event"
+              value="true"
+              {{ if .Webhook.NotifyOnEvent }}checked{{ end }}
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label for="notify" class="text-sm text-gray-700 font-medium">
+              Notify on Request
+            </label>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-4">
+            <button
+              type="button"
+              @click="showEditModal = false"
+              class="px-4 py-2 rounded border text-gray-600 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            >
+              Update
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <!--  End edit webhook modal -->
+
 </div>
 
 {{ end }}

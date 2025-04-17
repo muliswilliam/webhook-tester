@@ -68,7 +68,7 @@
           x-transition
           x-data="sseRequestStream('{{ .ID }}')"
           x-init="connect()"
-          class="px-6 pt-2 pb-4 space-y-2 text-sm overflow-y-auto h-[300px]"
+          class="px-6 pt-2 pb-4 space-y-2 text-sm overflow-y-auto max-h-[300px]"
           id="request-log-{{ .ID }}"
         >
           {{ range .Requests }}
