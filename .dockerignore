@@ -1,0 +1,11 @@
+# Build output
+webhook-tester
+*.db
+
+# Git & editor
+.git
+.vscode
+.idea
+
+# Dependencies
+vendor/
