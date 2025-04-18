@@ -36,11 +36,33 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
+	rules := utils.PasswordRules{
+		MinLength:        8,
+		RequireLowercase: true,
+		RequireUppercase: true,
+		RequireNumber:    true,
+	}
+
+	err = utils.ValidatePassword(password, rules)
+	if err != nil {
+		templates.Execute(w, struct {
+			Error    string
+			FullName string
+			Email    string
+			Password string
+		}{
+			Error:    err.Error(),
+			FullName: fullName,
+			Email:    email,
+			Password: password,
+		})
+
+		return
+	}
+
 	passwordHash, err := utils.HashPassword(password)
 	if err != nil {
-		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
-		})
+		http.Error(w, "hashing error", http.StatusInternalServerError)
 		return
 	}
 
@@ -54,9 +76,15 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	if err := sqlstore.InsertUser(&u); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			_ = templates.Execute(w, struct {
-				Error string
+				Error    string
+				FullName string
+				Email    string
+				Password string
 			}{
-				Error: "Email already in use",
+				Error:    "Email already in use",
+				FullName: fullName,
+				Email:    email,
+				Password: password,
 			})
 
 		} else {
