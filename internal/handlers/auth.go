@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
-	"webhook-tester/internal/db"
 	"webhook-tester/internal/models"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
@@ -45,7 +44,7 @@ func handleTemplateErr(err error, w http.ResponseWriter) {
 	}
 }
 
-func RegisterGet(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) RegisterGet(w http.ResponseWriter, r *http.Request) {
 	templates := parseTemplates("register.html")
 	data := RegisterPageData{
 		CSRFField: csrf.TemplateField(r),
@@ -56,7 +55,7 @@ func RegisterGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func RegisterPost(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 	templates := parseTemplates("register.html")
 	err := r.ParseForm()
 	if err != nil {
@@ -102,7 +101,7 @@ func RegisterPost(w http.ResponseWriter, r *http.Request) {
 		APIKey:   utils.GenerateApiKey(),
 	}
 
-	if err := sqlstore.InsertUser(&u); err != nil {
+	if err := sqlstore.InsertUser(h.DB, &u); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			_ = templates.Execute(w, RegisterPageData{
 				Error:    "Email already in use",
@@ -121,7 +120,7 @@ func RegisterPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func LoginGet(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) LoginGet(w http.ResponseWriter, r *http.Request) {
 	templates := parseTemplates("login.html")
 	data := LoginPageData{
 		CSRFField: csrf.TemplateField(r),
@@ -131,13 +130,13 @@ func LoginGet(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func LoginPost(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 	templates := parseTemplates("login.html")
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
 	var user models.User
-	err := db.DB.First(&user, "email = ?", email).Error
+	err := h.DB.First(&user, "email = ?", email).Error
 
 	if err != nil {
 		data := LoginPageData{
@@ -159,11 +158,11 @@ func LoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := sessions.Store.Get(r, sessions.Name)
+	session, err := h.SessionStore.Get(r, sessions.Name)
 	session.Values["user_id"] = user.ID
 	session.Values["email"] = user.Email
 	session.Values["full_name"] = user.FullName
-	err = sessions.Store.Save(r, w, session)
+	err = h.SessionStore.Save(r, w, session)
 	if err != nil {
 		log.Printf("failed to save session: %v", err)
 		http.Error(w, "failed to save session", http.StatusInternalServerError)
@@ -180,8 +179,8 @@ func LoginPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func Logout(w http.ResponseWriter, r *http.Request) {
-	session, err := sessions.Store.Get(r, sessions.Name)
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	session, err := h.SessionStore.Get(r, sessions.Name)
 	if err != nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return

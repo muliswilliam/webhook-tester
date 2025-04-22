@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/wader/gormstore/v2"
+	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"webhook-tester/config"
@@ -16,8 +18,14 @@ import (
 	"github.com/go-chi/cors"
 )
 
-func NewRouter() *chi.Mux {
-	r := chi.NewRouter()
+type Server struct {
+	Router       *chi.Mux
+	DB           *gorm.DB
+	SessionStore *gormstore.Store
+}
+
+func (srv *Server) MountHandlers() {
+	r := srv.Router
 
 	// Basic CORS
 	// for more ideas, see: https://developer.github.com/v3/#cross-origin-resource-sharing
@@ -35,28 +43,35 @@ func NewRouter() *chi.Mux {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/health"))
 
-	return r
-}
-
-func main() {
-	config.LoadEnv()
-
-	db.Connect()
-	db.AutoMigrate()
-
-	r := NewRouter()
-	sessions.CreateSessionStore()
-
 	// Static file server for /static/*
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
-	r.Mount("/", web.NewRouter())
-	r.Mount("/api", api.NewRouter())
-	r.Mount("/webhooks", webhook.NewRouter())
+	r.Mount("/", web.Router(srv.DB, srv.SessionStore))
+	r.Mount("/api", api.Router(srv.DB, srv.SessionStore))
+	r.Mount("/webhooks", webhook.Router(srv.DB, srv.SessionStore))
+}
+
+func NewServer() *Server {
+	config.LoadEnv()
+	dbConn := db.Connect()
+	db.AutoMigrate(dbConn)
+
+	srv := &Server{
+		Router:       chi.NewRouter(),
+		DB:           dbConn,
+		SessionStore: sessions.CreateSessionStore(dbConn),
+	}
+
+	return srv
+}
+
+func main() {
+	srv := NewServer()
+	srv.MountHandlers()
 
 	fmt.Println("Server running on http://localhost:3000")
-	err := http.ListenAndServe(":3000", r)
+	err := http.ListenAndServe(":3000", srv.Router)
 	if err != nil {
 		log.Fatal("Failed to start server", err)
 	}

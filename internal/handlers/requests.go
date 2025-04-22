@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"time"
-	"webhook-tester/internal/db"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
@@ -16,11 +15,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func GetRequest(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) GetRequest(w http.ResponseWriter, r *http.Request) {
 	requestId := chi.URLParam(r, "id")
 	address := r.URL.Query().Get("address")
 	var webhook models.Webhook
-	err := db.DB.Model(&models.Webhook{}).Preload("Requests", func(db *gorm.DB) *gorm.DB {
+	err := h.DB.Model(&models.Webhook{}).Preload("Requests", func(db *gorm.DB) *gorm.DB {
 		db = db.Order("received_at DESC")
 		return db
 	}).Find(&webhook, "id = ?", address).Error
@@ -49,7 +48,7 @@ func GetRequest(w http.ResponseWriter, r *http.Request) {
 		ID:       requestId,
 		Webhooks: []models.Webhook{webhook},
 		Webhook:  webhook,
-		User:     sessions.GetLoggedInUser(r),
+		User:     sessions.GetLoggedInUser(r, h.SessionStore, h.DB),
 		Request:  request,
 		Year:     time.Now().Year(),
 	}
@@ -57,10 +56,10 @@ func GetRequest(w http.ResponseWriter, r *http.Request) {
 	utils.RenderHtml(w, r, "request", data)
 }
 
-func DeleteRequest(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) DeleteRequest(w http.ResponseWriter, r *http.Request) {
 	requestId := chi.URLParam(r, "id")
 
-	db.DB.Delete(&models.WebhookRequest{}, "id = ?", requestId)
+	h.DB.Delete(&models.WebhookRequest{}, "id = ?", requestId)
 
 	// if
 
@@ -73,12 +72,12 @@ func DeleteRequest(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, referer, http.StatusFound)
 }
 
-func ReplayRequest(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) ReplayRequest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	// target := r.FormValue("target")
 
 	var req models.WebhookRequest
-	if err := db.DB.First(&req, " id = ?", id).Error; err != nil {
+	if err := h.DB.First(&req, " id = ?", id).Error; err != nil {
 		http.Error(w, "request not found", http.StatusNotFound)
 	}
 

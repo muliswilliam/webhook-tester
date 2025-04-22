@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"time"
-	"webhook-tester/internal/db"
 	"webhook-tester/internal/models"
 )
 
@@ -28,14 +27,14 @@ type HomePageData struct {
 
 var sessionIdName = "_webhook_tester_guest_session_id"
 
-func createDefaultWebhookCookie(w http.ResponseWriter) *http.Cookie {
+func createDefaultWebhookCookie(db *gorm.DB, w http.ResponseWriter) *http.Cookie {
 	defaultWh := models.Webhook{
 		ID:            utils.GenerateID(),
 		Title:         "Default Webhook",
 		ResponseCode:  http.StatusOK,
 		ResponseDelay: 0,
 	}
-	if err := sqlstore.InsertWebhook(defaultWh); err != nil {
+	if err := sqlstore.InsertWebhook(db, defaultWh); err != nil {
 		log.Printf("Error inserting default webhook: %v", err)
 	}
 
@@ -51,17 +50,17 @@ func createDefaultWebhookCookie(w http.ResponseWriter) *http.Cookie {
 	return cookie
 }
 
-func fetchWebhookWithRequests(id string) (models.Webhook, error) {
+func fetchWebhookWithRequests(id string, db *gorm.DB) (models.Webhook, error) {
 	var webhook models.Webhook
-	err := db.DB.Preload("Requests", func(db *gorm.DB) *gorm.DB {
+	err := db.Preload("Requests", func(db *gorm.DB) *gorm.DB {
 		return db.Order("received_at DESC")
 	}).First(&webhook, "id = ?", id).Error
 	return webhook, err
 }
 
-func fetchUserWebhooks(userID interface{}) []models.Webhook {
+func fetchUserWebhooks(userID interface{}, db *gorm.DB) []models.Webhook {
 	var webhooks []models.Webhook
-	err := db.DB.Preload("Requests", func(db *gorm.DB) *gorm.DB {
+	err := db.Preload("Requests", func(db *gorm.DB) *gorm.DB {
 		return db.Order("received_at DESC").Limit(1000)
 	}).
 		Where("user_id = ?", userID).Find(&webhooks).
@@ -73,8 +72,8 @@ func fetchUserWebhooks(userID interface{}) []models.Webhook {
 	return webhooks
 }
 
-func Home(w http.ResponseWriter, r *http.Request) {
-	userID, err := sessions.Authorize(r)
+func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
+	userID, err := sessions.Authorize(r, h.SessionStore)
 	if err != nil {
 		log.Println("user not logged in")
 	}
@@ -83,7 +82,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(sessionIdName)
 	if err != nil && userID == 0 {
 		log.Printf("Cookie err: %v", err)
-		cookie = createDefaultWebhookCookie(w)
+		cookie = createDefaultWebhookCookie(h.DB, w)
 	}
 	var webhooks []models.Webhook
 	var webhook models.Webhook
@@ -97,7 +96,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if webhookID != "" && userID == 0 {
-		webhook, err = fetchWebhookWithRequests(webhookID)
+		webhook, err = fetchWebhookWithRequests(webhookID, h.DB)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
 			http.Error(w, "failed to get webhook", http.StatusInternalServerError)
@@ -106,11 +105,11 @@ func Home(w http.ResponseWriter, r *http.Request) {
 		webhooks = append(webhooks, webhook)
 	} else {
 		// Load user's other webhooks if logged in
-		webhooks = fetchUserWebhooks(userID)
+		webhooks = fetchUserWebhooks(userID, h.DB)
 	}
 
 	if address != "" {
-		activeWebhook, err = fetchWebhookWithRequests(address)
+		activeWebhook, err = fetchWebhookWithRequests(address, h.DB)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
 		}
@@ -121,7 +120,7 @@ func Home(w http.ResponseWriter, r *http.Request) {
 	// RenderHtml the home page
 	data := HomePageData{
 		CSRFField:     csrf.TemplateField(r),
-		User:          sessions.GetLoggedInUser(r),
+		User:          sessions.GetLoggedInUser(r, h.SessionStore, h.DB),
 		Webhooks:      webhooks,
 		Webhook:       activeWebhook,
 		RequestsCount: uint(len(activeWebhook.Requests)),

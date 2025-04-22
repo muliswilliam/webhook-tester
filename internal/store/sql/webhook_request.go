@@ -1,11 +1,11 @@
 package sqlstore
 
 import (
-	"webhook-tester/internal/db"
+	"gorm.io/gorm"
 	"webhook-tester/internal/models"
 )
 
-func CreateWebhookRequest(wr models.WebhookRequest) error {
-	result := db.DB.Create(&wr)
+func CreateWebhookRequest(db *gorm.DB, wr models.WebhookRequest) error {
+	result := db.Create(&wr)
 	return result.Error
 }

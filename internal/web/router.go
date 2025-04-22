@@ -1,50 +1,60 @@
 package web
 
 import (
+	"github.com/wader/gormstore/v2"
+	"gorm.io/gorm"
 	"net/http"
 	"os"
 	"strings"
-	"webhook-tester/internal/web/handlers"
+	"webhook-tester/internal/handlers"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 )
 
-func NewRouter() http.Handler {
+func Router(db *gorm.DB, sessionStore *gormstore.Store) http.Handler {
 	r := chi.NewRouter()
 
 	// CSRF Setup
 	csrfKey := []byte(os.Getenv("AUTH_SECRET"))
 	isProd := strings.Contains(os.Getenv("ENV"), "prod")
+	var trustedOrigins []string
+	if !isProd {
+		trustedOrigins = append(trustedOrigins, "localhost:3000")
+	}
+
 	csrfMiddleware := csrf.Protect(
 		csrfKey,
 		csrf.Secure(isProd),
 		csrf.Path("/"),
-		csrf.TrustedOrigins([]string{"localhost:3000"}),
-		csrf.ErrorHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "CSRF failure: "+csrf.FailureReason(r).Error(), http.StatusForbidden)
-		})))
+		csrf.TrustedOrigins(trustedOrigins),
+	)
 
 	r.Use(csrfMiddleware)
 
-	r.Get("/", handlers.Home)
+	h := &handlers.Handler{
+		DB:           db,
+		SessionStore: sessionStore,
+	}
+
+	r.Get("/", h.Home)
 
 	r.Route("/requests", func(r chi.Router) {
-		r.Get("/{id}", handlers.GetRequest)
-		r.Post("/{id}/delete", handlers.DeleteRequest)
-		r.Post("/{id}/replay", handlers.ReplayRequest)
+		r.Get("/{id}", h.GetRequest)
+		r.Post("/{id}/delete", h.DeleteRequest)
+		r.Post("/{id}/replay", h.ReplayRequest)
 	})
 
-	r.Post("/create-webhook", handlers.CreateWebhook)
-	r.Post("/delete-requests/{id}", handlers.DeleteWebhookRequests)
-	r.Post("/delete-webhook/{id}", handlers.DeleteWebhook)
-	r.Post("/update-webhook/{id}", handlers.UpdateWebhook)
+	r.Post("/create-webhook", h.CreateWebhook)
+	r.Post("/delete-requests/{id}", h.DeleteWebhookRequests)
+	r.Post("/delete-webhook/{id}", h.DeleteWebhook)
+	r.Post("/update-webhook/{id}", h.UpdateWebhook)
 
-	r.Get("/register", handlers.RegisterGet)
-	r.Post("/register", handlers.RegisterPost)
-	r.Get("/login", handlers.LoginGet)
-	r.Post("/login", handlers.LoginPost)
-	r.Get("/logout", handlers.Logout)
+	r.Get("/register", h.RegisterGet)
+	r.Post("/register", h.RegisterPost)
+	r.Get("/login", h.LoginGet)
+	r.Post("/login", h.LoginPost)
+	r.Get("/logout", h.Logout)
 
 	return r
 }

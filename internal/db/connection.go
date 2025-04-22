@@ -7,18 +7,16 @@ import (
 	"webhook-tester/internal/models"
 )
 
-var DB *gorm.DB
-
-func Connect() {
-	var err error
-	DB, err = gorm.Open(sqlite.Open("webhook.db"), &gorm.Config{})
+func Connect() *gorm.DB {
+	db, err := gorm.Open(sqlite.Open("webhook.db"), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
+	return db
 }
 
-func AutoMigrate() {
-	err := DB.AutoMigrate(&models.Webhook{}, &models.WebhookRequest{}, &models.User{})
+func AutoMigrate(db *gorm.DB) {
+	err := db.AutoMigrate(&models.Webhook{}, &models.WebhookRequest{}, &models.User{})
 	if err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}
