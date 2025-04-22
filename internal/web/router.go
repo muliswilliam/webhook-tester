@@ -1,12 +1,13 @@
 package web
 
 import (
-	"github.com/go-chi/chi/v5"
-	"github.com/gorilla/csrf"
 	"net/http"
 	"os"
 	"strings"
 	"webhook-tester/internal/web/handlers"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/csrf"
 )
 
 func NewRouter() http.Handler {
@@ -31,6 +32,7 @@ func NewRouter() http.Handler {
 	r.Route("/requests", func(r chi.Router) {
 		r.Get("/{id}", handlers.GetRequest)
 		r.Post("/{id}/delete", handlers.DeleteRequest)
+		r.Post("/{id}/replay", handlers.ReplayRequest)
 	})
 
 	r.Post("/create-webhook", handlers.CreateWebhook)

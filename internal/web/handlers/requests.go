@@ -1,15 +1,19 @@
 package handlers
 
 import (
-	"github.com/go-chi/chi/v5"
-	"gorm.io/gorm"
+	"bytes"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"time"
 	"webhook-tester/internal/db"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
+
+	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm"
 )
 
 func GetRequest(w http.ResponseWriter, r *http.Request) {
@@ -67,4 +71,51 @@ func DeleteRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect back to the referring page
 	http.Redirect(w, r, referer, http.StatusFound)
+}
+
+func ReplayRequest(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	// target := r.FormValue("target")
+
+	var req models.WebhookRequest
+	if err := db.DB.First(&req, " id = ?", id).Error; err != nil {
+		http.Error(w, "request not found", http.StatusNotFound)
+	}
+
+	// prepare req
+	target, err := url.JoinPath(os.Getenv("DOMAIN"), "webhooks", req.WebhookID)
+	if err != nil {
+		http.Error(w, "error creating request url", http.StatusInternalServerError)
+		return
+	}
+
+	// query params
+	parsedUrl, err := url.Parse(target)
+	for k, v := range req.Query {
+		parsedUrl.Query().Set(k, v.(string))
+	}
+	parsedUrl.RawQuery = parsedUrl.Query().Encode()
+
+	reader := bytes.NewBufferString(req.Body)
+	outReq, err := http.NewRequest(req.Method, parsedUrl.String(), reader)
+	if err != nil {
+		http.Error(w, "error creating request url", http.StatusInternalServerError)
+		return
+	}
+
+	// add headers
+	for k, v := range req.Headers {
+		outReq.Header.Set(k, v.(string))
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(outReq)
+	if err != nil {
+		http.Error(w, "error sending request "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	http.Redirect(w, r, "/requests/"+req.ID, http.StatusSeeOther)
+
 }

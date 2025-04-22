@@ -134,14 +134,24 @@ $csrfField := .CSRFField }}
           {{ .ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
         </span>
       </div>
-      <form method="POST" action="/requests/{{ .ID }}/delete">
-        {{ $csrfField }}
-        <button
-          class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
-        >
-          Delete
-        </button>
-      </form>
+      <div class="flex gap-2">
+        <form method="POST" action="/requests/{{ .ID }}/replay">
+          {{ $csrfField }}
+          <button
+            class="ml-2 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Replay
+          </button>
+        </form>
+        <form method="POST" action="/requests/{{ .ID }}/delete">
+          {{ $csrfField }}
+          <button
+            class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </form>
+      </div>
     </div>
 
     <!-- Headers Table -->
