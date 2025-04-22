@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"github.com/gorilla/csrf"
 	"gorm.io/gorm"
+	"html/template"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
@@ -13,6 +15,16 @@ import (
 	"webhook-tester/internal/db"
 	"webhook-tester/internal/models"
 )
+
+type HomePageData struct {
+	CSRFField     template.HTML
+	User          models.User
+	Webhooks      []models.Webhook
+	Webhook       models.Webhook
+	RequestsCount uint
+	Domain        string
+	Year          int
+}
 
 var sessionIdName = "_webhook_tester_guest_session_id"
 
@@ -107,14 +119,8 @@ func Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// RenderHtml the home page
-	data := struct {
-		User          models.User
-		Webhooks      []models.Webhook
-		Webhook       models.Webhook
-		RequestsCount uint
-		Domain        string
-		Year          int
-	}{
+	data := HomePageData{
+		CSRFField:     csrf.TemplateField(r),
 		User:          sessions.GetLoggedInUser(r),
 		Webhooks:      webhooks,
 		Webhook:       activeWebhook,
@@ -123,5 +129,5 @@ func Home(w http.ResponseWriter, r *http.Request) {
 		Year:          time.Now().Year(),
 	}
 
-	utils.RenderHtml(w, "home", data)
+	utils.RenderHtml(w, r, "home", data)
 }

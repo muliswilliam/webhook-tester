@@ -2,12 +2,29 @@ package web
 
 import (
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/csrf"
 	"net/http"
+	"os"
+	"strings"
 	"webhook-tester/internal/web/handlers"
 )
 
 func NewRouter() http.Handler {
 	r := chi.NewRouter()
+
+	// CSRF Setup
+	csrfKey := []byte(os.Getenv("AUTH_SECRET"))
+	isProd := strings.Contains(os.Getenv("ENV"), "prod")
+	csrfMiddleware := csrf.Protect(
+		csrfKey,
+		csrf.Secure(isProd),
+		csrf.Path("/"),
+		csrf.TrustedOrigins([]string{"localhost:3000"}),
+		csrf.ErrorHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "CSRF failure: "+csrf.FailureReason(r).Error(), http.StatusForbidden)
+		})))
+
+	r.Use(csrfMiddleware)
 
 	r.Get("/", handlers.Home)
 
@@ -21,10 +38,10 @@ func NewRouter() http.Handler {
 	r.Post("/delete-webhook/{id}", handlers.DeleteWebhook)
 	r.Post("/update-webhook/{id}", handlers.UpdateWebhook)
 
-	r.Get("/register", handlers.Register)
-	r.Post("/register", handlers.Register)
-	r.Get("/login", handlers.Login)
-	r.Post("/login", handlers.Login)
+	r.Get("/register", handlers.RegisterGet)
+	r.Post("/register", handlers.RegisterPost)
+	r.Get("/login", handlers.LoginGet)
+	r.Post("/login", handlers.LoginPost)
 	r.Get("/logout", handlers.Logout)
 
 	return r

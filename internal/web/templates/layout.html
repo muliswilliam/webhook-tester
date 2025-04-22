@@ -159,6 +159,7 @@
         <h2 class="text-lg font-semibold text-gray-800 mb-4">Create Webhook</h2>
 
         <form method="POST" action="/create-webhook" class="space-y-4 text-sm">
+          {{ .CSRFField }}
           <div>
             <label for="title" class="block font-medium mb-1">Title</label>
             <input

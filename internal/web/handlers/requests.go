@@ -50,7 +50,7 @@ func GetRequest(w http.ResponseWriter, r *http.Request) {
 		Year:     time.Now().Year(),
 	}
 
-	utils.RenderHtml(w, "request", data)
+	utils.RenderHtml(w, r, "request", data)
 }
 
 func DeleteRequest(w http.ResponseWriter, r *http.Request) {

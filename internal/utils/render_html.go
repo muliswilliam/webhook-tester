@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 )
 
-func RenderHtml(w http.ResponseWriter, tmplName string, data interface{}) {
+func RenderHtml(w http.ResponseWriter, r *http.Request, tmplName string, data interface{}) {
 	tmplRoot := filepath.Join("internal", "web", "templates")
 	tmplPath := filepath.Join(tmplRoot, tmplName) + ".html"
 	templates := template.Must(template.ParseFiles(filepath.Join(tmplRoot, "base.html"), filepath.Join(tmplRoot, "layout.html"), tmplPath))

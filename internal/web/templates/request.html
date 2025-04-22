@@ -9,10 +9,10 @@
 <div class="flex items-center justify-between mb-4">
   <div class="flex items-center space-x-2">
     <span class="bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded"
-    >{{ .Request.Method }}</span
+      >{{ .Request.Method }}</span
     >
     <span class="text-gray-700 font-mono text-sm break-all"
-    >{{ .Request.ID }}</span
+      >{{ .Request.ID }}</span
     >
   </div>
 </div>
@@ -22,14 +22,14 @@
 <div class="overflow-x-auto mb-6">
   <table class="w-full text-sm text-left">
     <tbody>
-    {{ range $key, $val := .Request.Headers }}
-    <tr class="border-t">
-      <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
-        {{ $key }}
-      </td>
-      <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-    </tr>
-    {{ end }}
+      {{ range $key, $val := .Request.Headers }}
+      <tr class="border-t">
+        <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+          {{ $key }}
+        </td>
+        <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+      </tr>
+      {{ end }}
     </tbody>
   </table>
 </div>
@@ -40,14 +40,14 @@
 <div class="overflow-x-auto mb-6">
   <table class="w-full text-sm text-left">
     <tbody>
-    {{ range $key, $val := .Request.Query }}
-    <tr class="border-t">
-      <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
-        {{ $key }}
-      </td>
-      <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-    </tr>
-    {{ end }}
+      {{ range $key, $val := .Request.Query }}
+      <tr class="border-t">
+        <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+          {{ $key }}
+        </td>
+        <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+      </tr>
+      {{ end }}
     </tbody>
   </table>
 </div>
@@ -61,7 +61,7 @@
   {{ .Request.Body }}
   <div class="absolute bottom-2 right-2 text-xs flex gap-4 text-gray-500">
     <label class="inline-flex items-center space-x-1">
-      <input type="checkbox" disabled checked/>
+      <input type="checkbox" disabled checked />
       <span>Format JSON</span>
     </label>
     <button class="hover:underline text-blue-600">Copy</button>

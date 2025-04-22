@@ -13,7 +13,10 @@ require (
 	gorm.io/gorm v1.25.12
 )
 
-require github.com/jinzhu/gorm v1.9.16 // indirect
+require (
+	github.com/gorilla/csrf v1.7.3 // indirect
+	github.com/jinzhu/gorm v1.9.16 // indirect
+)
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect

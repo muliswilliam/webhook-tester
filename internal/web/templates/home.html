@@ -1,20 +1,24 @@
-{{ define "title" }}Home - Webhook Tester {{ end }} {{ define "content" }}
+{{ define "title" }}Home - Webhook Tester {{ end }} {{ define "content" }} {{
+$csrfField := .CSRFField }}
+
 <div class="max-w-8xl w-full mx-auto" x-data="{ showEditModal : false }">
   <!-- Alert -->
   {{ if not .User.ID }}
-  {{ if .Webhook.ID }}
   <div
     class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded mb-6"
   >
     <p>
       <strong>Note:</strong> Incoming webhook data will be stored temporarily.
       <a href="/register" class="underline text-blue-600"
-      >Create a free account</a
+        >Create a free account</a
       >
       to retain request logs and enable advanced features like replay.
     </p>
   </div>
-  {{ else }}
+  {{ end }}
+
+  <!-- Webhook URL Box -->
+  {{ if .Webhook.ID }}
 
   <!-- Webhook Actions -->
   <div class="flex items-center justify-between mb-6">
@@ -31,6 +35,7 @@
 
       <!-- Delete All Requests -->
       <form method="POST" action="/delete-requests/{{ .Webhook.ID }}">
+        {{ .CSRFField }}
         <button
           type="submit"
           class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
@@ -41,6 +46,7 @@
 
       <!-- Delete Webhook -->
       <form method="POST" action="/delete-webhook/{{ .Webhook.ID }}">
+        {{ .CSRFField }}
         <button
           type="submit"
           class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
@@ -50,12 +56,7 @@
       </form>
     </div>
   </div>
-  {{ end }}
-  {{ end }}
 
-
-  <!-- Webhook URL Box -->
-  {{ if .Webhook.ID }}
   <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-6">
     <h2 class="text-md font-medium text-gray-700 mb-2">Your Webhook URL</h2>
 
@@ -113,19 +114,19 @@
   -d <span class="text-purple-300">'{"event":"test","status":"success"}'</span>
   </pre>
   </div>
-  {{ end }}
-  
-  {{ if .Webhook.Requests }}
-  <h2 class="text-xl font-medium text-gray-900 mb-2">{{ .RequestsCount }} Requests Received</h2>
-  {{ end }}
-  {{ range .Webhook.Requests }}
+  {{ end }} {{ if .Webhook.Requests }}
+  <h2 class="text-xl font-medium text-gray-900 mb-2">
+    {{ .RequestsCount }} Requests Received
+  </h2>
+  {{ end }} {{ range .Webhook.Requests }}
   <div class="my-6 bg-white rounded-lg p-2">
     <!-- Method + Request ID -->
     <div class="flex items-center justify-between mb-4">
       <div class="flex items-center space-x-2">
-    <span class="bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded"
-    >{{ .Method }}</span
-    >
+        <span
+          class="bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded"
+          >{{ .Method }}</span
+        >
         <span class="text-gray-700 font-mono text-sm break-all">
           {{ .ID }}
         </span>
@@ -134,6 +135,7 @@
         </span>
       </div>
       <form method="POST" action="/requests/{{ .ID }}/delete">
+        {{ $csrfField }}
         <button
           class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
         >
@@ -147,14 +149,14 @@
     <div class="overflow-x-auto mb-6">
       <table class="w-full text-sm text-left">
         <tbody>
-        {{ range $key, $val := .Headers }}
-        <tr class="border-t">
-          <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
-            {{ $key }}
-          </td>
-          <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-        </tr>
-        {{ end }}
+          {{ range $key, $val := .Headers }}
+          <tr class="border-t">
+            <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+              {{ $key }}
+            </td>
+            <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+          </tr>
+          {{ end }}
         </tbody>
       </table>
     </div>
@@ -165,14 +167,14 @@
     <div class="overflow-x-auto mb-6">
       <table class="w-full text-sm text-left">
         <tbody>
-        {{ range $key, $val := .Query }}
-        <tr class="border-t">
-          <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
-            {{ $key }}
-          </td>
-          <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-        </tr>
-        {{ end }}
+          {{ range $key, $val := .Query }}
+          <tr class="border-t">
+            <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+              {{ $key }}
+            </td>
+            <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+          </tr>
+          {{ end }}
         </tbody>
       </table>
     </div>
@@ -186,14 +188,14 @@
       {{ .Body }}
       <div class="absolute bottom-2 right-2 text-xs flex gap-4 text-gray-500">
         <label class="inline-flex items-center space-x-1">
-          <input type="checkbox" disabled checked/>
+          <input type="checkbox" disabled checked />
           <span>Format JSON</span>
         </label>
         <button class="hover:underline text-blue-600">Copy</button>
       </div>
     </div>
 
-    <hr class="my-6 border-t-2 border-gray-400"/>
+    <hr class="my-6 border-t-2 border-gray-400" />
   </div>
 
   {{ else }}
@@ -256,7 +258,12 @@
       >
         <h2 class="text-lg font-semibold text-gray-800 mb-4">Update Webhook</h2>
 
-        <form method="POST" action="/update-webhook/{{ .Webhook.ID }}" class="space-y-4 text-sm">
+        <form
+          method="POST"
+          action="/update-webhook/{{ .Webhook.ID }}"
+          class="space-y-4 text-sm"
+        >
+          {{ .CSRFField }}
           <div>
             <label for="title" class="block font-medium mb-1">Title</label>
             <input
@@ -271,7 +278,9 @@
 
           <div class="flex gap-4">
             <div class="flex-1">
-              <label for="response_code" class="block font-medium mb-1">Response Code</label>
+              <label for="response_code" class="block font-medium mb-1"
+                >Response Code</label
+              >
               <input
                 id="response_code"
                 type="number"
@@ -282,7 +291,9 @@
               />
             </div>
             <div class="flex-1">
-              <label for="content_type" class="block font-medium mb-1">Content Type</label>
+              <label for="content_type" class="block font-medium mb-1"
+                >Content Type</label
+              >
               <select
                 id="content_type"
                 name="content_type"
@@ -297,7 +308,9 @@
           </div>
 
           <div>
-            <label for="response_delay" class="block font-medium mb-1">Delay (ms)</label>
+            <label for="response_delay" class="block font-medium mb-1"
+              >Delay (ms)</label
+            >
             <input
               id="response_delay"
               type="number"
@@ -314,7 +327,9 @@
               name="payload"
               rows="4"
               class="w-full border rounded px-3 py-2 font-mono"
-            >{{ .Webhook.Payload }}</textarea>
+            >
+{{ .Webhook.Payload }}</textarea
+            >
           </div>
 
           <div class="flex items-center space-x-2">
@@ -323,7 +338,12 @@
               id="notify"
               name="notify_on_event"
               value="true"
-              {{ if .Webhook.NotifyOnEvent }}checked{{ end }}
+              {{
+              if
+              .Webhook.NotifyOnEvent
+              }}checked{{
+              end
+              }}
               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             <label for="notify" class="text-sm text-gray-700 font-medium">
@@ -351,7 +371,6 @@
     </div>
   </div>
   <!--  End edit webhook modal -->
-
 </div>
 
 {{ end }}

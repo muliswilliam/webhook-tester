@@ -10,11 +10,10 @@
   {{ end }}
 
   <form method="POST" action="/login" class="space-y-5">
+    {{ .CSRFField }}
     <!-- Username / Email -->
     <div>
-      <label for="email" class="block text-sm font-medium text-gray-700 mb-1"
-        >Email</label
-      >
+      <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
       <input
         type="email"
         name="email"
@@ -28,7 +27,7 @@
     <!-- Password -->
     <div>
       <label for="password" class="block text-sm font-medium text-gray-700 mb-1"
-        >Password</label
+      >Password</label
       >
       <input
         type="password"

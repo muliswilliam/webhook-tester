@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/gorilla/csrf"
 	"html/template"
 	"log"
 	"net/http"
@@ -13,19 +14,50 @@ import (
 	"webhook-tester/internal/web/sessions"
 )
 
-func Register(w http.ResponseWriter, r *http.Request) {
+type RegisterPageData struct {
+	CSRFField template.HTML
+	Error     string
+	FullName  string
+	Email     string
+	Password  string
+}
+
+type LoginPageData struct {
+	CSRFField template.HTML
+	Error     string
+}
+
+func parseTemplates(tmplPath string) *template.Template {
 	tmplRoot := filepath.Join("internal", "web", "templates")
-	tmplPath := filepath.Join(tmplRoot, "register.html")
-	templates := template.Must(template.ParseFiles(filepath.Join(tmplRoot, "base.html"), tmplPath))
+	templates := template.Must(
+		template.ParseFiles(
+			filepath.Join(tmplRoot, "base.html"),
+			filepath.Join(tmplRoot, tmplPath),
+		),
+	)
 
-	if r.Method == "GET" {
-		err := templates.Execute(w, nil)
-		if err != nil {
-			http.Error(w, "template error", http.StatusInternalServerError)
-		}
-		return
+	return templates
+}
+
+func handleTemplateErr(err error, w http.ResponseWriter) {
+	if err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
 	}
+}
 
+func RegisterGet(w http.ResponseWriter, r *http.Request) {
+	templates := parseTemplates("register.html")
+	data := RegisterPageData{
+		CSRFField: csrf.TemplateField(r),
+	}
+	err := templates.Execute(w, data)
+	if err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+	}
+}
+
+func RegisterPost(w http.ResponseWriter, r *http.Request) {
+	templates := parseTemplates("register.html")
 	err := r.ParseForm()
 	if err != nil {
 		http.Error(w, "parse error", http.StatusInternalServerError)
@@ -45,18 +77,15 @@ func Register(w http.ResponseWriter, r *http.Request) {
 
 	err = utils.ValidatePassword(password, rules)
 	if err != nil {
-		templates.Execute(w, struct {
-			Error    string
-			FullName string
-			Email    string
-			Password string
-		}{
-			Error:    err.Error(),
-			FullName: fullName,
-			Email:    email,
-			Password: password,
-		})
-
+		data := RegisterPageData{
+			Error:     err.Error(),
+			FullName:  fullName,
+			Email:     email,
+			Password:  password,
+			CSRFField: csrf.TemplateField(r),
+		}
+		err := templates.Execute(w, data)
+		handleTemplateErr(err, w)
 		return
 	}
 
@@ -75,12 +104,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 
 	if err := sqlstore.InsertUser(&u); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			_ = templates.Execute(w, struct {
-				Error    string
-				FullName string
-				Email    string
-				Password string
-			}{
+			_ = templates.Execute(w, RegisterPageData{
 				Error:    "Email already in use",
 				FullName: fullName,
 				Email:    email,
@@ -97,19 +121,18 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
-func Login(w http.ResponseWriter, r *http.Request) {
-	tmplRoot := filepath.Join("internal", "web", "templates")
-	tmplPath := filepath.Join(tmplRoot, "login.html")
-	templates := template.Must(template.ParseFiles(filepath.Join(tmplRoot, "base.html"), tmplPath))
-
-	if r.Method == "GET" {
-		err := templates.Execute(w, nil)
-		if err != nil {
-			http.Error(w, "template error", http.StatusInternalServerError)
-		}
-		return
+func LoginGet(w http.ResponseWriter, r *http.Request) {
+	templates := parseTemplates("login.html")
+	data := LoginPageData{
+		CSRFField: csrf.TemplateField(r),
 	}
+	err := templates.Execute(w, data)
+	handleTemplateErr(err, w)
+	return
+}
 
+func LoginPost(w http.ResponseWriter, r *http.Request) {
+	templates := parseTemplates("login.html")
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
@@ -117,27 +140,23 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	err := db.DB.First(&user, "email = ?", email).Error
 
 	if err != nil {
-		data := struct {
-			Error string
-		}{
-			Error: "Invalid username / password",
+		data := LoginPageData{
+			CSRFField: csrf.TemplateField(r),
+			Error:     "Invalid username / password",
 		}
 		err = templates.Execute(w, data)
-		if err != nil {
-			http.Error(w, "template error", http.StatusInternalServerError)
-		}
+		handleTemplateErr(err, w)
+		return
 	}
 
 	if !utils.CheckPasswordHash(password, user.Password) {
-		data := struct {
-			Error string
-		}{
-			Error: "Invalid username / password",
+		data := LoginPageData{
+			Error:     "Invalid username / password",
+			CSRFField: csrf.TemplateField(r),
 		}
 		err = templates.Execute(w, data)
-		if err != nil {
-			http.Error(w, "template error", http.StatusInternalServerError)
-		}
+		handleTemplateErr(err, w)
+		return
 	}
 
 	session, err := sessions.Store.Get(r, sessions.Name)
