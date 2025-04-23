@@ -48,3 +48,25 @@ func DeleteWebhook(db *gorm.DB, id string) error {
 	}
 	return err
 }
+
+func GetWebhookWithRequests(id string, db *gorm.DB) (models.Webhook, error) {
+	var webhook models.Webhook
+	err := db.Preload("Requests", func(db *gorm.DB) *gorm.DB {
+		return db.Order("received_at DESC")
+	}).First(&webhook, "id = ?", id).Error
+	return webhook, err
+}
+
+func GetUserWebhooks(userID interface{}, db *gorm.DB) []models.Webhook {
+	var webhooks []models.Webhook
+	err := db.Preload("Requests", func(db *gorm.DB) *gorm.DB {
+		return db.Order("received_at DESC").Limit(1000)
+	}).
+		Where("user_id = ?", userID).Find(&webhooks).
+		Order("created_at DESC").Error
+
+	if err != nil {
+		log.Printf("Error loading user webhooks: %v", err)
+	}
+	return webhooks
+}
