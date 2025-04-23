@@ -20,8 +20,7 @@ WORKDIR /app
 # Copy the built binary
 COPY --from=builder /app/webhook-tester .
 
-# Copy templates, static assets, migrations
-COPY internal/web/templates/ internal/web/templates
+# Copy static assets, migrations
 COPY static/ static/
 COPY db/migrations/ db/migrations/
 

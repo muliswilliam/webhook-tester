@@ -5,12 +5,12 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"webhook-tester/internal/models"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
+	"webhook-tester/internal/web/templates"
 )
 
 type RegisterPageData struct {
@@ -26,37 +26,27 @@ type LoginPageData struct {
 	Error     string
 }
 
-func parseTemplates(tmplPath string) *template.Template {
-	tmplRoot := filepath.Join("internal", "web", "templates")
-	templates := template.Must(
-		template.ParseFiles(
-			filepath.Join(tmplRoot, "base.html"),
-			filepath.Join(tmplRoot, tmplPath),
-		),
-	)
+func renderHtml(w http.ResponseWriter, r *http.Request, tmplName string, data interface{}) {
+	files := []string{
+		"base.html",
+		tmplName + ".html",
+	}
+	tmpl := template.Must(template.ParseFS(templates.Templates, files...))
 
-	return templates
-}
-
-func handleTemplateErr(err error, w http.ResponseWriter) {
-	if err != nil {
+	if err := tmpl.Execute(w, data); err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
 
 func (h *Handler) RegisterGet(w http.ResponseWriter, r *http.Request) {
-	templates := parseTemplates("register.html")
 	data := RegisterPageData{
 		CSRFField: csrf.TemplateField(r),
 	}
-	err := templates.Execute(w, data)
-	if err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
-	}
+
+	renderHtml(w, r, "register", data)
 }
 
 func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
-	templates := parseTemplates("register.html")
 	err := r.ParseForm()
 	if err != nil {
 		http.Error(w, "parse error", http.StatusInternalServerError)
@@ -83,8 +73,7 @@ func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 			Password:  password,
 			CSRFField: csrf.TemplateField(r),
 		}
-		err := templates.Execute(w, data)
-		handleTemplateErr(err, w)
+		renderHtml(w, r, "register", data)
 		return
 	}
 
@@ -103,7 +92,7 @@ func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 
 	if err := sqlstore.InsertUser(h.DB, &u); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			_ = templates.Execute(w, RegisterPageData{
+			renderHtml(w, r, "register", RegisterPageData{
 				Error:    "Email already in use",
 				FullName: fullName,
 				Email:    email,
@@ -121,17 +110,13 @@ func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) LoginGet(w http.ResponseWriter, r *http.Request) {
-	templates := parseTemplates("login.html")
 	data := LoginPageData{
 		CSRFField: csrf.TemplateField(r),
 	}
-	err := templates.Execute(w, data)
-	handleTemplateErr(err, w)
-	return
+	renderHtml(w, r, "login", data)
 }
 
 func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
-	templates := parseTemplates("login.html")
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
@@ -143,8 +128,7 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 			CSRFField: csrf.TemplateField(r),
 			Error:     "Invalid username / password",
 		}
-		err = templates.Execute(w, data)
-		handleTemplateErr(err, w)
+		renderHtml(w, r, "login", data)
 		return
 	}
 
@@ -153,8 +137,7 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 			Error:     "Invalid username / password",
 			CSRFField: csrf.TemplateField(r),
 		}
-		err = templates.Execute(w, data)
-		handleTemplateErr(err, w)
+		renderHtml(w, r, "login", data)
 		return
 	}
 

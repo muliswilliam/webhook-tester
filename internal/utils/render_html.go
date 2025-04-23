@@ -3,15 +3,18 @@ package utils
 import (
 	"html/template"
 	"net/http"
-	"path/filepath"
+	"webhook-tester/internal/web/templates"
 )
 
 func RenderHtml(w http.ResponseWriter, r *http.Request, tmplName string, data interface{}) {
-	tmplRoot := filepath.Join("internal", "web", "templates")
-	tmplPath := filepath.Join(tmplRoot, tmplName) + ".html"
-	templates := template.Must(template.ParseFiles(filepath.Join(tmplRoot, "base.html"), filepath.Join(tmplRoot, "layout.html"), tmplPath))
-	err := templates.Execute(w, data)
-	if err != nil {
+	files := []string{
+		"base.html",
+		"layout.html",
+		tmplName + ".html",
+	}
+	tmpl := template.Must(template.ParseFS(templates.Templates, files...))
+
+	if err := tmpl.Execute(w, data); err != nil {
 		http.Error(w, "template error", http.StatusInternalServerError)
 	}
 }
