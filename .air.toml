@@ -3,7 +3,7 @@ tmp_dir = "tmp"
 
 [build]
 # Build the main Go binary from cmd/server
-cmd = "go build -o ./tmp/server ./cmd/server"
+cmd = "go build -o ./tmp/server ./cmd"
 bin = "tmp/server"
 full_bin = ""
 delay = 1000

@@ -1,10 +1,11 @@
-package main
+package server
 
 import (
-	"fmt"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/wader/gormstore/v2"
 	"gorm.io/gorm"
-	"log"
 	"net/http"
 	"webhook-tester/config"
 	"webhook-tester/internal/api"
@@ -12,10 +13,6 @@ import (
 	"webhook-tester/internal/web"
 	"webhook-tester/internal/web/sessions"
 	"webhook-tester/internal/webhook"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
 )
 
 type Server struct {
@@ -64,15 +61,4 @@ func NewServer() *Server {
 	}
 
 	return srv
-}
-
-func main() {
-	srv := NewServer()
-	srv.MountHandlers()
-
-	fmt.Println("Server running on http://localhost:3000")
-	err := http.ListenAndServe(":3000", srv.Router)
-	if err != nil {
-		log.Fatal("Failed to start server", err)
-	}
 }
