@@ -6,7 +6,10 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/wader/gormstore/v2"
 	"gorm.io/gorm"
+	"log"
 	"net/http"
+	"os"
+	"time"
 	"webhook-tester/config"
 	"webhook-tester/internal/api"
 	"webhook-tester/internal/db"
@@ -19,6 +22,8 @@ type Server struct {
 	Router       *chi.Mux
 	DB           *gorm.DB
 	SessionStore *gormstore.Store
+	Logger       *log.Logger
+	Srv          *http.Server
 }
 
 func (srv *Server) MountHandlers() {
@@ -54,11 +59,18 @@ func NewServer() *Server {
 	dbConn := db.Connect()
 	db.AutoMigrate(dbConn)
 
-	srv := &Server{
-		Router:       chi.NewRouter(),
-		DB:           dbConn,
-		SessionStore: sessions.CreateSessionStore(dbConn),
+	r := chi.NewRouter()
+	srv := http.Server{
+		Addr:        ":3000",
+		Handler:     r,
+		IdleTimeout: time.Minute,
 	}
 
-	return srv
+	return &Server{
+		Router:       r,
+		DB:           dbConn,
+		SessionStore: sessions.CreateSessionStore(dbConn),
+		Logger:       log.New(os.Stdout, "[server] ", log.LstdFlags),
+		Srv:          &srv,
+	}
 }

@@ -10,7 +10,7 @@ RUN go mod download
 COPY . .
 
 # Build the Go binary
-RUN go build -o webhook-tester ./cmd/server/main.go
+RUN go build -o webhook-tester ./cmd/main.go
 
 # ───── Stage 2: Final ─────
 FROM golang:1.24
