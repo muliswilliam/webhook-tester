@@ -49,7 +49,7 @@ func (w *Worker) Run() {
 				}()
 
 				w.Action()
-				log.Printf("%s: Worker %s finished at ", t.String(), w.Label)
+				log.Printf("%s: worker finished", w.Label)
 			}()
 		}
 	}
