@@ -24,11 +24,12 @@ func (h *Handler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 	userID, err := sessions.Authorize(r, h.SessionStore)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
 	}
 
 	err = r.ParseForm()
 	if err != nil {
-		log.Printf("error parsing form: %v", err)
+		h.Logger.Printf("error parsing form: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -57,7 +58,7 @@ func (h *Handler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	err = h.DB.Create(&wh).Error
 	if err != nil {
-		log.Printf("Error creating webhook: %v", err)
+		h.Logger.Printf("Error creating webhook: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -81,7 +82,7 @@ func (h *Handler) DeleteWebhookRequests(w http.ResponseWriter, r *http.Request) 
 	err = h.DB.Delete(&models.WebhookRequest{}, "webhook_id=?", webhookID).Error
 
 	if err != nil {
-		log.Printf("Error deleting webhook: %v", err)
+		h.Logger.Printf("Error deleting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -104,7 +105,7 @@ func (h *Handler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	err = h.DB.Delete(&models.Webhook{}, "id=?", webhookID).Error
 
 	if err != nil {
-		log.Printf("Error deleting webhook: %v", err)
+		h.Logger.Printf("Error deleting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -126,7 +127,7 @@ func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	err = r.ParseForm()
 	if err != nil {
-		log.Printf("error parsing form: %v", err)
+		h.Logger.Printf("error parsing form: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -143,7 +144,7 @@ func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	wh, err := sqlstore.GetWebhook(h.DB, webhookID)
 	if err != nil {
-		log.Printf("Error getting webhook: %v", err)
+		h.Logger.Printf("Error getting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -155,7 +156,7 @@ func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	wh.Payload = &payload
 	err = h.DB.Save(&wh).Error
 	if err != nil {
-		log.Printf("Error updating webhook: %v", err)
+		h.Logger.Printf("Error updating webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
@@ -166,7 +167,7 @@ var mu sync.Mutex
 
 func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := strings.TrimPrefix(r.URL.Path, "/webhooks/")
-	log.Printf("Handling webhook request for %s", webhookID)
+	h.Logger.Printf("Handling webhook request for %s", webhookID)
 	var webhook models.Webhook
 	webhook, err := sqlstore.GetWebhook(h.DB, webhookID)
 
@@ -212,7 +213,7 @@ func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 
 	err = sqlstore.CreateWebhookRequest(h.DB, wr)
 	if err != nil {
-		log.Printf("error creating webhook request: %s", err)
+		h.Logger.Printf("error creating webhook request: %s", err)
 		utils.RenderJSON(w, http.StatusInternalServerError, nil)
 
 		return
@@ -244,7 +245,7 @@ func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(webhook.ResponseCode)
 	if webhook.Payload != nil {
 		if _, err := w.Write([]byte(*webhook.Payload)); err != nil {
-			log.Printf("error writing payload: %s", err)
+			h.Logger.Printf("error writing payload: %s", err)
 		}
 	}
 }
@@ -263,17 +264,6 @@ func (h *Handler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	webhookStreams[webhookID] = append(webhookStreams[webhookID], eventChan)
 	mu.Unlock()
 
-	// Send keep-alive every 15s to avoid timeouts
-	//go func() {
-	//	ticker := time.NewTicker(15 * time.Second)
-	//	defer ticker.Stop()
-	//	for range ticker.C {
-	//		fmt.Fprintf(w, ":\n\n")
-	//		flusher, _ := w.(http.Flusher)
-	//		flusher.Flush()
-	//	}
-	//}()
-
 	// Stream new events
 	flusher, _ := w.(http.Flusher)
 	for {
@@ -281,7 +271,7 @@ func (h *Handler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 		case msg := <-eventChan:
 			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
 			if err != nil {
-				log.Printf("error writing data: %s", err)
+				h.Logger.Printf("error writing data: %s", err)
 				return
 			}
 			flusher.Flush()

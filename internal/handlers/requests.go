@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,7 +24,7 @@ func (h *Handler) GetRequest(w http.ResponseWriter, r *http.Request) {
 	}).Find(&webhook, "id = ?", address).Error
 
 	if err != nil {
-		log.Printf("failed to get webhook request: %v", err)
+		h.Logger.Printf("failed to get webhook request: %v", err)
 		http.Error(w, "failed to get webhook request", http.StatusInternalServerError)
 	}
 

@@ -49,15 +49,15 @@ func (srv *Server) MountHandlers() {
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
-	r.Mount("/", web.Router(srv.DB, srv.SessionStore))
-	r.Mount("/api", api.Router(srv.DB, srv.SessionStore))
+	r.Mount("/", web.Router(srv.DB, srv.SessionStore, srv.Logger))
+	r.Mount("/api", api.Router(srv.DB, srv.SessionStore, srv.Logger))
 	r.Mount("/webhooks", webhook.Router(srv.DB, srv.SessionStore))
 }
 
 func NewServer() *Server {
 	config.LoadEnv()
-	dbConn := db.Connect()
-	db.AutoMigrate(dbConn)
+	conn := db.Connect()
+	db.AutoMigrate(conn)
 
 	r := chi.NewRouter()
 	srv := http.Server{
@@ -68,8 +68,8 @@ func NewServer() *Server {
 
 	return &Server{
 		Router:       r,
-		DB:           dbConn,
-		SessionStore: sessions.CreateSessionStore(dbConn),
+		DB:           conn,
+		SessionStore: sessions.CreateSessionStore(conn),
 		Logger:       log.New(os.Stdout, "[server] ", log.LstdFlags),
 		Srv:          &srv,
 	}

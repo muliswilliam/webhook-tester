@@ -3,6 +3,7 @@ package web
 import (
 	"github.com/wader/gormstore/v2"
 	"gorm.io/gorm"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -12,7 +13,7 @@ import (
 	"github.com/gorilla/csrf"
 )
 
-func Router(db *gorm.DB, sessionStore *gormstore.Store) http.Handler {
+func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	// CSRF Setup
@@ -35,6 +36,7 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store) http.Handler {
 	h := &handlers.Handler{
 		DB:           db,
 		SessionStore: sessionStore,
+		Logger:       logger,
 	}
 
 	r.Get("/", h.Home)

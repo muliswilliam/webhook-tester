@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"gorm.io/gorm"
-	"log"
 	"net/http"
 	"time"
 	"webhook-tester/internal/models"
@@ -79,7 +78,7 @@ func (h *Handler) GetWebhook(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		log.Printf("error getting webhook: %v", err)
+		h.Logger.Printf("error getting webhook: %v", err)
 
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
