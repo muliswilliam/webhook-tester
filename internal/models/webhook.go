@@ -1,6 +1,8 @@
 package models
 
-import "time"
+import (
+	"time"
+)
 
 type Webhook struct {
 	ID            string    `gorm:"primaryKey" json:"id"`

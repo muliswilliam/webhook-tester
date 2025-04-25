@@ -2,12 +2,26 @@ package main
 
 import (
 	"context"
+	"github.com/robfig/cron"
+	"gorm.io/gorm"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 	"webhook-tester/cmd/server"
+	sqlstore "webhook-tester/internal/store/sql"
 )
+
+func scheduleCleanup(db *gorm.DB, c *cron.Cron) {
+	// clean every day
+	err := c.AddFunc("0 0 * * *", func() {
+		sqlstore.CleanPublicWebhooks(db, 48*time.Hour) // 48 hours old
+	})
+	if err != nil {
+		log.Fatalf("error scheduling cleanup: %s", err)
+	}
+}
 
 func main() {
 	s := server.NewServer()
@@ -21,6 +35,12 @@ func main() {
 	}()
 
 	s.Logger.Printf("server listening on port 3000")
+
+	// cron setup
+	c := cron.New()
+	scheduleCleanup(s.DB, c)
+	c.Start()
+	defer c.Stop()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt)
