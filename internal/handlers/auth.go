@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"github.com/gorilla/csrf"
 	"html/template"
 	"log"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
 	"webhook-tester/internal/web/templates"
+
+	"github.com/gorilla/csrf"
 )
 
 type RegisterPageData struct {
@@ -27,6 +28,20 @@ type RegisterPageData struct {
 type LoginPageData struct {
 	CSRFField template.HTML
 	Error     string
+}
+
+type ForgotPasswordPageData struct {
+	CSRFField template.HTML
+	Error     string
+	Success   bool
+}
+
+type ResetPasswordPageData struct {
+	CSRFField       template.HTML
+	Error           string
+	Token           string
+	Password        string
+	ConfirmPassword string
 }
 
 func renderHtml(w http.ResponseWriter, r *http.Request, tmplName string, data interface{}) {
@@ -101,7 +116,6 @@ func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 				Email:    email,
 				Password: password,
 			})
-
 		} else {
 			log.Printf("Error inserting user: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -125,7 +139,6 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 
 	var user models.User
 	err := h.DB.First(&user, "email = ?", email).Error
-
 	if err != nil {
 		data := LoginPageData{
 			CSRFField: csrf.TemplateField(r),
@@ -178,8 +191,8 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ForgotPasswordGet(w http.ResponseWriter, r *http.Request) {
-	data := map[string]interface{}{
-		"CSRFField": csrf.TemplateField(r),
+	data := ForgotPasswordPageData{
+		CSRFField: csrf.TemplateField(r),
 	}
 	renderHtml(w, r, "forgot-password", data)
 }
@@ -187,9 +200,8 @@ func (h *Handler) ForgotPasswordGet(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ForgotPasswordPost(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	user := models.User{}
-	data := map[string]interface{}{
-		"CSRFField": csrf.TemplateField(r),
-		"Success":   true,
+	data := ForgotPasswordPageData{
+		CSRFField: csrf.TemplateField(r),
 	}
 	err := h.DB.First(&user, "email = ?", email).Error
 	if err != nil {
@@ -211,6 +223,7 @@ func (h *Handler) ForgotPasswordPost(w http.ResponseWriter, r *http.Request) {
 	// (For now) Log the reset link instead of sending email
 	resetLink := fmt.Sprintf("%s/reset-password?token=%s", os.Getenv("DOMAIN"), token)
 	log.Printf("Password reset link for %s: %s", user.Email, resetLink)
+	data.Success = true
 	renderHtml(w, r, "forgot-password", data)
 }
 
@@ -245,14 +258,15 @@ func (h *Handler) ResetPasswordPost(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	confirm := r.FormValue("confirm_password")
 
-	if password != confirm {
-		renderHtml(w, r, "reset-password", map[string]interface{}{
-			"Error":           "Passwords do not match",
-			"CSRFField":       csrf.TemplateField(r),
-			"Password":        password,
-			"ConfirmPassword": confirm,
-		})
+	data := ResetPasswordPageData{
+		CSRFField:       csrf.TemplateField(r),
+		Password:        password,
+		ConfirmPassword: confirm,
+	}
 
+	if password != confirm {
+		data.Error = "Passwords do not match"
+		renderHtml(w, r, "reset-password", data)
 		return
 	}
 
@@ -265,21 +279,15 @@ func (h *Handler) ResetPasswordPost(w http.ResponseWriter, r *http.Request) {
 
 	err := utils.ValidatePassword(password, rules)
 	if err != nil {
-		renderHtml(w, r, "reset-password", map[string]interface{}{
-			"Error":     err.Error(),
-			"CSRFField": csrf.TemplateField(r),
-			"Token":     token,
-		})
+		data.Error = err.Error()
+		renderHtml(w, r, "reset-password", data)
 	}
 
 	var user models.User
 	err = h.DB.First(&user, "reset_token = ?", token).Error
 	if err != nil || time.Now().After(user.ResetTokenExpiry) {
-		renderHtml(w, r, "reset-password", map[string]interface{}{
-			"Error":     "Invalid or expired reset link",
-			"CSRFField": csrf.TemplateField(r),
-			"Token":     token,
-		})
+		data.Error = "Invalid or expired reset link"
+		renderHtml(w, r, "reset-password", data)
 		return
 	}
 
