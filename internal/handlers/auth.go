@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"fmt"
 	"github.com/gorilla/csrf"
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 	"webhook-tester/internal/models"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
@@ -172,4 +175,120 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	session.Options.MaxAge = -1
 	_ = session.Save(r, w)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (h *Handler) ForgotPasswordGet(w http.ResponseWriter, r *http.Request) {
+	data := map[string]interface{}{
+		"CSRFField": csrf.TemplateField(r),
+	}
+	renderHtml(w, r, "forgot-password", data)
+}
+
+func (h *Handler) ForgotPasswordPost(w http.ResponseWriter, r *http.Request) {
+	email := r.FormValue("email")
+	user := models.User{}
+	data := map[string]interface{}{
+		"CSRFField": csrf.TemplateField(r),
+		"Success":   true,
+	}
+	err := h.DB.First(&user, "email = ?", email).Error
+	if err != nil {
+		h.Logger.Printf("Error getting user: %v", err)
+		renderHtml(w, r, "forgot-password", data)
+		return
+	}
+	token, err := utils.GenerateSecureToken(32) // 32 byte = 64 hex chars
+	if err != nil {
+		log.Printf("failed to generate reset token: %v", err)
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		return
+	}
+
+	user.ResetToken = token
+	user.ResetTokenExpiry = time.Now().Add(time.Hour * 24) // expires in 1 day
+	h.DB.Save(&user)
+
+	// (For now) Log the reset link instead of sending email
+	resetLink := fmt.Sprintf("%s/reset-password?token=%s", os.Getenv("DOMAIN"), token)
+	log.Printf("Password reset link for %s: %s", user.Email, resetLink)
+	renderHtml(w, r, "forgot-password", data)
+}
+
+func (h *Handler) ResetPasswordGet(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		renderHtml(w, r, "reset-password", map[string]interface{}{
+			"Error": "Missing token",
+		})
+		return
+	}
+
+	user := models.User{}
+	err := h.DB.First(&user, "reset_token = ?", token).Error
+	if err != nil || time.Now().After(user.ResetTokenExpiry) {
+		h.Logger.Printf("Error getting user: %v", err)
+		renderHtml(w, r, "reset-password", map[string]interface{}{
+			"Error":     "Invalid or expired reset link",
+			"CSRFField": csrf.TemplateField(r),
+		})
+		return
+	}
+
+	renderHtml(w, r, "reset-password", map[string]interface{}{
+		"CSRFField": csrf.TemplateField(r),
+		"Token":     token,
+	})
+}
+
+func (h *Handler) ResetPasswordPost(w http.ResponseWriter, r *http.Request) {
+	token := r.FormValue("token")
+	password := r.FormValue("password")
+	confirm := r.FormValue("confirm_password")
+
+	if password != confirm {
+		renderHtml(w, r, "reset-password", map[string]interface{}{
+			"Error":           "Passwords do not match",
+			"CSRFField":       csrf.TemplateField(r),
+			"Password":        password,
+			"ConfirmPassword": confirm,
+		})
+
+		return
+	}
+
+	rules := utils.PasswordRules{
+		MinLength:        8,
+		RequireLowercase: true,
+		RequireUppercase: true,
+		RequireNumber:    true,
+	}
+
+	err := utils.ValidatePassword(password, rules)
+	if err != nil {
+		renderHtml(w, r, "reset-password", map[string]interface{}{
+			"Error":     err.Error(),
+			"CSRFField": csrf.TemplateField(r),
+			"Token":     token,
+		})
+	}
+
+	var user models.User
+	err = h.DB.First(&user, "reset_token = ?", token).Error
+	if err != nil || time.Now().After(user.ResetTokenExpiry) {
+		renderHtml(w, r, "reset-password", map[string]interface{}{
+			"Error":     "Invalid or expired reset link",
+			"CSRFField": csrf.TemplateField(r),
+			"Token":     token,
+		})
+		return
+	}
+
+	// Update password
+	hashedPassword, _ := utils.HashPassword(password)
+	user.Password = hashedPassword
+	user.ResetToken = ""
+	user.ResetTokenExpiry = time.Time{}
+
+	h.DB.Save(&user)
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }

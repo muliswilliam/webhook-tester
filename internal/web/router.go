@@ -57,6 +57,10 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 	r.Get("/login", h.LoginGet)
 	r.Post("/login", h.LoginPost)
 	r.Get("/logout", h.Logout)
+	r.Get("/forgot-password", h.ForgotPasswordGet)
+	r.Post("/forgot-password", h.ForgotPasswordPost)
+	r.Get("/reset-password", h.ResetPasswordGet)
+	r.Post("/reset-password", h.ResetPasswordPost)
 
 	return r
 }
