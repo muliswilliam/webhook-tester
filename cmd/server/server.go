@@ -51,7 +51,7 @@ func (srv *Server) MountHandlers() {
 
 	r.Mount("/", web.Router(srv.DB, srv.SessionStore, srv.Logger))
 	r.Mount("/api", api.Router(srv.DB, srv.SessionStore, srv.Logger))
-	r.Mount("/webhooks", webhook.Router(srv.DB, srv.SessionStore))
+	r.Mount("/webhooks", webhook.NewRouter(srv.DB, srv.SessionStore, srv.Logger))
 }
 
 func NewServer() *Server {

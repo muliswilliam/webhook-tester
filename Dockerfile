@@ -1,33 +1,27 @@
 # ───── Stage 1: Build ─────
-FROM golang:1.24 as builder
+FROM golang:1.24-alpine AS base
 
 WORKDIR /app
 
-# Copy go source
-COPY go.mod go.sum ./
-RUN go mod download
-
 COPY . .
 
+RUN go mod download
+
 # Build the Go binary
-RUN go build -o webhook-tester ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o webhook-tester ./cmd/main.go
 
 # ───── Stage 2: Final ─────
-FROM golang:1.24
+FROM scratch
 
 WORKDIR /app
 
 # Copy the built binary
-COPY --from=builder /app/webhook-tester .
+COPY --from=base /app/webhook-tester .
 
 # Copy static assets, migrations
 COPY static/ static/
 COPY db/migrations/ db/migrations/
 
-# If using a default .env file
-# COPY .env .
-
-# Expose port (adjust if needed)
 EXPOSE 3000
 
 # Command to run
