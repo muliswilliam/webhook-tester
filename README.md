@@ -11,20 +11,22 @@ payloads, and optionally replay those requests to other destinations.
 
 - 📩 Receive Webhooks at unique, session-based URLs
 - 🔍 Inspect Request Payloads (headers, body, method, query params)
-- 💾 In-Memory Logging of webhook events
+- 💾 Logging of webhook events
 - 🛠️ Custom Responses (set status code, headers, body, and delay)
 - 🔁 Replay Events to any external URL
-- 🧱 RESTful API-first Architecture (UI coming soon)
+- 🧱 RESTful API-first Architecture (Docs coming soon)
 - 🧪 Designed for testing, mocking, and debugging external integrations
 
 ⸻
 
 🏃‍♂️ Getting Started
 
+```
 git clone https://github.com/muliswilliam/webhook-tester
-cp .env.example .env
 cd webhook-tester
-go run cmd/server/main.go
+cp .env.example .env
+go run cmd/main.go
+```
 
 The server runs on http://localhost:3000
 
@@ -38,10 +40,7 @@ openssl rand -base64 32
 ⸻
 
 📌 Roadmap
-• SQLite/PostgreSQL support for persistence
-• Authentication and API keys
-• Replay history with status tracking
-• Web UI for viewing and managing sessions
-• Deployable Docker image
 
-⸻
+- API Authentication using API keys
+- API Documentation
+- Deployable Docker image
