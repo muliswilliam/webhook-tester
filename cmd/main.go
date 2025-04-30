@@ -23,6 +23,17 @@ func scheduleCleanup(db *gorm.DB, c *cron.Cron) {
 	}
 }
 
+// @title Webhook Tester API
+// @version 1.0
+// @description REST API to interact with webhooks and webhook requests
+
+// @contact.name William Muli
+// @contact.url
+// @contact.email william@srninety.one
+// @BasePath    /api
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name X-API-Key
 func main() {
 	s := server.NewServer()
 	s.MountHandlers()

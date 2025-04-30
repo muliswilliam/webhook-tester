@@ -4,6 +4,7 @@ import (
 	"time"
 )
 
+// swagger:model [Webhook]
 type Webhook struct {
 	ID            string    `gorm:"primaryKey" json:"id"`
 	Title         string    `json:"title"`

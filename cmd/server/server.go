@@ -4,6 +4,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	httpSwagger "github.com/swaggo/http-swagger"
 	"github.com/wader/gormstore/v2"
 	"gorm.io/gorm"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"time"
 	"webhook-tester/config"
+	_ "webhook-tester/docs"
 	"webhook-tester/internal/api"
 	"webhook-tester/internal/db"
 	"webhook-tester/internal/web"
@@ -52,6 +54,12 @@ func (srv *Server) MountHandlers() {
 	r.Mount("/", web.Router(srv.DB, srv.SessionStore, srv.Logger))
 	r.Mount("/api", api.Router(srv.DB, srv.SessionStore, srv.Logger))
 	r.Mount("/webhooks", webhook.NewRouter(srv.DB, srv.SessionStore, srv.Logger))
+
+	// API documentation
+	r.Get("/docs/*", httpSwagger.Handler(
+		httpSwagger.URL("http://localhost:3000/docs/doc.json"),
+	))
+
 }
 
 func NewServer() *Server {

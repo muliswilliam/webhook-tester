@@ -6,6 +6,7 @@ import (
 	"gorm.io/datatypes"
 )
 
+// swagger:model WebhookRequest
 type WebhookRequest struct {
 	ID         string            `gorm:"primaryKey" json:"id"`
 	WebhookID  string            `json:"webhook_id"`

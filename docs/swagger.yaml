@@ -1,0 +1,81 @@
+basePath: /api
+definitions:
+  CreateWebhookRequest:
+    properties:
+      content_type:
+        type: string
+      notify_on_event:
+        type: boolean
+      payload:
+        type: string
+      response_code:
+        type: integer
+      response_delay:
+        description: milliseconds
+        type: integer
+      title:
+        description: |-
+          Title of the webhook
+          required: true
+        type: string
+    type: object
+  CreateWebhookResponse:
+    properties:
+      content_type:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      notify_on_event:
+        type: boolean
+      payload:
+        type: string
+      response_code:
+        type: integer
+      response_delay:
+        description: milliseconds
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+info:
+  contact:
+    email: william@srninety.one
+    name: William Muli
+  description: REST API to interact with webhooks and webhook requests
+  title: Webhook Tester API
+  version: "1.0"
+paths:
+  /webhooks:
+    post:
+      description: Returns the details of the created webhook
+      parameters:
+      - description: Webhook body
+        in: body
+        name: webhook
+        required: true
+        schema:
+          $ref: '#/definitions/CreateWebhookRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/CreateWebhookResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Create a webhook
+      tags:
+      - Webhooks
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: X-API-Key
+    type: apiKey
+swagger: "2.0"

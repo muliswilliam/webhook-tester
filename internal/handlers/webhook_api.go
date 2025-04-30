@@ -6,6 +6,7 @@ import (
 	"gorm.io/gorm"
 	"net/http"
 	"time"
+	"webhook-tester/internal/middlewares"
 	"webhook-tester/internal/models"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
@@ -13,17 +14,46 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
-	// create webhook struct
-	var input struct {
-		Title         string `json:"title"`
-		ResponseCode  int    `json:"response_code"`
-		ResponseDelay uint   `json:"response_delay"` // milliseconds
-		ContentType   string `json:"content_type"`
-		Payload       string `json:"payload"`
-		NotifyOnEvent bool   `json:"notify_on_event"`
-	}
+// CreateWebhookRequest
+// swagger:request
+type CreateWebhookRequest struct {
+	// Title of the webhook
+	// required: true
+	Title         string `json:"title"`
+	ResponseCode  int    `json:"response_code"`
+	ResponseDelay uint   `json:"response_delay"` // milliseconds
+	ContentType   string `json:"content_type"`
+	Payload       string `json:"payload"`
+	NotifyOnEvent bool   `json:"notify_on_event"`
+} // @name CreateWebhookRequest
 
+// CreateWebhookResponse Webhook data
+// swagger:response CreateWebhookResponse
+type CreateWebhookResponse struct {
+	ID            string    `gorm:"primaryKey" json:"id"`
+	Title         string    `json:"title"`
+	ResponseCode  int       `json:"response_code"`
+	ResponseDelay uint      `json:"response_delay"` // milliseconds
+	ContentType   *string   `json:"content_type"`
+	Payload       *string   `json:"payload"`
+	NotifyOnEvent bool      `json:"notify_on_event"`
+	UserID        int       `json:"user_id"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at,omitempty"`
+} // @name CreateWebhookResponse
+
+// CreateWebhookApi Creates a webhook
+// @Summary    Create a webhook
+// @Description Returns the details of the created webhook
+// @Tags        Webhooks
+// @Produce     json
+// @Security     ApiKeyAuth
+// @Param        webhook body handlers.CreateWebhookRequest true "Webhook body"
+// @Success     200  {object}  handlers.CreateWebhookResponse
+// @Router      /webhooks [post]
+func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
+	user := middlewares.GetAuthenticatedUser(r)
+	input := CreateWebhookRequest{}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		utils.RenderJSON(w, http.StatusBadRequest, err.Error())
 		return
@@ -41,6 +71,7 @@ func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
 		ResponseDelay: input.ResponseDelay,
 		ContentType:   &input.ContentType,
 		Payload:       &input.Payload,
+		UserID:        int(user.ID),
 		CreatedAt:     time.Now().UTC(),
 		UpdatedAt:     time.Now().UTC(),
 		NotifyOnEvent: input.NotifyOnEvent,
@@ -56,7 +87,7 @@ func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
 	utils.RenderJSON(w, http.StatusCreated, webhook)
 }
 
-func (h *Handler) ListWebhooks(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) ListWebhooksApi(w http.ResponseWriter, _ *http.Request) {
 	webhooks, err := sqlstore.GetAllWebhooks(h.DB)
 	if err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
@@ -67,7 +98,7 @@ func (h *Handler) ListWebhooks(w http.ResponseWriter, _ *http.Request) {
 
 	utils.RenderJSON(w, http.StatusOK, webhooks)
 }
-func (h *Handler) GetWebhook(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) GetWebhookApi(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	webhook, err := sqlstore.GetWebhook(h.DB, webhookID)
 

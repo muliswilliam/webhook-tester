@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"webhook-tester/internal/handlers"
+	"webhook-tester/internal/middlewares"
 )
 
 func Router(db *gorm.DB, sessionStore *gormstore.Store, l *log.Logger) http.Handler {
@@ -19,14 +20,14 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, l *log.Logger) http.Hand
 	}
 
 	r.Route("/webhooks", func(r chi.Router) {
-		r.Get("/", h.ListWebhooks)
-		r.Post("/", h.CreateWebhook)
+		r.Use(middlewares.RequireAPIKey(db))
+		r.Get("/", h.ListWebhooksApi)
+		r.Post("/", h.CreateWebhookApi)
 
 		r.Route("/{id}", func(r chi.Router) {
-			r.Get("/", h.GetWebhook)
-			r.Get("/stream", h.StreamWebhookEvents)
-			r.Put("/", h.UpdateWebhook)
-			r.Delete("/", h.DeleteWebhook)
+			r.Get("/", h.GetWebhookApi)
+			r.Put("/", h.UpdateWebhookApi)
+			r.Delete("/", h.DeleteWebhookApi)
 		})
 	})
 

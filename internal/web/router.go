@@ -51,6 +51,7 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 	r.Post("/delete-requests/{id}", h.DeleteWebhookRequests)
 	r.Post("/delete-webhook/{id}", h.DeleteWebhook)
 	r.Post("/update-webhook/{id}", h.UpdateWebhook)
+	r.Get("/webhook-stream/{id}", h.StreamWebhookEvents)
 
 	r.Get("/register", h.RegisterGet)
 	r.Post("/register", h.RegisterPost)

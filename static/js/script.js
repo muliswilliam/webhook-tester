@@ -12,7 +12,7 @@ function copyCurl() {
 function sseRequestStream(webhookID) {
     return {
         connect() {
-            const source = new EventSource(`/api/webhooks/${webhookID}/stream`);
+            const source = new EventSource(`/webhook-stream/${webhookID}`);
             source.onmessage = e => {
                 const req = JSON.parse(e.data);
                 const wrapper = document.createElement("a");

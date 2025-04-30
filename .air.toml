@@ -8,7 +8,7 @@ bin = "tmp/server"
 full_bin = ""
 delay = 1000
 exclude_dir = ["tmp", "static", "node_modules", "dist"]
-include_ext = ["go", "tpl", "tmpl", "html"]
+include_ext = ["go", "tpl", "tmpl", "html", "json", "yaml"]
 exclude_ext = ["swp", "tmp"]
 log = "air.log"
 
