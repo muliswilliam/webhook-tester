@@ -8,28 +8,29 @@
   <nav class="space-x-4 text-sm text-gray-700">
     <a href="/" class="hover:text-blue-600">Home</a>
     <a href="/how-to" class="hover:text-blue-600">How To</a>
-    <a href="/docs/index.html" class="hover:text-blue-600">API Docs</a>
+    <a href="/docs" class="hover:text-blue-600">API Docs</a>
     {{ if .User.ID }}
     <span class="text-gray-500">👤 {{ .User.FullName }}</span>
     <a href="/logout" class="text-blue-600 hover:underline">Logout</a>
     {{ else }}
     <a href="/login" class="hover:text-blue-600">Login</a>
     <a href="/register" class="text-blue-600 font-medium hover:underline"
-    >Register</a
+      >Register</a
     >
     {{ end }}
   </nav>
 </header>
 
 <!-- Main Layout: Sidebar + Main Content -->
-<div x-data="{ showModal: false }" class="h-[calc(100vh-53px)] flex overflow-hidden">
+<div
+  x-data="{ showModal: false }"
+  class="h-[calc(100vh-53px)] flex overflow-hidden"
+>
   <!-- Sidebar -->
   <aside class="w-80 bg-white border-r flex flex-col">
     <!-- Sidebar Header -->
     <div class="flex justify-between px-6 pt-6 items-center">
-      <p class="text-xs text-gray-500 uppercase tracking-wide">
-        Webhooks
-      </p>
+      <p class="text-xs text-gray-500 uppercase tracking-wide">Webhooks</p>
 
       {{ if .User.ID }}
       <button
@@ -77,7 +78,9 @@
             class="flex flex-row gap-2 p-2 rounded border hover:bg-blue-50 hover:border-blue-200 cursor-pointer"
           >
             <div class="text-xs text-gray-600 font-medium">{{ .Method }}</div>
-            <div class="text-blue-600 font-mono text-xs break-all">{{ .ID }}</div>
+            <div class="text-blue-600 font-mono text-xs break-all">
+              {{ .ID }}
+            </div>
           </a>
           {{ else }}
           <p class="text-xs text-gray-400 italic pl-2">No requests yet.</p>
@@ -89,8 +92,12 @@
 
     <!-- Sidebar Footer -->
     <div class="p-6 text-sm space-y-2">
-      <a href="/feedback" class="block text-blue-600 hover:underline">⭐ Feedback</a>
-      <a href="/feature-request" class="block text-blue-600 hover:underline">🛠 Feature Request</a>
+      <a href="/feedback" class="block text-blue-600 hover:underline"
+        >⭐ Feedback</a
+      >
+      <a href="/feature-request" class="block text-blue-600 hover:underline"
+        >🛠 Feature Request</a
+      >
     </div>
   </aside>
 
@@ -106,7 +113,7 @@
           <ul class="space-y-1">
             <li>
               <a href="/about" class="hover:underline"
-              >What is Webhook Tester?</a
+                >What is Webhook Tester?</a
               >
             </li>
             <li>
@@ -173,7 +180,9 @@
 
           <div class="flex gap-4">
             <div class="flex-1">
-              <label for="response_code" class="block font-medium mb-1">Response Code</label>
+              <label for="response_code" class="block font-medium mb-1"
+                >Response Code</label
+              >
               <input
                 id="response_code"
                 type="number"
@@ -184,7 +193,9 @@
               />
             </div>
             <div class="flex-1">
-              <label for="content_type" class="block font-medium mb-1">Content Type</label>
+              <label for="content_type" class="block font-medium mb-1"
+                >Content Type</label
+              >
               <select
                 id="content_type"
                 name="content_type"
@@ -198,7 +209,9 @@
           </div>
 
           <div>
-            <label for="response_delay" class="block font-medium mb-1">Delay (ms)</label>
+            <label for="response_delay" class="block font-medium mb-1"
+              >Delay (ms)</label
+            >
             <input
               id="response_delay"
               type="number"
@@ -215,7 +228,9 @@
               name="payload"
               rows="4"
               class="w-full border rounded px-3 py-2 font-mono"
-            >{"message":"ok"}</textarea>
+            >
+{"message":"ok"}</textarea
+            >
           </div>
 
           <div class="flex items-center space-x-2">

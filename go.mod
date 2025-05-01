@@ -3,14 +3,13 @@ module webhook-tester
 go 1.24.1
 
 require (
+	github.com/MarceloPetrucio/go-scalar-api-reference v0.0.0-20240521013641-ce5d2efe0e06
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-chi/cors v1.2.1
 	github.com/gorilla/csrf v1.7.3
 	github.com/joho/godotenv v1.5.1
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/robfig/cron v1.2.0
-	github.com/swaggo/http-swagger v1.3.4
-	github.com/swaggo/http-swagger/example/go-chi v0.0.0-20240815064334-3a7ae3083475
 	github.com/swaggo/swag v1.16.4
 	github.com/unrolled/render v1.7.0
 	gorm.io/datatypes v1.2.5
@@ -33,8 +32,6 @@ require (
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/swaggo/files v1.0.1 // indirect
-	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/tools v0.32.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

@@ -2,18 +2,27 @@ package utils
 
 import (
 	"crypto/rand"
-	"crypto/sha1"
 	"encoding/hex"
-	"log"
+	"fmt"
+	"strings"
 )
 
-func GenerateApiKey() string {
-	bytes := make([]byte, 100)
-	if _, err := rand.Read(bytes); err != nil {
-		log.Printf("Failed to generate API Key: %v", err)
+// GenerateAPIKey returns an API key with the given prefix.
+// Example: "user_" + 64-char hex key → "user_xxxx..."
+func GenerateAPIKey(prefix string, length int) (string, error) {
+	if length < 16 {
+		return "", fmt.Errorf("API key length must be at least 16 bytes")
+	}
+	if strings.Contains(prefix, " ") {
+		return "", fmt.Errorf("API key prefix must not contain spaces")
 	}
 
-	sum := sha1.Sum(bytes[:])
-	hash := hex.EncodeToString(sum[:])
-	return hash
+	bytes := make([]byte, length)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate secure random bytes: %w", err)
+	}
+
+	key := hex.EncodeToString(bytes)
+	return fmt.Sprintf("%s%s", prefix, key), nil
 }

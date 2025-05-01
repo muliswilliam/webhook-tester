@@ -101,11 +101,17 @@ func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	key, err := utils.GenerateAPIKey("user_", 32)
+	if err != nil {
+		http.Error(w, "api key error", http.StatusInternalServerError)
+		return
+	}
+
 	u := models.User{
 		FullName: fullName,
 		Email:    email,
 		Password: passwordHash,
-		APIKey:   utils.GenerateApiKey(),
+		APIKey:   key,
 	}
 
 	if err := sqlstore.InsertUser(h.DB, &u); err != nil {

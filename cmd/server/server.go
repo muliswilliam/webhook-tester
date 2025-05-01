@@ -1,12 +1,14 @@
 package server
 
 import (
+	"fmt"
+
+	"github.com/MarceloPetrucio/go-scalar-api-reference"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	httpSwagger "github.com/swaggo/http-swagger"
 	"github.com/wader/gormstore/v2"
-	"gorm.io/gorm"
+
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +20,8 @@ import (
 	"webhook-tester/internal/web"
 	"webhook-tester/internal/web/sessions"
 	"webhook-tester/internal/webhook"
+
+	"gorm.io/gorm"
 )
 
 type Server struct {
@@ -56,10 +60,21 @@ func (srv *Server) MountHandlers() {
 	r.Mount("/webhooks", webhook.NewRouter(srv.DB, srv.SessionStore, srv.Logger))
 
 	// API documentation
-	r.Get("/docs/*", httpSwagger.Handler(
-		httpSwagger.URL("http://localhost:3000/docs/doc.json"),
-	))
+	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
+		htmlContent, err := scalar.ApiReferenceHTML(&scalar.Options{
+			SpecURL: "./docs/swagger.json",
+			CustomOptions: scalar.CustomOptions{
+				PageTitle: "Simple API",
+			},
+			DarkMode: true,
+		})
 
+		if err != nil {
+			fmt.Printf("%v", err)
+		}
+
+		fmt.Fprintln(w, htmlContent)
+	})
 }
 
 func NewServer() *Server {
