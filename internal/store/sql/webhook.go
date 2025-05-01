@@ -58,7 +58,7 @@ func GetWebhookWithRequests(id string, db *gorm.DB) (models.Webhook, error) {
 	return webhook, err
 }
 
-func GetUserWebhooks(userID interface{}, db *gorm.DB) []models.Webhook {
+func GetUserWebhooks(userID uint, db *gorm.DB) ([]models.Webhook, error) {
 	var webhooks []models.Webhook
 	err := db.Preload("Requests", func(db *gorm.DB) *gorm.DB {
 		return db.Order("received_at DESC").Limit(1000)
@@ -68,8 +68,9 @@ func GetUserWebhooks(userID interface{}, db *gorm.DB) []models.Webhook {
 
 	if err != nil {
 		log.Printf("Error loading user webhooks: %v", err)
+		return webhooks, err
 	}
-	return webhooks
+	return webhooks, nil
 }
 
 // CleanPublicWebhooks deletes anonymous (public) webhooks and their associated requests

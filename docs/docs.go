@@ -19,6 +19,32 @@ const docTemplate = `{
     "basePath": "{{.BasePath}}",
     "paths": {
         "/webhooks": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "List webhooks and associated request",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "List webhooks",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/Webhook"
+                            }
+                        }
+                    }
+                }
+            },
             "post": {
                 "security": [
                     {
@@ -48,7 +74,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/CreateWebhookResponse"
+                            "$ref": "#/definitions/Webhook"
                         }
                     }
                 }
@@ -81,7 +107,7 @@ const docTemplate = `{
                 }
             }
         },
-        "CreateWebhookResponse": {
+        "Webhook": {
             "type": "object",
             "properties": {
                 "content_type": {
@@ -98,6 +124,12 @@ const docTemplate = `{
                 },
                 "payload": {
                     "type": "string"
+                },
+                "requests": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/WebhookRequest"
+                    }
                 },
                 "response_code": {
                     "type": "integer"
@@ -116,6 +148,36 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        },
+        "WebhookRequest": {
+            "type": "object",
+            "properties": {
+                "body": {
+                    "type": "string"
+                },
+                "headers": {
+                    "$ref": "#/definitions/datatypes.JSONMap"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "query": {
+                    "$ref": "#/definitions/datatypes.JSONMap"
+                },
+                "received_at": {
+                    "type": "string"
+                },
+                "webhook_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "datatypes.JSONMap": {
+            "type": "object",
+            "additionalProperties": true
         }
     },
     "securityDefinitions": {

@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	"github.com/gorilla/csrf"
-	"gorm.io/gorm"
 	"html/template"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
+
+	"github.com/gorilla/csrf"
+	"gorm.io/gorm"
 
 	"log"
 	"net/http"
@@ -95,7 +96,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		webhooks = append(webhooks, webhook)
 	} else {
 		// Load user's other webhooks if logged in
-		webhooks = sqlstore.GetUserWebhooks(userID, h.DB)
+		webhooks, _ = sqlstore.GetUserWebhooks(userID, h.DB)
 	}
 
 	if address != "" {

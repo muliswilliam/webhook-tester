@@ -3,44 +3,18 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
-	"gorm.io/gorm"
 	"net/http"
 	"time"
+	"webhook-tester/internal/dtos"
 	"webhook-tester/internal/middlewares"
 	"webhook-tester/internal/models"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 
+	"gorm.io/gorm"
+
 	"github.com/go-chi/chi/v5"
 )
-
-// CreateWebhookRequest
-// swagger:request
-type CreateWebhookRequest struct {
-	// Title of the webhook
-	// required: true
-	Title         string `json:"title"`
-	ResponseCode  int    `json:"response_code"`
-	ResponseDelay uint   `json:"response_delay"` // milliseconds
-	ContentType   string `json:"content_type"`
-	Payload       string `json:"payload"`
-	NotifyOnEvent bool   `json:"notify_on_event"`
-} // @name CreateWebhookRequest
-
-// CreateWebhookResponse Webhook data
-// swagger:response CreateWebhookResponse
-type CreateWebhookResponse struct {
-	ID            string    `gorm:"primaryKey" json:"id"`
-	Title         string    `json:"title"`
-	ResponseCode  int       `json:"response_code"`
-	ResponseDelay uint      `json:"response_delay"` // milliseconds
-	ContentType   *string   `json:"content_type"`
-	Payload       *string   `json:"payload"`
-	NotifyOnEvent bool      `json:"notify_on_event"`
-	UserID        int       `json:"user_id"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at,omitempty"`
-} // @name CreateWebhookResponse
 
 // CreateWebhookApi Creates a webhook
 // @Summary    Create a webhook
@@ -48,12 +22,12 @@ type CreateWebhookResponse struct {
 // @Tags        Webhooks
 // @Produce     json
 // @Security     ApiKeyAuth
-// @Param        webhook body handlers.CreateWebhookRequest true "Webhook body"
-// @Success     200  {object}  handlers.CreateWebhookResponse
+// @Param        webhook body dtos.CreateWebhookRequest true "Webhook body"
+// @Success     200  {object}  dtos.Webhook
 // @Router      /webhooks [post]
 func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
 	user := middlewares.GetAuthenticatedUser(r)
-	input := CreateWebhookRequest{}
+	input := dtos.CreateWebhookRequest{}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		utils.RenderJSON(w, http.StatusBadRequest, err.Error())
 		return
@@ -83,12 +57,22 @@ func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	utils.RenderJSON(w, http.StatusCreated, webhook)
+	dto := dtos.NewWebhookDTO(&webhook)
+	dto.Requests = make([]models.WebhookRequest, 0)
+	utils.RenderJSON(w, http.StatusCreated, dto)
 }
 
-func (h *Handler) ListWebhooksApi(w http.ResponseWriter, _ *http.Request) {
-	webhooks, err := sqlstore.GetAllWebhooks(h.DB)
+// ListWebhooksApi Creates a webhook
+// @Summary    List webhooks
+// @Description List webhooks and associated request
+// @Tags        Webhooks
+// @Produce     json
+// @Security     ApiKeyAuth
+// @Success     200  {object} []dtos.Webhook
+// @Router      /webhooks [get]
+func (h *Handler) ListWebhooksApi(w http.ResponseWriter, r *http.Request) {
+	user := middlewares.GetAuthenticatedUser(r)
+	webhooks, err := sqlstore.GetUserWebhooks(user.ID, h.DB)
 	if err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
@@ -98,6 +82,7 @@ func (h *Handler) ListWebhooksApi(w http.ResponseWriter, _ *http.Request) {
 
 	utils.RenderJSON(w, http.StatusOK, webhooks)
 }
+
 func (h *Handler) GetWebhookApi(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	webhook, err := sqlstore.GetWebhook(h.DB, webhookID)

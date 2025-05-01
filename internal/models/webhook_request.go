@@ -15,4 +15,4 @@ type WebhookRequest struct {
 	Query      datatypes.JSONMap `json:"query"`
 	Body       string            `json:"body"`
 	ReceivedAt time.Time         `json:"received_at"`
-}
+} // @name WebhookRequest
