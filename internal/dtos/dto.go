@@ -20,6 +20,15 @@ type CreateWebhookRequest struct {
 	NotifyOnEvent bool   `json:"notify_on_event"`
 } // @name CreateWebhookRequest
 
+type UpdateWebhookRequest struct {
+	CreateWebhookRequest
+} // @name UpdateWebhookRequest
+
+// ErrorResponse represents an error payload
+type ErrorResponse struct {
+	Error string `json:"error" example:"Webhook not found"`
+} // @name ErrorResponse
+
 type WebhookRequest struct {
 	ID         string            `gorm:"primaryKey" json:"id"`
 	WebhookID  string            `json:"webhook_id"`
@@ -46,7 +55,7 @@ type Webhook struct {
 } // @name Webhook
 
 // Creates a new instance of Webhook DTO from models.Webhook
-func NewWebhookDTO(w *models.Webhook) Webhook {
+func NewWebhookDTO(w models.Webhook) Webhook {
 	dto := Webhook{
 		ID:            w.ID,
 		Title:         w.Title,

@@ -19,6 +19,31 @@ definitions:
           required: true
         type: string
     type: object
+  ErrorResponse:
+    properties:
+      error:
+        example: Webhook not found
+        type: string
+    type: object
+  UpdateWebhookRequest:
+    properties:
+      content_type:
+        type: string
+      notify_on_event:
+        type: boolean
+      payload:
+        type: string
+      response_code:
+        type: integer
+      response_delay:
+        description: milliseconds
+        type: integer
+      title:
+        description: |-
+          Title of the webhook
+          required: true
+        type: string
+    type: object
   Webhook:
     properties:
       content_type:
@@ -111,6 +136,81 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Create a webhook
+      tags:
+      - Webhooks
+  /webhooks/{id}:
+    delete:
+      description: Deletes a webhook
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Delete a webhook
+      tags:
+      - Webhooks
+    get:
+      description: Get a webhook by ID along with its requests
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/Webhook'
+            type: array
+      security:
+      - ApiKeyAuth: []
+      summary: Get webhook by ID
+      tags:
+      - Webhooks
+    put:
+      description: Updates a webhook
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated webhook
+        in: body
+        name: webhook
+        required: true
+        schema:
+          $ref: '#/definitions/UpdateWebhookRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/Webhook'
+            type: array
+      security:
+      - ApiKeyAuth: []
+      summary: Updates a webhook
       tags:
       - Webhooks
 securityDefinitions:

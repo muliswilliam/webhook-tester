@@ -1,6 +1,7 @@
 package sqlstore
 
 import (
+	"errors"
 	"log"
 	"time"
 	"webhook-tester/internal/models"
@@ -18,7 +19,16 @@ func InsertWebhook(db *gorm.DB, w models.Webhook) error {
 
 func GetWebhook(db *gorm.DB, id string) (models.Webhook, error) {
 	var w models.Webhook
-	err := db.First(&w, "id = ?", id).Error
+	err := db.First(&w, "id = ?").Error
+	if err != nil {
+		log.Printf("failed to get webhook: %v", err)
+	}
+	return w, err
+}
+
+func GetUserWebhook(db *gorm.DB, id string, userID uint) (models.Webhook, error) {
+	var w models.Webhook
+	err := db.First(&w, "id = ? AND user_id = ?", id, userID).Error
 	if err != nil {
 		log.Printf("failed to get webhook: %v", err)
 	}
@@ -42,12 +52,34 @@ func UpdateWebhook(db *gorm.DB, w models.Webhook) error {
 	return err
 }
 
-func DeleteWebhook(db *gorm.DB, id string) error {
-	err := db.Delete(&models.Webhook{}, "id = ?", id).Error
-	if err != nil {
-		log.Printf("failed to delete webhook: %v", err)
-	}
-	return err
+func DeleteUserWebhook(db *gorm.DB, id string, userID uint) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		// Check if webhook exists and belongs to user
+		var wh models.Webhook
+		err := tx.First(&wh, "id = ? AND user_id = ?", id, userID).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Printf("webhook not found or unauthorized: id=%s user_id=%d", id, userID)
+			} else {
+				log.Printf("error checking webhook ownership: %v", err)
+			}
+			return err
+		}
+
+		// Delete webhook requests
+		if err := tx.Delete(&models.WebhookRequest{}, "webhook_id = ?", id).Error; err != nil {
+			log.Printf("failed to delete webhook requests: %v", err)
+			return err
+		}
+
+		// Delete webhook
+		if err := tx.Delete(&models.Webhook{}, "id = ?", id).Error; err != nil {
+			log.Printf("failed to delete webhook: %v", err)
+			return err
+		}
+
+		return nil
+	})
 }
 
 func GetWebhookWithRequests(id string, db *gorm.DB) (models.Webhook, error) {
