@@ -5,7 +5,7 @@ SWAG_MAIN=cmd/main.go
 APP_NAME=webhook-tester
 DOCKER_COMPOSE=docker-compose
 
-.PHONY: docs
+.PHONY: help up down logs restart services docs
 
 docs:
 	@echo "🔄 Generating Swagger docs..."
@@ -49,9 +49,11 @@ services:
 
 # Example helper
 help:
-	@echo "Usage:"
-	@echo "  make up                  - Start all services"
-	@echo "  make down                - Stop all services"
-	@echo "  make restart SERVICE=app - Restart app service"
-	@echo "  make logs SERVICE=db     - Tail db logs"
-	@echo "  make sh SERVICE=app      - Open shell in service"
+	@echo "Usage: make [target] [SERVICE=service_name]"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  up               Build and start the app with Docker Compose"
+	@echo "  down             Stop and remove containers"
+	@echo "  logs             View logs (requires SERVICE=app or SERVICE=db)"
+	@echo "  restart          Restart a specific service (requires SERVICE=app or SERVICE=db)"
+	@echo "  services         List available service names"
