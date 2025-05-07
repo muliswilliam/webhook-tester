@@ -47,7 +47,7 @@ go run cmd/main.go
 
 Visit: http://localhost:3000
 
-⸻
+---
 
 ## 🐳 Running with Docker (Recommended)
 
@@ -89,8 +89,7 @@ Run the help command to see what you can do with `make`:
 make help
 ```
 
-
-⸻
+---
 
 📁 Project Structure
 
@@ -103,9 +102,7 @@ Makefile          # Dev & deployment automation
 Dockerfile        # Production build config
 docker-compose.yml
 
-
-
-⸻
+---
 
 📚 API Documentation
 
@@ -115,7 +112,7 @@ http://localhost:3000/docs
 
 API endpoints require a valid API key sent via X-API-Key header.
 
-⸻
+---
 
 📌 Roadmap
 - ✅ API Authentication with API keys
@@ -127,7 +124,7 @@ API endpoints require a valid API key sent via X-API-Key header.
 - ⏳ Export logs to JSON/CSV
 - ⏳ Team/organization mode for sharing webhooks
 
-⸻
+---
 
 🧠 Credits
 
