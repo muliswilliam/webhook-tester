@@ -28,48 +28,58 @@ payloads, and optionally replay those requests.
 git clone https://github.com/muliswilliam/webhook-tester
 cd webhook-tester
 cp .env.example .env
+```
 
-2. Generate AUTH_SECRET
+### 2. Generate AUTH_SECRET
 
 Auth secret must be 32 bytes. Generate one with:
 
+```bash
 openssl rand -base64 32
-
+```
 Paste it into your .env file.
 
-3. Run Locally
+### 3. Run Locally
 
+```bash
 go run cmd/main.go
+```
 
 Visit: http://localhost:3000
 
 ⸻
 
-🐳 Running with Docker (Recommended)
+## 🐳 Running with Docker (Recommended)
 
 1. Start Services
-
+```bash
 make up
+```
 
 This builds the Docker image and starts all services using docker-compose.
 
 2. View Logs for a Specific Service
-
+```bash
 make logs SERVICE=app
 make logs SERVICE=db
+```
 
 3. Restart a Specific Service
 
+```bash
 make restart SERVICE=app
 make restart SERVICE=db
+```
 
 4. Stop All Services
-
+```bash
 make down
+```
 
 5. List Available Services
-
+```bash
 make services
+```
 
 6. View Available Commands
 
@@ -77,7 +87,7 @@ Run the help command to see what you can do with `make`:
 
 ```bash
 make help
-
+```
 
 
 ⸻
