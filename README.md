@@ -118,14 +118,14 @@ API endpoints require a valid API key sent via X-API-Key header.
 ⸻
 
 📌 Roadmap
-	•	✅ API Authentication with API keys
-	•	✅ Swagger Documentation
-	•	✅ Docker + Compose for deployment
-	•	⏳ Email notifications on request
-	•	⏳ Rate limiting and abuse protection
-	•	⏳ Metrics and observability (LGTM stack)
-	•	⏳ Export logs to JSON/CSV
-	•	⏳ Team/organization mode for sharing webhooks
+- ✅ API Authentication with API keys
+- ✅ Swagger Documentation
+- ✅ Docker + Compose for deployment
+- ⏳ Email notifications on request
+- ⏳ Rate limiting and abuse protection
+- ⏳ Metrics and observability (LGTM stack)
+- ⏳ Export logs to JSON/CSV
+- ⏳ Team/organization mode for sharing webhooks
 
 ⸻
 
