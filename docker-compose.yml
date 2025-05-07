@@ -1,0 +1,30 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    environment:
+      - ENV=prod
+      - AUTH_SECRET=oqO+IHqktGEU/CRnCjSu/C5sUpEKn+YnTHcT31ujWOg=
+      - DOMAIN=http://localhost:3000
+      - DATABASE_URL=postgresql://webhook_user:webhook_pass@db/webhook_db
+    volumes:
+      - ./static:/app/static
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: webhook_db
+      POSTGRES_USER: webhook_user
+      POSTGRES_PASSWORD: webhook_pass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
