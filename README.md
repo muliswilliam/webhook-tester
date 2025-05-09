@@ -51,8 +51,9 @@ Visit: http://localhost:3000
 
 ## 🐳 Running with Docker (Recommended)
 
-1. Start Services
+1. Set environment variables & Start Services
 ```bash
+cp .env.example .env
 make up
 ```
 
