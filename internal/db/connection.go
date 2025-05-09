@@ -1,19 +1,33 @@
 package db
 
 import (
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"fmt"
 	"log"
 	"os"
 	"webhook-tester/internal/models"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func Connect() *gorm.DB {
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		log.Fatal("DATABASE_URL environment variable not set")
+	user := os.Getenv("POSTGRES_USER")
+	pass := os.Getenv("POSTGRES_PASSWORD")
+	name := os.Getenv("POSTGRES_DB")
+	host := os.Getenv("DB_HOST")
+	port := os.Getenv("DB_PORT")
+
+	if port == "" {
+		port = "5432"
 	}
-	db, err := gorm.Open(postgres.Open(url), &gorm.Config{})
+
+	if user == "" || name == "" || host == "" {
+		log.Fatal("Database credentials are not fully set in environment variables")
+	}
+
+	dsn := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", user, pass, host, port, name)
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}

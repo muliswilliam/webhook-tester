@@ -6,25 +6,35 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
-      - ENV=prod
-      - AUTH_SECRET=oqO+IHqktGEU/CRnCjSu/C5sUpEKn+YnTHcT31ujWOg=
-      - DOMAIN=http://localhost:3000
-      - DATABASE_URL=postgresql://webhook_user:webhook_pass@db/webhook_db
-    volumes:
-      - ./static:/app/static
+      ENV: ${ENV}
+      DOMAIN: ${DOMAIN}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      AUTH_SECRET: ${AUTH_SECRET}
     restart: unless-stopped
 
   db:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: webhook_db
-      POSTGRES_USER: webhook_user
-      POSTGRES_PASSWORD: webhook_pass
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${DB_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h ${DB_HOST} -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   pgdata:
