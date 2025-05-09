@@ -19,7 +19,7 @@ func InsertWebhook(db *gorm.DB, w models.Webhook) error {
 
 func GetWebhook(db *gorm.DB, id string) (models.Webhook, error) {
 	var w models.Webhook
-	err := db.First(&w, "id = ?").Error
+	err := db.First(&w, "id = ?", id).Error
 	if err != nil {
 		log.Printf("failed to get webhook: %v", err)
 	}
