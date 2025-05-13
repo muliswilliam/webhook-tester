@@ -90,7 +90,9 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		webhook, err = sqlstore.GetWebhookWithRequests(webhookID, h.DB)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
-			http.Error(w, "failed to get webhook", http.StatusInternalServerError)
+			cookie.MaxAge = -1
+			http.SetCookie(w, cookie)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 		webhooks = append(webhooks, webhook)
