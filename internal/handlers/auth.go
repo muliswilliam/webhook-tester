@@ -12,7 +12,6 @@ import (
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
-	"webhook-tester/internal/web/templates"
 
 	"github.com/gorilla/csrf"
 )
@@ -44,24 +43,12 @@ type ResetPasswordPageData struct {
 	ConfirmPassword string
 }
 
-func renderHtml(w http.ResponseWriter, r *http.Request, tmplName string, data interface{}) {
-	files := []string{
-		"base.html",
-		tmplName + ".html",
-	}
-	tmpl := template.Must(template.ParseFS(templates.Templates, files...))
-
-	if err := tmpl.Execute(w, data); err != nil {
-		http.Error(w, "template error", http.StatusInternalServerError)
-	}
-}
-
 func (h *Handler) RegisterGet(w http.ResponseWriter, r *http.Request) {
 	data := RegisterPageData{
 		CSRFField: csrf.TemplateField(r),
 	}
 
-	renderHtml(w, r, "register", data)
+	utils.RenderHtmlWithoutLayout(w, r, "register", data)
 }
 
 func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +78,7 @@ func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 			Password:  password,
 			CSRFField: csrf.TemplateField(r),
 		}
-		renderHtml(w, r, "register", data)
+		utils.RenderHtmlWithoutLayout(w, r, "register", data)
 		return
 	}
 
@@ -116,7 +103,7 @@ func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 
 	if err := sqlstore.InsertUser(h.DB, &u); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			renderHtml(w, r, "register", RegisterPageData{
+			utils.RenderHtmlWithoutLayout(w, r, "register", RegisterPageData{
 				Error:    "Email already in use",
 				FullName: fullName,
 				Email:    email,
@@ -136,7 +123,7 @@ func (h *Handler) LoginGet(w http.ResponseWriter, r *http.Request) {
 	data := LoginPageData{
 		CSRFField: csrf.TemplateField(r),
 	}
-	renderHtml(w, r, "login", data)
+	utils.RenderHtmlWithoutLayout(w, r, "login", data)
 }
 
 func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +137,7 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 			CSRFField: csrf.TemplateField(r),
 			Error:     "Invalid username / password",
 		}
-		renderHtml(w, r, "login", data)
+		utils.RenderHtmlWithoutLayout(w, r, "login", data)
 		return
 	}
 
@@ -159,11 +146,14 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 			Error:     "Invalid username / password",
 			CSRFField: csrf.TemplateField(r),
 		}
-		renderHtml(w, r, "login", data)
+		utils.RenderHtmlWithoutLayout(w, r, "login", data)
 		return
 	}
 
 	session, err := h.SessionStore.Get(r, sessions.Name)
+	if err != nil {
+		
+	}
 	session.Values["user_id"] = user.ID
 	session.Values["email"] = user.Email
 	session.Values["full_name"] = user.FullName
@@ -200,7 +190,7 @@ func (h *Handler) ForgotPasswordGet(w http.ResponseWriter, r *http.Request) {
 	data := ForgotPasswordPageData{
 		CSRFField: csrf.TemplateField(r),
 	}
-	renderHtml(w, r, "forgot-password", data)
+	utils.RenderHtmlWithoutLayout(w, r, "forgot-password", data)
 }
 
 func (h *Handler) ForgotPasswordPost(w http.ResponseWriter, r *http.Request) {
@@ -212,7 +202,7 @@ func (h *Handler) ForgotPasswordPost(w http.ResponseWriter, r *http.Request) {
 	err := h.DB.First(&user, "email = ?", email).Error
 	if err != nil {
 		h.Logger.Printf("Error getting user: %v", err)
-		renderHtml(w, r, "forgot-password", data)
+		utils.RenderHtmlWithoutLayout(w, r, "forgot-password", data)
 		return
 	}
 	token, err := utils.GenerateSecureToken(32) // 32 byte = 64 hex chars
@@ -230,13 +220,13 @@ func (h *Handler) ForgotPasswordPost(w http.ResponseWriter, r *http.Request) {
 	resetLink := fmt.Sprintf("%s/reset-password?token=%s", os.Getenv("DOMAIN"), token)
 	log.Printf("Password reset link for %s: %s", user.Email, resetLink)
 	data.Success = true
-	renderHtml(w, r, "forgot-password", data)
+	utils.RenderHtmlWithoutLayout(w, r, "forgot-password", data)
 }
 
 func (h *Handler) ResetPasswordGet(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		renderHtml(w, r, "reset-password", map[string]interface{}{
+		utils.RenderHtmlWithoutLayout(w, r, "reset-password", map[string]interface{}{
 			"Error": "Missing token",
 		})
 		return
@@ -246,14 +236,14 @@ func (h *Handler) ResetPasswordGet(w http.ResponseWriter, r *http.Request) {
 	err := h.DB.First(&user, "reset_token = ?", token).Error
 	if err != nil || time.Now().After(user.ResetTokenExpiry) {
 		h.Logger.Printf("Error getting user: %v", err)
-		renderHtml(w, r, "reset-password", map[string]interface{}{
+		utils.RenderHtmlWithoutLayout(w, r, "reset-password", map[string]interface{}{
 			"Error":     "Invalid or expired reset link",
 			"CSRFField": csrf.TemplateField(r),
 		})
 		return
 	}
 
-	renderHtml(w, r, "reset-password", map[string]interface{}{
+	utils.RenderHtmlWithoutLayout(w, r, "reset-password", map[string]interface{}{
 		"CSRFField": csrf.TemplateField(r),
 		"Token":     token,
 	})
@@ -272,7 +262,7 @@ func (h *Handler) ResetPasswordPost(w http.ResponseWriter, r *http.Request) {
 
 	if password != confirm {
 		data.Error = "Passwords do not match"
-		renderHtml(w, r, "reset-password", data)
+		utils.RenderHtmlWithoutLayout(w, r, "reset-password", data)
 		return
 	}
 
@@ -286,14 +276,14 @@ func (h *Handler) ResetPasswordPost(w http.ResponseWriter, r *http.Request) {
 	err := utils.ValidatePassword(password, rules)
 	if err != nil {
 		data.Error = err.Error()
-		renderHtml(w, r, "reset-password", data)
+		utils.RenderHtmlWithoutLayout(w, r, "reset-password", data)
 	}
 
 	var user models.User
 	err = h.DB.First(&user, "reset_token = ?", token).Error
 	if err != nil || time.Now().After(user.ResetTokenExpiry) {
 		data.Error = "Invalid or expired reset link"
-		renderHtml(w, r, "reset-password", data)
+		utils.RenderHtmlWithoutLayout(w, r, "reset-password", data)
 		return
 	}
 
