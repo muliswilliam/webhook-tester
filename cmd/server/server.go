@@ -8,6 +8,10 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
+	metricsMiddleware "github.com/slok/go-http-metrics/middleware"
+
+	"github.com/slok/go-http-metrics/middleware/std"
 	"github.com/wader/gormstore/v2"
 
 	"log"
@@ -51,6 +55,13 @@ func (srv *Server) MountHandlers() {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/health"))
+
+	mdlw := metricsMiddleware.New(metricsMiddleware.Config{
+		Recorder: metrics.NewRecorder(metrics.Config{}),
+	})
+
+	// Instrument all routes
+	r.Use(std.HandlerProvider("", mdlw))
 
 	// Static file server for /static/*
 	fs := http.FileServer(http.Dir("static"))
