@@ -140,13 +140,6 @@ func CleanPublicWebhooks(db *gorm.DB, d time.Duration) {
 			return err
 		}
 
-		// delete webhooks
-		err = tx.Where("id IN (?)", webhookIDs).Delete(&models.Webhook{}).Error
-		if err != nil {
-			log.Printf("Error deleting webhooks: %v", err)
-			return err
-		}
-
 		return nil
 	})
 
