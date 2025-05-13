@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/wader/gormstore/v2"
 
 	"log"
@@ -58,6 +59,9 @@ func (srv *Server) MountHandlers() {
 	r.Mount("/", web.Router(srv.DB, srv.SessionStore, srv.Logger))
 	r.Mount("/api", api.Router(srv.DB, srv.SessionStore, srv.Logger))
 	r.Mount("/webhooks", webhook.NewRouter(srv.DB, srv.SessionStore, srv.Logger))
+
+	// Metrics
+	r.Handle("/metrics", promhttp.Handler())
 
 	// API documentation
 	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
