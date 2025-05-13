@@ -40,7 +40,8 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 		Logger:       logger,
 	}
 
-	r.Get("/", h.Home)
+	r.Get("/", h.Landing)
+	r.Get("/app", h.Home)
 
 	r.Route("/requests", func(r chi.Router) {
 		r.Get("/{id}", h.GetRequest)

@@ -23,3 +23,12 @@ func (h *Handler) TermsAndConditions(w http.ResponseWriter, r *http.Request) {
 	}
 	utils.RenderHtmlWithoutLayout(w, r, "terms", data)
 }
+
+func (h *Handler) Landing(w http.ResponseWriter, r *http.Request) {
+	data := struct {
+		Year int
+	}{
+		Year: time.Now().Year(),
+	}
+	utils.RenderHtml(w, r, "landing", data)
+}
