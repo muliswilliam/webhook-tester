@@ -1,13 +1,14 @@
 package web
 
 import (
-	"github.com/wader/gormstore/v2"
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"os"
 	"strings"
 	"webhook-tester/internal/handlers"
+
+	"github.com/wader/gormstore/v2"
+	"gorm.io/gorm"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
@@ -62,6 +63,8 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 	r.Post("/forgot-password", h.ForgotPasswordPost)
 	r.Get("/reset-password", h.ResetPasswordGet)
 	r.Post("/reset-password", h.ResetPasswordPost)
+	r.Get("/privacy", h.PrivacyPolicy)
+	r.Get("/terms", h.TermsAndConditions)
 
 	return r
 }

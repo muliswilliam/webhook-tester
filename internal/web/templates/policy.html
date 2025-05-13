@@ -1,0 +1,126 @@
+{{ define "title" }}Privacy Policy - Webhook Tester{{ end }} {{ define "body"}}
+<div class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
+  <h1 class="text-3xl font-bold text-gray-900 mb-6">Privacy Policy</h1>
+
+  <p class="text-sm text-gray-500 mb-8">Effective Date: {{ .Year }}</p>
+
+  <div class="space-y-8 text-gray-700 text-sm leading-6">
+    <section>
+      <h2 class="text-xl font-semibold text-gray-800 mb-2">
+        1. Information We Collect
+      </h2>
+      <p>
+        <strong>Webhook Data (User-Provided):</strong> When you send requests to
+        a webhook URL, we collect:
+      </p>
+      <ul class="list-disc ml-6 mt-2">
+        <li>HTTP headers</li>
+        <li>Query parameters</li>
+        <li>Request body</li>
+        <li>Method, timestamp, and metadata</li>
+      </ul>
+      <p class="mt-2">
+        This data is collected solely for debugging, inspection, and replay
+        functionality.
+        <strong
+          >You should not send sensitive personal data or production
+          secrets.</strong
+        >
+      </p>
+
+      <p class="mt-4">
+        <strong>Account Information:</strong> If you register an account, we
+        collect:
+      </p>
+      <ul class="list-disc ml-6 mt-2">
+        <li>Email address</li>
+        <li>Hashed password</li>
+        <li>API key (system-generated)</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-gray-800 mb-2">
+        2. How We Use Your Information
+      </h2>
+      <ul class="list-disc ml-6">
+        <li>Display webhook requests in your dashboard</li>
+        <li>Allow replay and inspection</li>
+        <li>Enable API access and security</li>
+        <li>Provide support and product updates</li>
+      </ul>
+      <p class="mt-2">
+        <strong>We do not sell or share your data with third parties.</strong>
+      </p>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-gray-800 mb-2">
+        3. Data Retention
+      </h2>
+      <p>
+        Public (unauthenticated) webhook data is
+        <strong>automatically deleted</strong> after a short retention period
+        (e.g., 24–48 hours).<br />
+        Authenticated users’ data may be retained until deleted by the user or
+        the account is removed.
+      </p>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-gray-800 mb-2">
+        4. Cookies and Session Storage
+      </h2>
+      <p>We use cookies and sessions to:</p>
+      <ul class="list-disc ml-6 mt-2">
+        <li>Keep you logged in</li>
+        <li>Protect against CSRF</li>
+        <li>Improve user experience</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-gray-800 mb-2">5. Security</h2>
+      <p>
+        We implement reasonable safeguards to protect webhook and user data.
+        However, due to the nature of webhooks,
+        <strong>you should never send confidential or production data</strong>
+        through this service.
+      </p>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-gray-800 mb-2">6. Your Rights</h2>
+      <p>You may:</p>
+      <ul class="list-disc ml-6 mt-2">
+        <li>View and delete webhook logs associated with your account</li>
+        <li>Delete your account and associated data</li>
+        <li>Request support via our contact form</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-gray-800 mb-2">
+        7. Changes to This Policy
+      </h2>
+      <p>
+        We may update this policy from time to time. Updates will be posted on
+        this page with a revised effective date.
+      </p>
+    </section>
+
+    <section>
+      <h2 class="text-xl font-semibold text-gray-800 mb-2">8. Contact</h2>
+      <p>
+        For privacy-related concerns, email us at
+        <a
+          href="mailto:hello@srninety.one"
+          class="text-blue-600 hover:underline"
+        >
+          hello@srninety.one
+        </a>
+      </p>
+    </section>
+  </div>
+</div>
+{{ end }}
