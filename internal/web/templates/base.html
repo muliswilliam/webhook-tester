@@ -1,13 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <title>{{ block "title" . }}Webhook Tester{{ end }}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/alpinejs" defer></script>
-  <script src="/static/js/script.js"></script>
-</head>
-<body class="bg-gray-100 text-gray-900 flex flex-col min-h-screen">
-{{ block "body" . }} {{ end }}
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <title>{{ block "title" . }}Webhook Tester{{ end }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/alpinejs" defer></script>
+    <script src="/static/js/script.js"></script>
+    <script
+      defer
+      data-domain="testwebhook.xyz"
+      src="https://plausible.io/js/script.outbound-links.tagged-events.js"
+    ></script>
+    <script>
+      window.plausible =
+        window.plausible ||
+        function () {
+          (window.plausible.q = window.plausible.q || []).push(arguments);
+        };
+    </script>
+  </head>
+  <body class="bg-gray-100 text-gray-900 flex flex-col min-h-screen">
+    {{ block "body" . }} {{ end }}
+  </body>
 </html>
