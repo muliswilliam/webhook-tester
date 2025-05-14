@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/go-chi/chi/v5"
-	"gorm.io/datatypes"
 	"io"
 	"log"
 	"net/http"
@@ -18,6 +16,9 @@ import (
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
+
+	"github.com/go-chi/chi/v5"
+	"gorm.io/datatypes"
 )
 
 func (h *Handler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +63,8 @@ func (h *Handler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	h.Metrics.IncWebhooksCreated()
 
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
@@ -218,6 +221,7 @@ func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+	h.Metrics.IncWebhookRequest(webhookID)
 
 	// Delay response
 	if webhook.ResponseDelay > 0 {

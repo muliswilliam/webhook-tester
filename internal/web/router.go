@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"webhook-tester/internal/handlers"
+	"webhook-tester/internal/metrics"
 
 	"github.com/wader/gormstore/v2"
 	"gorm.io/gorm"
@@ -38,6 +39,7 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 		DB:           db,
 		SessionStore: sessionStore,
 		Logger:       logger,
+		Metrics:      &metrics.PrometheusRecorder{},
 	}
 
 	r.Get("/", h.Home)

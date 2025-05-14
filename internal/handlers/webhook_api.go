@@ -57,6 +57,7 @@ func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	h.Metrics.IncWebhooksCreated()
 	dto := dtos.NewWebhookDTO(webhook)
 	dto.Requests = make([]models.WebhookRequest, 0)
 	utils.RenderJSON(w, http.StatusCreated, dto)

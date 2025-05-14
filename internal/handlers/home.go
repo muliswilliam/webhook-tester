@@ -74,6 +74,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cookie = createDefaultWebhookCookie(defaultWhID, w)
+		h.Metrics.IncWebhooksCreated()
 	}
 	var webhooks []models.Webhook
 	var webhook models.Webhook

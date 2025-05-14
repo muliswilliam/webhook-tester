@@ -1,13 +1,15 @@
 package api
 
 import (
-	"github.com/go-chi/chi/v5"
-	"github.com/wader/gormstore/v2"
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"webhook-tester/internal/handlers"
+	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/middlewares"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/wader/gormstore/v2"
+	"gorm.io/gorm"
 )
 
 func Router(db *gorm.DB, sessionStore *gormstore.Store, l *log.Logger) http.Handler {
@@ -17,6 +19,7 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, l *log.Logger) http.Hand
 		SessionStore: sessionStore,
 		DB:           db,
 		Logger:       l,
+		Metrics: &metrics.PrometheusRecorder{},
 	}
 
 	r.Route("/webhooks", func(r chi.Router) {

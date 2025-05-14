@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 	"webhook-tester/cmd/server"
+	"webhook-tester/internal/metrics"
 	sqlstore "webhook-tester/internal/store/sql"
 
 	"github.com/robfig/cron"
@@ -38,6 +39,7 @@ func scheduleCleanup(db *gorm.DB, c *cron.Cron) {
 func main() {
 	s := server.NewServer()
 	s.MountHandlers()
+	metrics.Register()
 
 	go func() {
 		err := s.Srv.ListenAndServe()

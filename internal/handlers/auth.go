@@ -116,6 +116,8 @@ func (h *Handler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.Metrics.IncSignUp()
+
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
@@ -152,7 +154,7 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 
 	session, err := h.SessionStore.Get(r, sessions.Name)
 	if err != nil {
-		
+
 	}
 	session.Values["user_id"] = user.ID
 	session.Values["email"] = user.Email
@@ -170,6 +172,8 @@ func (h *Handler) LoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 	cookie.MaxAge = -1
 	http.SetCookie(w, cookie)
+
+	h.Metrics.IncLogin()
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
