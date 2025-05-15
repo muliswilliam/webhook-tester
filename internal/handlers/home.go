@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"html/template"
 	sqlstore "webhook-tester/internal/store/sql"
 	"webhook-tester/internal/utils"
@@ -17,13 +18,14 @@ import (
 )
 
 type HomePageData struct {
-	CSRFField     template.HTML
-	User          models.User
-	Webhooks      []models.Webhook
-	Webhook       models.Webhook
-	RequestsCount uint
-	Domain        string
-	Year          int
+	CSRFField       template.HTML
+	User            models.User
+	Webhooks        []models.Webhook
+	Webhook         models.Webhook
+	ResponseHeaders string
+	RequestsCount   uint
+	Domain          string
+	Year            int
 }
 
 var sessionIdName = "_webhook_tester_guest_session_id"
@@ -107,15 +109,26 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		activeWebhook = webhooks[0]
 	}
 
+	var headersJSON = ""
+	if activeWebhook.ResponseHeaders != nil {
+		b, err := json.Marshal(activeWebhook.ResponseHeaders)
+		if err != nil {
+			log.Printf("error marshalling response headers: %v", err)
+		} else {
+			headersJSON = string(b)
+		}
+	}
+
 	// RenderHtml the home page
 	data := HomePageData{
-		CSRFField:     csrf.TemplateField(r),
-		User:          sessions.GetLoggedInUser(r, h.SessionStore, h.DB),
-		Webhooks:      webhooks,
-		Webhook:       activeWebhook,
-		RequestsCount: uint(len(activeWebhook.Requests)),
-		Domain:        os.Getenv("DOMAIN"),
-		Year:          time.Now().Year(),
+		CSRFField:       csrf.TemplateField(r),
+		User:            sessions.GetLoggedInUser(r, h.SessionStore, h.DB),
+		Webhooks:        webhooks,
+		Webhook:         activeWebhook,
+		ResponseHeaders: headersJSON,
+		RequestsCount:   uint(len(activeWebhook.Requests)),
+		Domain:          os.Getenv("DOMAIN"),
+		Year:            time.Now().Year(),
 	}
 
 	utils.RenderHtml(w, r, "home", data)

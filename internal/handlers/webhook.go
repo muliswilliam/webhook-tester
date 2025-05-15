@@ -45,16 +45,26 @@ func (h *Handler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 	payload := r.FormValue("payload")
 	notify := r.FormValue("notify_on_event") == "true"
 
+	headersStr := r.FormValue("response_headers")
+	var headers datatypes.JSONMap
+	if headersStr != "" {
+		err := json.Unmarshal([]byte(headersStr), &headers)
+		if err != nil {
+			log.Printf("error parsing json %s", err)
+		}
+	}
+
 	webhookID := utils.GenerateID()
 	wh := models.Webhook{
-		ID:            webhookID,
-		UserID:        int(userID),
-		Title:         title,
-		ContentType:   &contentType,
-		ResponseCode:  responseCode,
-		ResponseDelay: uint(responseDelay),
-		Payload:       &payload,
-		NotifyOnEvent: notify,
+		ID:              webhookID,
+		UserID:          int(userID),
+		Title:           title,
+		ContentType:     &contentType,
+		ResponseCode:    responseCode,
+		ResponseDelay:   uint(responseDelay),
+		Payload:         &payload,
+		ResponseHeaders: headers,
+		NotifyOnEvent:   notify,
 	}
 
 	err = h.DB.Create(&wh).Error
@@ -145,6 +155,14 @@ func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	payload := r.FormValue("payload")
 	notify := r.FormValue("notify_on_event") == "true"
 
+	headersStr := r.FormValue("response_headers")
+	var headers datatypes.JSONMap
+	if headersStr != "" {
+		err := json.Unmarshal([]byte(headersStr), &headers)
+		if err != nil {
+			log.Printf("error parsing json %s", err)
+		}
+	}
 	wh, err := sqlstore.GetWebhook(h.DB, webhookID)
 	if err != nil {
 		h.Logger.Printf("Error getting webhook: %v", err)
@@ -157,6 +175,8 @@ func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	wh.ResponseDelay = uint(responseDelay)
 	wh.NotifyOnEvent = notify
 	wh.Payload = &payload
+	wh.ResponseHeaders = headers
+
 	err = h.DB.Save(&wh).Error
 	if err != nil {
 		h.Logger.Printf("Error updating webhook: %v", err)
@@ -239,6 +259,13 @@ func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	mu.Unlock()
 
+	// Set custom response headers if defined
+	if webhook.ResponseHeaders != nil {
+		for k, v := range webhook.ResponseHeaders {
+			w.Header().Set(k, fmt.Sprintf("%v", v))
+		}
+	}
+
 	// Return custom response
 	if webhook.ContentType != nil {
 		w.Header().Set("Content-Type", *webhook.ContentType)
@@ -246,6 +273,7 @@ func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 		// Default to application json if content type is not specified
 		w.Header().Set("Content-Type", "application/json")
 	}
+
 	w.WriteHeader(webhook.ResponseCode)
 	if webhook.Payload != nil {
 		if _, err := w.Write([]byte(*webhook.Payload)); err != nil {

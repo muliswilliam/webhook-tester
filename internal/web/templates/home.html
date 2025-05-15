@@ -1,5 +1,5 @@
 {{ define "title" }}Home - Webhook Tester {{ end }} {{ define "content" }} {{
-$csrfField := .CSRFField }}
+$csrfField := .CSRFField }} {{$activeWebhook := .Webhook}}
 
 <div class="max-w-8xl w-full mx-auto" x-data="{ showEditModal : false }">
   <!-- Alert -->
@@ -15,9 +15,7 @@ $csrfField := .CSRFField }}
       to retain request logs and enable advanced features like replay.
     </p>
   </div>
-  {{ end }} 
-  
-  {{ if .User.ID }}
+  {{ end }} {{ if .User.ID }}
   <div class="mb-6 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
     <h2 class="text-md font-medium text-gray-700 mb-2">Your API Key</h2>
     <div x-data="{ copied: false }" class="flex items-center space-x-2">
@@ -182,7 +180,7 @@ $csrfField := .CSRFField }}
       </div>
     </div>
 
-    <!-- Headers Table -->
+    <!-- Request Headers Table -->
     <h2 class="text-md font-semibold mb-2">Request Headers</h2>
     <div class="overflow-x-auto mb-6">
       <table class="w-full text-sm text-left">
@@ -198,6 +196,25 @@ $csrfField := .CSRFField }}
         </tbody>
       </table>
     </div>
+
+    <!-- Response Headers Table -->
+    {{ if $activeWebhook.ResponseHeaders }}
+    <h2 class="text-md font-semibold mb-2">Response Headers</h2>
+    <div class="overflow-x-auto mb-6">
+      <table class="w-full text-sm text-left">
+        <tbody>
+          {{ range $key, $val := $activeWebhook.ResponseHeaders }}
+          <tr class="border-t">
+            <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
+              {{ $key }}
+            </td>
+            <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
 
     <!-- Query Params -->
     {{ if .Query }}
@@ -360,14 +377,27 @@ $csrfField := .CSRFField }}
 
           <div>
             <label for="payload" class="block font-medium mb-1">Payload</label>
+            <!-- prettier-ignore -->
             <textarea
               id="payload"
               name="payload"
               rows="4"
               class="w-full border rounded px-3 py-2 font-mono"
+            >{{ .Webhook.Payload }}</textarea>
+          </div>
+
+          <div>
+            <label for="response_headers" class="block font-medium mb-1"
+              >Response Headers (JSON)</label
             >
-{{ .Webhook.Payload }}</textarea
-            >
+            <!-- prettier-ignore -->
+            <textarea
+              id="response_headers"
+              name="response_headers"
+              rows="4"
+              class="w-full border rounded px-3 py-2 font-mono"
+              placeholder='{ "X-Test": "123", "Cache-Control": "no-store" }'
+            >{{ .ResponseHeaders }}</textarea>
           </div>
 
           <div class="flex items-center space-x-2">

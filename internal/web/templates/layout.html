@@ -238,8 +238,57 @@
               rows="4"
               class="w-full border rounded px-3 py-2 font-mono"
             >
-{"message":"ok"}</textarea
+            {"message":"ok"}
+            </textarea>
+          </div>
+
+          <!-- Response Headers -->
+          <div
+            x-data="{ headers: {{ if .Webhook.ResponseHeaders }}{{ .Webhook.ResponseHeaders }}{{ else }}[]{{ end }} }"
+            class="space-y-2"
+          >
+            <label class="block font-medium mb-1 text-sm"
+              >Response Headers</label
             >
+
+            <template x-for="(header, index) in headers" :key="index">
+              <div class="flex gap-2 items-center">
+                <input
+                  type="text"
+                  class="border rounded px-2 py-1 text-sm w-1/2"
+                  placeholder="Header Name"
+                  x-model="header.key"
+                />
+                <input
+                  type="text"
+                  class="border rounded px-2 py-1 text-sm w-1/2"
+                  placeholder="Header Value"
+                  x-model="header.value"
+                />
+                <button
+                  type="button"
+                  @click="headers.splice(index, 1)"
+                  class="text-red-500 hover:underline text-xs"
+                >
+                  ✖
+                </button>
+              </div>
+            </template>
+
+            <button
+              type="button"
+              @click="headers.push({key: '', value: ''})"
+              class="text-blue-600 text-sm hover:underline mt-2"
+            >
+              ➕ Add Header
+            </button>
+
+            <!-- Hidden field that holds serialized headers -->
+            <input
+              type="hidden"
+              name="response_headers"
+              :value="JSON.stringify(headers.filter(h => h.key && h.value))"
+            />
           </div>
 
           <div class="flex items-center space-x-2">
