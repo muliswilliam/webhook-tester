@@ -58,15 +58,11 @@ func createDefaultWebhookCookie(webhookID string, w http.ResponseWriter) *http.C
 }
 
 func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
-	userID, err := sessions.Authorize(r, h.SessionStore)
-	if err != nil {
-		log.Println("user not logged in")
-	}
+	userID, _ := sessions.Authorize(r, h.SessionStore)
 
 	// Get or create default webhook via cookie
 	cookie, err := r.Cookie(sessionIdName)
 	if err != nil && userID == 0 {
-		log.Printf("Cookie err: %v", err)
 		defaultWhID, err := createDefaultWebhook(h.DB)
 		if err != nil {
 			log.Printf("Error creating default webhook: %v", err)
