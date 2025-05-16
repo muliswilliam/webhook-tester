@@ -37,6 +37,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     volumes:
+      - prometheus-data:/prometheus
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
     command:
       - --config.file=/etc/prometheus/prometheus.yml
@@ -92,3 +93,4 @@ services:
 volumes:
   pgdata:
   grafana-data:
+  prometheus-data:
