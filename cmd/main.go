@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"github.com/robfig/cron"
+	"gorm.io/gorm"
 	"log"
 	"os"
 	"os/signal"
@@ -9,16 +11,12 @@ import (
 	"time"
 	"webhook-tester/cmd/server"
 	"webhook-tester/internal/metrics"
-	sqlstore "webhook-tester/internal/store/sql"
-
-	"github.com/robfig/cron"
-	"gorm.io/gorm"
 )
 
 func scheduleCleanup(db *gorm.DB, c *cron.Cron) {
 	// clean every day
 	err := c.AddFunc("0 0 * * *", func() {
-		sqlstore.CleanPublicWebhooks(db, 48*time.Hour) // 48 hours old
+		//sqlstore.CleanPublicWebhooks(db, 48*time.Hour) // 48 hours old
 	})
 	if err != nil {
 		log.Fatalf("error scheduling cleanup: %s", err)

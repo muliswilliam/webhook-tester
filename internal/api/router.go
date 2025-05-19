@@ -1,26 +1,21 @@
 package api
 
 import (
+	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"webhook-tester/internal/handlers"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/middlewares"
+	"webhook-tester/internal/service"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/wader/gormstore/v2"
-	"gorm.io/gorm"
 )
 
-func Router(db *gorm.DB, sessionStore *gormstore.Store, l *log.Logger) http.Handler {
+func Router(svc *service.WebhookService, db *gorm.DB, l *log.Logger) http.Handler {
 	r := chi.NewRouter()
 
-	h := handlers.Handler{
-		SessionStore: sessionStore,
-		DB:           db,
-		Logger:       l,
-		Metrics: &metrics.PrometheusRecorder{},
-	}
+	h := handlers.NewWebhookApiHandler(svc, &metrics.PrometheusRecorder{}, l)
 
 	r.Route("/webhooks", func(r chi.Router) {
 		r.Use(middlewares.RequireAPIKey(db))

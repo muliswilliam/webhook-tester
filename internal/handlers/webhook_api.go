@@ -3,18 +3,30 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 	"webhook-tester/internal/dtos"
+	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/middlewares"
 	"webhook-tester/internal/models"
-	sqlstore "webhook-tester/internal/store/sql"
+	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
 
 	"gorm.io/gorm"
 
 	"github.com/go-chi/chi/v5"
 )
+
+type WebhookAiHandler struct {
+	Service *service.WebhookService
+	Metrics metrics.Recorder
+	Logger  *log.Logger
+}
+
+func NewWebhookApiHandler(svc *service.WebhookService, m metrics.Recorder, l *log.Logger) *WebhookAiHandler {
+	return &WebhookAiHandler{Service: svc, Metrics: m, Logger: l}
+}
 
 // CreateWebhookApi Creates a webhook
 // @Summary    Create a webhook
@@ -25,7 +37,7 @@ import (
 // @Param        webhook body dtos.CreateWebhookRequest true "Webhook body"
 // @Success     200  {object}  dtos.Webhook
 // @Router      /webhooks [post]
-func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
+func (h *WebhookAiHandler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
 	user := middlewares.GetAuthenticatedUser(r)
 	input := dtos.CreateWebhookRequest{}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -51,7 +63,7 @@ func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
 		NotifyOnEvent: input.NotifyOnEvent,
 	}
 
-	if err := sqlstore.InsertWebhook(h.DB, webhook); err != nil {
+	if err := h.Service.CreateWebhook(&webhook); err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"error": err.Error(),
 		})
@@ -71,9 +83,9 @@ func (h *Handler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
 // @Security     ApiKeyAuth
 // @Success     200  {object} []dtos.Webhook
 // @Router      /webhooks [get]
-func (h *Handler) ListWebhooksApi(w http.ResponseWriter, r *http.Request) {
+func (h *WebhookAiHandler) ListWebhooksApi(w http.ResponseWriter, r *http.Request) {
 	user := middlewares.GetAuthenticatedUser(r)
-	webhooks, err := sqlstore.GetUserWebhooks(user.ID, h.DB)
+	webhooks, err := h.Service.ListWebhooks(user.ID)
 	if err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
@@ -93,10 +105,10 @@ func (h *Handler) ListWebhooksApi(w http.ResponseWriter, r *http.Request) {
 // @Param        id   path      string  true  "Webhook ID"
 // @Success     200  {object} []dtos.Webhook
 // @Router      /webhooks/{id} [get]
-func (h *Handler) GetWebhookApi(w http.ResponseWriter, r *http.Request) {
+func (h *WebhookAiHandler) GetWebhookApi(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	user := middlewares.GetAuthenticatedUser(r)
-	webhook, err := sqlstore.GetUserWebhook(h.DB, webhookID, user.ID)
+	webhook, err := h.Service.GetUserWebhook(webhookID, user.ID)
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -113,7 +125,7 @@ func (h *Handler) GetWebhookApi(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	dto := dtos.NewWebhookDTO(webhook)
+	dto := dtos.NewWebhookDTO(*webhook)
 	utils.RenderJSON(w, http.StatusOK, dto)
 }
 
@@ -127,10 +139,10 @@ func (h *Handler) GetWebhookApi(w http.ResponseWriter, r *http.Request) {
 // @Param        webhook body dtos.UpdateWebhookRequest true "Updated webhook"
 // @Success     200  {object} []dtos.Webhook
 // @Router      /webhooks/{id} [put]
-func (h *Handler) UpdateWebhookApi(w http.ResponseWriter, r *http.Request) {
+func (h *WebhookAiHandler) UpdateWebhookApi(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	user := middlewares.GetAuthenticatedUser(r)
-	webhook, err := sqlstore.GetUserWebhook(h.DB, webhookID, user.ID)
+	webhook, err := h.Service.GetUserWebhook(webhookID, user.ID)
 	if err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
@@ -173,14 +185,14 @@ func (h *Handler) UpdateWebhookApi(w http.ResponseWriter, r *http.Request) {
 
 	webhook.UpdatedAt = time.Now().UTC()
 
-	if err := sqlstore.UpdateWebhook(h.DB, webhook); err != nil {
+	if err := h.Service.UpdateWebhook(webhook); err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	dto := dtos.NewWebhookDTO(webhook)
+	dto := dtos.NewWebhookDTO(*webhook)
 	utils.RenderJSON(w, http.StatusOK, dto)
 }
 
@@ -194,10 +206,10 @@ func (h *Handler) UpdateWebhookApi(w http.ResponseWriter, r *http.Request) {
 // @Success      204  {string}  string  "No Content"
 // @Failure      500  {object}  ErrorResponse
 // @Router       /webhooks/{id} [delete]
-func (h *Handler) DeleteWebhookApi(w http.ResponseWriter, r *http.Request) {
+func (h *WebhookAiHandler) DeleteWebhookApi(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	user := middlewares.GetAuthenticatedUser(r)
-	if err := sqlstore.DeleteUserWebhook(h.DB, id, user.ID); err != nil {
+	if err := h.Service.DeleteWebhook(id, user.ID); err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
 		})

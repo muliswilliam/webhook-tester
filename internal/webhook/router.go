@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"webhook-tester/internal/handlers"
 	"webhook-tester/internal/metrics"
+	"webhook-tester/internal/service"
+	"webhook-tester/internal/store"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/wader/gormstore/v2"
@@ -14,14 +16,15 @@ import (
 func NewRouter(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http.Handler {
 	r := chi.NewRouter()
 
-	h := handlers.Handler{
-		SessionStore: sessionStore,
-		DB:           db,
-		Logger:       logger,
-		Metrics:      &metrics.PrometheusRecorder{},
-	}
+	wr := store.NewGormWebookRepo(db, logger)
+	ws := service.NewWebhookService(wr)
+	wh := handlers.NewWebhookHandler(ws,
+		sessionStore,
+		logger,
+		&metrics.PrometheusRecorder{},
+	)
 
 	// Match all HTTP methods at /{webhookID}
-	r.HandleFunc("/*", h.HandleWebhookRequest)
+	r.HandleFunc("/*", wh.HandleWebhookRequest)
 	return r
 }

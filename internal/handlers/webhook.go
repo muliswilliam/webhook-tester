@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wader/gormstore/v2"
 	"io"
 	"log"
 	"net/http"
@@ -12,8 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
-	sqlstore "webhook-tester/internal/store/sql"
+	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
 
@@ -21,7 +23,27 @@ import (
 	"gorm.io/datatypes"
 )
 
-func (h *Handler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
+type WebhookHandler struct {
+	Service      *service.WebhookService
+	SessionStore *gormstore.Store
+	Logger       *log.Logger
+	Metrics      metrics.Recorder
+}
+
+func NewWebhookHandler(
+	Service *service.WebhookService,
+	SessionStore *gormstore.Store,
+	Logger *log.Logger,
+	Metrics metrics.Recorder) *WebhookHandler {
+	return &WebhookHandler{
+		Service:      Service,
+		SessionStore: SessionStore,
+		Logger:       Logger,
+		Metrics:      Metrics,
+	}
+}
+
+func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID, err := sessions.Authorize(r, h.SessionStore)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
@@ -67,7 +89,7 @@ func (h *Handler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		NotifyOnEvent:   notify,
 	}
 
-	err = h.DB.Create(&wh).Error
+	err = h.Service.CreateWebhook(&wh)
 	if err != nil {
 		h.Logger.Printf("Error creating webhook: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -79,8 +101,8 @@ func (h *Handler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
 
-func (h *Handler) DeleteWebhookRequests(w http.ResponseWriter, r *http.Request) {
-	_, err := sessions.Authorize(r, h.SessionStore)
+func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) {
+	userID, err := sessions.Authorize(r, h.SessionStore)
 
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
@@ -92,7 +114,7 @@ func (h *Handler) DeleteWebhookRequests(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}
 
-	err = h.DB.Delete(&models.WebhookRequest{}, "webhook_id=?", webhookID).Error
+	err = h.Service.DeleteWebhook(webhookID, userID)
 
 	if err != nil {
 		h.Logger.Printf("Error deleting webhook: %v", err)
@@ -102,8 +124,8 @@ func (h *Handler) DeleteWebhookRequests(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
 
-func (h *Handler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
-	_, err := sessions.Authorize(r, h.SessionStore)
+func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
+	userID, err := sessions.Authorize(r, h.SessionStore)
 
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
@@ -115,7 +137,7 @@ func (h *Handler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}
 
-	err = h.DB.Delete(&models.Webhook{}, "id=?", webhookID).Error
+	err = h.Service.DeleteWebhook(webhookID, userID)
 
 	if err != nil {
 		h.Logger.Printf("Error deleting webhook: %v", err)
@@ -125,8 +147,8 @@ func (h *Handler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
-	_, err := sessions.Authorize(r, h.SessionStore)
+func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
+	userID, err := sessions.Authorize(r, h.SessionStore)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
@@ -163,7 +185,7 @@ func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 			log.Printf("error parsing json %s", err)
 		}
 	}
-	wh, err := sqlstore.GetWebhook(h.DB, webhookID)
+	wh, err := h.Service.GetUserWebhook(webhookID, userID)
 	if err != nil {
 		h.Logger.Printf("Error getting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -177,7 +199,7 @@ func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	wh.Payload = &payload
 	wh.ResponseHeaders = headers
 
-	err = h.DB.Save(&wh).Error
+	err = h.Service.UpdateWebhook(wh)
 	if err != nil {
 		h.Logger.Printf("Error updating webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -188,11 +210,10 @@ func (h *Handler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 var webhookStreams = make(map[string][]chan string)
 var mu sync.Mutex
 
-func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
+func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := strings.TrimPrefix(r.URL.Path, "/webhooks/")
 	h.Logger.Printf("Handling webhook request for %s", webhookID)
-	var webhook models.Webhook
-	webhook, err := sqlstore.GetWebhook(h.DB, webhookID)
+	webhook, err := h.Service.GetWebhook(webhookID)
 
 	if err != nil {
 		switch {
@@ -234,11 +255,10 @@ func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 		ReceivedAt: time.Now().UTC(),
 	}
 
-	err = sqlstore.CreateWebhookRequest(h.DB, wr)
+	err = h.Service.CreateRequest(&wr)
 	if err != nil {
 		h.Logger.Printf("error creating webhook request: %s", err)
 		utils.RenderJSON(w, http.StatusInternalServerError, nil)
-
 		return
 	}
 	h.Metrics.IncWebhookRequest(webhookID)
@@ -282,7 +302,7 @@ func (h *Handler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
+func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 
 	// Set headers for SSE

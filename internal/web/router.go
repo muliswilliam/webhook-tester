@@ -7,6 +7,8 @@ import (
 	"strings"
 	"webhook-tester/internal/handlers"
 	"webhook-tester/internal/metrics"
+	"webhook-tester/internal/service"
+	"webhook-tester/internal/store"
 
 	"github.com/wader/gormstore/v2"
 	"gorm.io/gorm"
@@ -34,7 +36,6 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 	)
 
 	r.Use(csrfMiddleware)
-
 	h := &handlers.Handler{
 		DB:           db,
 		SessionStore: sessionStore,
@@ -42,7 +43,16 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 		Metrics:      &metrics.PrometheusRecorder{},
 	}
 
-	r.Get("/", h.Home)
+	wr := store.NewGormWebookRepo(db, logger)
+	ws := service.NewWebhookService(wr)
+	wh := handlers.NewWebhookHandler(ws,
+		sessionStore,
+		logger,
+		&metrics.PrometheusRecorder{},
+	)
+
+	hh := handlers.NewHomeHandler(ws, sessionStore, logger, &metrics.PrometheusRecorder{}, db)
+	r.Get("/", hh.Home)
 
 	r.Route("/requests", func(r chi.Router) {
 		r.Get("/{id}", h.GetRequest)
@@ -50,11 +60,11 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 		r.Post("/{id}/replay", h.ReplayRequest)
 	})
 
-	r.Post("/create-webhook", h.CreateWebhook)
-	r.Post("/delete-requests/{id}", h.DeleteWebhookRequests)
-	r.Post("/delete-webhook/{id}", h.DeleteWebhook)
-	r.Post("/update-webhook/{id}", h.UpdateWebhook)
-	r.Get("/webhook-stream/{id}", h.StreamWebhookEvents)
+	r.Post("/create-webhook", wh.Create)
+	r.Post("/delete-requests/{id}", wh.DeleteRequests)
+	r.Post("/delete-webhook/{id}", wh.DeleteWebhook)
+	r.Post("/update-webhook/{id}", wh.UpdateWebhook)
+	r.Get("/webhook-stream/{id}", wh.StreamWebhookEvents)
 
 	r.Get("/register", h.RegisterGet)
 	r.Post("/register", h.RegisterPost)

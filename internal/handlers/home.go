@@ -2,20 +2,44 @@ package handlers
 
 import (
 	"encoding/json"
+	"github.com/wader/gormstore/v2"
+	"gorm.io/gorm"
 	"html/template"
-	sqlstore "webhook-tester/internal/store/sql"
+	"webhook-tester/internal/metrics"
+	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
 	"webhook-tester/internal/web/sessions"
 
 	"github.com/gorilla/csrf"
-	"gorm.io/gorm"
-
 	"log"
 	"net/http"
 	"os"
 	"time"
 	"webhook-tester/internal/models"
 )
+
+type HomeHandler struct {
+	Service      *service.WebhookService
+	SessionStore *gormstore.Store
+	Logger       *log.Logger
+	Metrics      metrics.Recorder
+	DB           *gorm.DB // TODO: Remove when sessions.GetLoggedInUser is refactored
+}
+
+func NewHomeHandler(
+	svc *service.WebhookService,
+	sessionStore *gormstore.Store,
+	l *log.Logger,
+	mr metrics.Recorder,
+	db *gorm.DB) *HomeHandler {
+	return &HomeHandler{
+		Service:      svc,
+		SessionStore: sessionStore,
+		Logger:       l,
+		Metrics:      mr,
+		DB:           db,
+	}
+}
 
 type HomePageData struct {
 	CSRFField       template.HTML
@@ -30,16 +54,16 @@ type HomePageData struct {
 
 var sessionIdName = "_webhook_tester_guest_session_id"
 
-func createDefaultWebhook(db *gorm.DB) (string, error) {
+func createDefaultWebhook(svc *service.WebhookService, l *log.Logger) (string, error) {
 	defaultWh := models.Webhook{
 		ID:           utils.GenerateID(),
 		Title:        "Default Webhook",
 		ResponseCode: http.StatusOK,
 	}
 
-	err := sqlstore.InsertWebhook(db, defaultWh)
+	err := svc.CreateWebhook(&defaultWh)
 	if err != nil {
-		log.Printf("Error inserting default webhook: %v", err)
+		l.Printf("Error inserting default webhook: %v", err)
 		return "", err
 	}
 
@@ -59,15 +83,15 @@ func createDefaultWebhookCookie(webhookID string, w http.ResponseWriter) *http.C
 	return cookie
 }
 
-func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
+func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 	userID, _ := sessions.Authorize(r, h.SessionStore)
 
 	// Get or create default webhook via cookie
 	cookie, err := r.Cookie(sessionIdName)
 	if err != nil && userID == 0 {
-		defaultWhID, err := createDefaultWebhook(h.DB)
+		defaultWhID, err := createDefaultWebhook(h.Service, h.Logger)
 		if err != nil {
-			log.Printf("Error creating default webhook: %v", err)
+			h.Logger.Printf("Error creating default webhook: %v", err)
 			http.Error(w, "failed to create webhook", http.StatusInternalServerError)
 			return
 		}
@@ -86,7 +110,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if webhookID != "" && userID == 0 {
-		webhook, err = sqlstore.GetWebhookWithRequests(webhookID, h.DB)
+		wrr, err := h.Service.GetWebhookWithRequests(webhookID)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
 			cookie.MaxAge = -1
@@ -94,16 +118,20 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
+		webhook = *wrr
 		webhooks = append(webhooks, webhook)
 	} else {
 		// Load user's other webhooks if logged in
-		webhooks, _ = sqlstore.GetUserWebhooks(userID, h.DB)
+		webhooks, _ = h.Service.ListWebhooks(userID)
 	}
 
 	if address != "" {
-		activeWebhook, err = sqlstore.GetWebhookWithRequests(address, h.DB)
+		aw, err := h.Service.GetWebhook(address)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
+		}
+		if aw != nil {
+			activeWebhook = *aw
 		}
 	} else if len(webhooks) > 0 {
 		activeWebhook = webhooks[0]
