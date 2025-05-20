@@ -13,4 +13,6 @@ type UserRepository interface {
 	GetByResetToken(token string) (*models.User, error)
 	// Update existing users
 	Update(user *models.User) error
+	// GetByAPIKey looks up a user by their API key.
+	GetByAPIKey(key string) (*models.User, error)
 }

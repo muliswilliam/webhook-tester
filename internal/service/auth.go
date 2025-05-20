@@ -177,3 +177,11 @@ func (s *AuthService) ResetPassword(token, newPassword string) error {
 
 	return s.repo.Update(user)
 }
+
+func (s *AuthService) ValidateAPIKey(key string) (*models.User, error) {
+	user, err := s.repo.GetByAPIKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("invalid API key")
+	}
+	return user, nil
+}

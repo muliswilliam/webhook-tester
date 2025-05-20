@@ -1,7 +1,6 @@
 package routers
 
 import (
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"webhook-tester/internal/handlers"
@@ -12,13 +11,13 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func NewApiRouter(svc *service.WebhookService, db *gorm.DB, l *log.Logger) http.Handler {
+func NewApiRouter(webhookSvc *service.WebhookService, authSvc *service.AuthService, l *log.Logger, metricsRec metrics.Recorder) http.Handler {
 	r := chi.NewRouter()
 
-	h := handlers.NewWebhookApiHandler(svc, &metrics.PrometheusRecorder{}, l)
+	h := handlers.NewWebhookApiHandler(webhookSvc, metricsRec, l)
 
 	r.Route("/webhooks", func(r chi.Router) {
-		r.Use(middlewares.RequireAPIKey(db))
+		r.Use(middlewares.RequireAPIKey(authSvc))
 		r.Get("/", h.ListWebhooksApi)
 		r.Post("/", h.CreateWebhookApi)
 

@@ -72,3 +72,12 @@ func (r *GormUserRepo) Update(user *models.User) error {
 	}
 	return nil
 }
+
+func (r *GormUserRepo) GetByAPIKey(key string) (*models.User, error) {
+	var u models.User
+	err := r.DB.First(&u, "api_key = ?", key).Error
+	if err != nil {
+		r.logger.Printf("GetByAPIKey failed: %v", err)
+	}
+	return &u, err
+}
