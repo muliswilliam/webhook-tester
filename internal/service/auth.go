@@ -17,7 +17,6 @@ import (
 type AuthService struct {
 	repo         repository.UserRepository
 	sessionStore *gormstore.Store
-	db           *gorm.DB
 }
 
 // NewAuthService creates an AuthService
@@ -30,7 +29,6 @@ func NewAuthService(userRepo repository.UserRepository, db *gorm.DB, authSecret 
 	return &AuthService{
 		repo:         userRepo,
 		sessionStore: store,
-		db:           db,
 	}
 }
 
