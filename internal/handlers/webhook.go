@@ -58,9 +58,6 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 	title := r.FormValue("title")
 	contentType := r.FormValue("content_type")
 	responseCode, _ := strconv.Atoi(r.FormValue("response_code"))
-	if responseCode == 0 {
-		responseCode = http.StatusOK
-	}
 	responseDelay, _ := strconv.Atoi(r.FormValue("response_delay")) // defaults to 0
 	payload := r.FormValue("payload")
 	notify := r.FormValue("notify_on_event") == "true"

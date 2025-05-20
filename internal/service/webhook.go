@@ -1,6 +1,7 @@
 package service
 
 import (
+	"net/http"
 	"time"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/repository"
@@ -18,7 +19,9 @@ func NewWebhookService(repo repository.WebhookRepository) *WebhookService {
 
 // CreateWebhook creates a new webhook record.
 func (s *WebhookService) CreateWebhook(w *models.Webhook) error {
-	// e.g., generate ID, validate
+	if w.ResponseCode == 0 {
+		w.ResponseCode = http.StatusOK
+	}
 	return s.repo.Insert(w)
 }
 
