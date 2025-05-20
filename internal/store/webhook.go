@@ -14,17 +14,17 @@ var _ repository.WebhookRepository = &GormWebhookRepo{}
 
 type GormWebhookRepo struct {
 	DB     *gorm.DB
-	Logger *log.Logger
+	logger *log.Logger
 }
 
 func NewGormWebookRepo(db *gorm.DB, l *log.Logger) *GormWebhookRepo {
-	return &GormWebhookRepo{DB: db, Logger: l}
+	return &GormWebhookRepo{DB: db, logger: l}
 }
 
 func (r GormWebhookRepo) Insert(webhook *models.Webhook) error {
 	err := r.DB.Create(&webhook).Error
 	if err != nil {
-		r.Logger.Printf("failed to create webhook: %v", err)
+		r.logger.Printf("failed to create webhook: %v", err)
 	}
 	return err
 }
@@ -33,7 +33,7 @@ func (r GormWebhookRepo) Get(id string) (*models.Webhook, error) {
 	var w models.Webhook
 	err := r.DB.First(&w, "id = ?", id).Error
 	if err != nil {
-		r.Logger.Printf("failed to get webhook: %v", err)
+		r.logger.Printf("failed to get webhook: %v", err)
 	}
 	return &w, err
 }
@@ -46,7 +46,7 @@ func (r GormWebhookRepo) GetByUser(id string, userID uint) (*models.Webhook, err
 	var w models.Webhook
 	err := r.DB.First(&w, "id = ? AND user_id = ?", id, userID).Error
 	if err != nil {
-		r.Logger.Printf("failed to get webhook: %v", err)
+		r.logger.Printf("failed to get webhook: %v", err)
 	}
 	return &w, err
 }
@@ -55,7 +55,7 @@ func (r GormWebhookRepo) GetAll() ([]models.Webhook, error) {
 	var webhooks []models.Webhook
 	err := r.DB.Model(&models.Webhook{}).Preload("Requests").Find(&webhooks).Error
 	if err != nil {
-		r.Logger.Printf("failed to get webhooks: %v", err)
+		r.logger.Printf("failed to get webhooks: %v", err)
 	}
 	return webhooks, err
 }
@@ -69,7 +69,7 @@ func (r GormWebhookRepo) GetAllByUser(userID uint) ([]models.Webhook, error) {
 		Order("created_at DESC").Error
 
 	if err != nil {
-		r.Logger.Printf("Error loading user webhooks: %v", err)
+		r.logger.Printf("Error loading user webhooks: %v", err)
 		return webhooks, err
 	}
 	return webhooks, nil
@@ -78,7 +78,7 @@ func (r GormWebhookRepo) GetAllByUser(userID uint) ([]models.Webhook, error) {
 func (r GormWebhookRepo) Update(webhook *models.Webhook) error {
 	err := r.DB.Save(&webhook).Error
 	if err != nil {
-		r.Logger.Printf("failed to update webhook: %v", err)
+		r.logger.Printf("failed to update webhook: %v", err)
 	}
 	return err
 }
@@ -90,22 +90,22 @@ func (r GormWebhookRepo) Delete(id string, userID uint) error {
 		err := tx.First(&wh, "id = ? AND user_id = ?", id, userID).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				r.Logger.Printf("webhook not found or unauthorized: id=%s user_id=%d", id, userID)
+				r.logger.Printf("webhook not found or unauthorized: id=%s user_id=%d", id, userID)
 			} else {
-				r.Logger.Printf("error checking webhook ownership: %v", err)
+				r.logger.Printf("error checking webhook ownership: %v", err)
 			}
 			return err
 		}
 
 		// Delete webhook requests
 		if err := tx.Delete(&models.WebhookRequest{}, "webhook_id = ?", id).Error; err != nil {
-			r.Logger.Printf("failed to delete webhook requests: %v", err)
+			r.logger.Printf("failed to delete webhook requests: %v", err)
 			return err
 		}
 
 		// Delete webhook
 		if err := tx.Delete(&models.Webhook{}, "id = ?", id).Error; err != nil {
-			r.Logger.Printf("failed to delete webhook: %v", err)
+			r.logger.Printf("failed to delete webhook: %v", err)
 			return err
 		}
 
@@ -137,7 +137,7 @@ func (r GormWebhookRepo) GetWithRequests(id string) (*models.Webhook, error) {
 //
 // Any error during the transaction is logged but not returned.
 func (r GormWebhookRepo) CleanPublic(d time.Duration) error {
-	r.Logger.Println("Cleaning public webhooks")
+	r.logger.Println("Cleaning public webhooks")
 	beforeDate := time.Now().Add(-d).UTC()
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
@@ -152,7 +152,7 @@ func (r GormWebhookRepo) CleanPublic(d time.Duration) error {
 		// delete requests
 		err := tx.Where("webhook_id IN (?)", webhookIDs).Delete(&models.WebhookRequest{}).Error
 		if err != nil {
-			r.Logger.Printf("Error deleting webhooks: %v", err)
+			r.logger.Printf("Error deleting webhooks: %v", err)
 			return err
 		}
 
@@ -160,7 +160,7 @@ func (r GormWebhookRepo) CleanPublic(d time.Duration) error {
 	})
 
 	if err != nil {
-		r.Logger.Printf("error cleaning public webhooks: %v", err)
+		r.logger.Printf("error cleaning public webhooks: %v", err)
 	}
 
 	return err
