@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"github.com/wader/gormstore/v2"
 	"html/template"
 	"log"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
-	"webhook-tester/internal/web/sessions"
 
 	"github.com/gorilla/csrf"
 )
@@ -44,14 +42,13 @@ type ResetPasswordPageData struct {
 
 // AuthHandler handles registration and login
 type AuthHandler struct {
-	auth         *service.AuthService
-	metrics      metrics.Recorder
-	logger       *log.Logger
-	sessionStore *gormstore.Store
+	auth    *service.AuthService
+	metrics metrics.Recorder
+	logger  *log.Logger
 }
 
-func NewAuthHandler(auth *service.AuthService, l *log.Logger, m metrics.Recorder, sessionStore *gormstore.Store) *AuthHandler {
-	return &AuthHandler{auth: auth, logger: l, metrics: m, sessionStore: sessionStore}
+func NewAuthHandler(auth *service.AuthService, l *log.Logger, m metrics.Recorder) *AuthHandler {
+	return &AuthHandler{auth: auth, logger: l, metrics: m}
 }
 
 func (h *AuthHandler) RegisterGet(w http.ResponseWriter, r *http.Request) {
@@ -136,20 +133,17 @@ func (h *AuthHandler) LoginPost(w http.ResponseWriter, r *http.Request) {
 	user, err := h.auth.Authenticate(email, password)
 	if err != nil {
 		// On failure, re-show login with a generic error
+		h.logger.Printf("error authenticating user: %v", err)
 		h.renderLoginForm(w, r, &LoginPageData{
 			Error: "Invalid email or password",
 		})
 		return
 	}
 
-	sess, _ := h.sessionStore.Get(r, sessions.Name)
-	sess.Values["user_id"] = user.ID
-	sess.Values["email"] = user.Email
-	sess.Values["full_name"] = user.FullName
-	if err := h.sessionStore.Save(r, w, sess); err != nil {
-		h.logger.Printf("failed to save session: %v", err)
+	err = h.auth.CreateSession(w, r, user)
+	if err != nil {
+		h.logger.Printf("error creating session: %v", err)
 		http.Error(w, "unable to save session", http.StatusInternalServerError)
-		return
 	}
 
 	if c, err := r.Cookie(sessionIdName); err == nil {
@@ -169,14 +163,7 @@ func (h *AuthHandler) renderLoginForm(w http.ResponseWriter, r *http.Request, da
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	session, err := h.sessionStore.Get(r, sessions.Name)
-	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-
-	session.Options.MaxAge = -1
-	_ = session.Save(r, w)
+	h.auth.ClearSession(w, r)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -265,7 +252,7 @@ func (h *AuthHandler) ResetPasswordPost(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.auth.ResetPassword(token, password); err != nil {
-		// Service returns “invalid or expired token” or other msgs
+		// webhookSvc returns “invalid or expired token” or other msgs
 		data.Error = err.Error()
 		h.renderResetForm(w, r, data)
 		return

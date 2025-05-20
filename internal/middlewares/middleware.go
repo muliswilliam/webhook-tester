@@ -34,8 +34,8 @@ func RequireAPIKey(db *gorm.DB) func(http.Handler) http.Handler {
 	}
 }
 
-// GetAuthenticatedUser Gets user object from the context
-func GetAuthenticatedUser(r *http.Request) models.User {
+// GetApiAuthenticatedUser Gets user object from the context
+func GetApiAuthenticatedUser(r *http.Request) models.User {
 	user, _ := r.Context().Value("user").(models.User)
 	return user
 }

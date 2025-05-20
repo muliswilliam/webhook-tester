@@ -24,8 +24,8 @@ import (
 	_ "webhook-tester/docs"
 	"webhook-tester/internal/api"
 	"webhook-tester/internal/db"
+	appMetrics "webhook-tester/internal/metrics"
 	"webhook-tester/internal/web"
-	"webhook-tester/internal/web/sessions"
 	"webhook-tester/internal/webhook"
 
 	"gorm.io/gorm"
@@ -41,9 +41,14 @@ type Server struct {
 
 func (srv *Server) MountHandlers() {
 	r := srv.Router
+	authSecret := os.Getenv("AUTH_SECRET")
 	repo := store.NewGormWebookRepo(srv.DB, srv.Logger)
-	svc := service.NewWebhookService(repo)
-
+	userRepo := store.NewGormUserRepo(srv.DB, srv.Logger)
+	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
+	webhookSvc := service.NewWebhookService(repo)
+	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
+	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
+	metricsRec := appMetrics.PrometheusRecorder{}
 	// Basic CORS
 	// for more ideas, see: https://developer.github.com/v3/#cross-origin-resource-sharing
 	r.Use(cors.Handler(cors.Options{
@@ -71,11 +76,12 @@ func (srv *Server) MountHandlers() {
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
-	r.Mount("/", web.Router(srv.DB, srv.SessionStore, srv.Logger))
-	r.Mount("/api", api.Router(svc, srv.DB, srv.Logger))
-	r.Mount("/webhooks", webhook.NewRouter(srv.DB, srv.SessionStore, srv.Logger))
+	r.Mount("/", web.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, &metricsRec, srv.Logger))
 
-	// Metrics
+	r.Mount("/api", api.Router(webhookSvc, srv.DB, srv.Logger))
+	r.Mount("/webhooks", webhook.NewWebhookRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))
+
+	// metrics
 	r.Handle("/metrics", promhttp.Handler())
 
 	// API documentation
@@ -109,10 +115,9 @@ func NewServer() *Server {
 	}
 
 	return &Server{
-		Router:       r,
-		DB:           conn,
-		SessionStore: sessions.CreateSessionStore(conn),
-		Logger:       log.New(os.Stdout, "[server] ", log.LstdFlags),
-		Srv:          &srv,
+		Router: r,
+		DB:     conn,
+		Logger: log.New(os.Stdout, "[server] ", log.LstdFlags),
+		Srv:    &srv,
 	}
 }

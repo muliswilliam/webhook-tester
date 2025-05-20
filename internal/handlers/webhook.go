@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/wader/gormstore/v2"
 	"io"
 	"log"
 	"net/http"
@@ -17,34 +16,33 @@ import (
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
-	"webhook-tester/internal/web/sessions"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/datatypes"
 )
 
 type WebhookHandler struct {
-	Service      *service.WebhookService
-	SessionStore *gormstore.Store
-	Logger       *log.Logger
-	Metrics      metrics.Recorder
+	webhookSvc *service.WebhookService
+	authSvc    *service.AuthService
+	logger     *log.Logger
+	metrics    metrics.Recorder
 }
 
 func NewWebhookHandler(
-	Service *service.WebhookService,
-	SessionStore *gormstore.Store,
-	Logger *log.Logger,
-	Metrics metrics.Recorder) *WebhookHandler {
+	webhookSvc *service.WebhookService,
+	authSvc *service.AuthService,
+	logger *log.Logger,
+	metrics metrics.Recorder) *WebhookHandler {
 	return &WebhookHandler{
-		Service:      Service,
-		SessionStore: SessionStore,
-		Logger:       Logger,
-		Metrics:      Metrics,
+		webhookSvc: webhookSvc,
+		authSvc:    authSvc,
+		logger:     logger,
+		metrics:    metrics,
 	}
 }
 
 func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, err := sessions.Authorize(r, h.SessionStore)
+	userID, err := h.authSvc.Authorize(r)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
@@ -52,7 +50,7 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	err = r.ParseForm()
 	if err != nil {
-		h.Logger.Printf("error parsing form: %v", err)
+		h.logger.Printf("error parsing form: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -89,20 +87,20 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 		NotifyOnEvent:   notify,
 	}
 
-	err = h.Service.CreateWebhook(&wh)
+	err = h.webhookSvc.CreateWebhook(&wh)
 	if err != nil {
-		h.Logger.Printf("Error creating webhook: %v", err)
+		h.logger.Printf("Error creating webhook: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	h.Metrics.IncWebhooksCreated()
+	h.metrics.IncWebhooksCreated()
 
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
 
 func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) {
-	userID, err := sessions.Authorize(r, h.SessionStore)
+	userID, err := h.authSvc.Authorize(r)
 
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
@@ -114,10 +112,10 @@ func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}
 
-	err = h.Service.DeleteWebhook(webhookID, userID)
+	err = h.webhookSvc.DeleteWebhook(webhookID, userID)
 
 	if err != nil {
-		h.Logger.Printf("Error deleting webhook: %v", err)
+		h.logger.Printf("Error deleting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -125,7 +123,7 @@ func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
-	userID, err := sessions.Authorize(r, h.SessionStore)
+	userID, err := h.authSvc.Authorize(r)
 
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
@@ -137,10 +135,10 @@ func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}
 
-	err = h.Service.DeleteWebhook(webhookID, userID)
+	err = h.webhookSvc.DeleteWebhook(webhookID, userID)
 
 	if err != nil {
-		h.Logger.Printf("Error deleting webhook: %v", err)
+		h.logger.Printf("Error deleting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -148,7 +146,7 @@ func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
-	userID, err := sessions.Authorize(r, h.SessionStore)
+	userID, err := h.authSvc.Authorize(r)
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 		return
@@ -162,7 +160,7 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 
 	err = r.ParseForm()
 	if err != nil {
-		h.Logger.Printf("error parsing form: %v", err)
+		h.logger.Printf("error parsing form: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -185,9 +183,9 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 			log.Printf("error parsing json %s", err)
 		}
 	}
-	wh, err := h.Service.GetUserWebhook(webhookID, userID)
+	wh, err := h.webhookSvc.GetUserWebhook(webhookID, userID)
 	if err != nil {
-		h.Logger.Printf("Error getting webhook: %v", err)
+		h.logger.Printf("Error getting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 
@@ -199,9 +197,9 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	wh.Payload = &payload
 	wh.ResponseHeaders = headers
 
-	err = h.Service.UpdateWebhook(wh)
+	err = h.webhookSvc.UpdateWebhook(wh)
 	if err != nil {
-		h.Logger.Printf("Error updating webhook: %v", err)
+		h.logger.Printf("Error updating webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 	}
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
@@ -212,8 +210,8 @@ var mu sync.Mutex
 
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := strings.TrimPrefix(r.URL.Path, "/webhooks/")
-	h.Logger.Printf("Handling webhook request for %s", webhookID)
-	webhook, err := h.Service.GetWebhook(webhookID)
+	h.logger.Printf("Handling webhook request for %s", webhookID)
+	webhook, err := h.webhookSvc.GetWebhook(webhookID)
 
 	if err != nil {
 		switch {
@@ -255,13 +253,13 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		ReceivedAt: time.Now().UTC(),
 	}
 
-	err = h.Service.CreateRequest(&wr)
+	err = h.webhookSvc.CreateRequest(&wr)
 	if err != nil {
-		h.Logger.Printf("error creating webhook request: %s", err)
+		h.logger.Printf("error creating webhook request: %s", err)
 		utils.RenderJSON(w, http.StatusInternalServerError, nil)
 		return
 	}
-	h.Metrics.IncWebhookRequest(webhookID)
+	h.metrics.IncWebhookRequest(webhookID)
 
 	// Delay response
 	if webhook.ResponseDelay > 0 {
@@ -297,7 +295,7 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	w.WriteHeader(webhook.ResponseCode)
 	if webhook.Payload != nil {
 		if _, err := w.Write([]byte(*webhook.Payload)); err != nil {
-			h.Logger.Printf("error writing payload: %s", err)
+			h.logger.Printf("error writing payload: %s", err)
 		}
 	}
 }
@@ -323,7 +321,7 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 		case msg := <-eventChan:
 			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
 			if err != nil {
-				h.Logger.Printf("error writing data: %s", err)
+				h.logger.Printf("error writing data: %s", err)
 				return
 			}
 			flusher.Flush()

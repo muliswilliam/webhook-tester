@@ -2,13 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"github.com/wader/gormstore/v2"
-	"gorm.io/gorm"
 	"html/template"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
-	"webhook-tester/internal/web/sessions"
 
 	"github.com/gorilla/csrf"
 	"log"
@@ -19,25 +16,23 @@ import (
 )
 
 type HomeHandler struct {
-	Service      *service.WebhookService
-	SessionStore *gormstore.Store
-	Logger       *log.Logger
-	Metrics      metrics.Recorder
-	DB           *gorm.DB // TODO: Remove when sessions.GetLoggedInUser is refactored
+	webhookSvc *service.WebhookService
+	authSvc    *service.AuthService
+	Logger     *log.Logger
+	Metrics    metrics.Recorder
 }
 
 func NewHomeHandler(
-	svc *service.WebhookService,
-	sessionStore *gormstore.Store,
+	webhookSvc *service.WebhookService,
+	authSvc *service.AuthService,
 	l *log.Logger,
 	mr metrics.Recorder,
-	db *gorm.DB) *HomeHandler {
+) *HomeHandler {
 	return &HomeHandler{
-		Service:      svc,
-		SessionStore: sessionStore,
-		Logger:       l,
-		Metrics:      mr,
-		DB:           db,
+		webhookSvc: webhookSvc,
+		authSvc:    authSvc,
+		Logger:     l,
+		Metrics:    mr,
 	}
 }
 
@@ -84,12 +79,12 @@ func createDefaultWebhookCookie(webhookID string, w http.ResponseWriter) *http.C
 }
 
 func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
-	userID, _ := sessions.Authorize(r, h.SessionStore)
+	userID, _ := h.authSvc.Authorize(r)
 
 	// Get or create default webhook via cookie
 	cookie, err := r.Cookie(sessionIdName)
 	if err != nil && userID == 0 {
-		defaultWhID, err := createDefaultWebhook(h.Service, h.Logger)
+		defaultWhID, err := createDefaultWebhook(h.webhookSvc, h.Logger)
 		if err != nil {
 			h.Logger.Printf("Error creating default webhook: %v", err)
 			http.Error(w, "failed to create webhook", http.StatusInternalServerError)
@@ -110,7 +105,7 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if webhookID != "" && userID == 0 {
-		wrr, err := h.Service.GetWebhookWithRequests(webhookID)
+		wrr, err := h.webhookSvc.GetWebhookWithRequests(webhookID)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
 			cookie.MaxAge = -1
@@ -122,17 +117,15 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		webhooks = append(webhooks, webhook)
 	} else {
 		// Load user's other webhooks if logged in
-		webhooks, _ = h.Service.ListWebhooks(userID)
+		webhooks, _ = h.webhookSvc.ListWebhooks(userID)
 	}
 
 	if address != "" {
-		aw, err := h.Service.GetWebhook(address)
+		aw, err := h.webhookSvc.GetWebhookWithRequests(address)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
 		}
-		if aw != nil {
-			activeWebhook = *aw
-		}
+		activeWebhook = *aw
 	} else if len(webhooks) > 0 {
 		activeWebhook = webhooks[0]
 	}
@@ -147,10 +140,12 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	user, _ := h.authSvc.GetCurrentUser(r)
+
 	// RenderHtml the home page
 	data := HomePageData{
 		CSRFField:       csrf.TemplateField(r),
-		User:            sessions.GetLoggedInUser(r, h.SessionStore, h.DB),
+		User:            *user,
 		Webhooks:        webhooks,
 		Webhook:         activeWebhook,
 		ResponseHeaders: headersJSON,

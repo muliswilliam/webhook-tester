@@ -38,7 +38,7 @@ func NewWebhookApiHandler(svc *service.WebhookService, m metrics.Recorder, l *lo
 // @Success     200  {object}  dtos.Webhook
 // @Router      /webhooks [post]
 func (h *WebhookAiHandler) CreateWebhookApi(w http.ResponseWriter, r *http.Request) {
-	user := middlewares.GetAuthenticatedUser(r)
+	user := middlewares.GetApiAuthenticatedUser(r)
 	input := dtos.CreateWebhookRequest{}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		utils.RenderJSON(w, http.StatusBadRequest, err.Error())
@@ -84,7 +84,7 @@ func (h *WebhookAiHandler) CreateWebhookApi(w http.ResponseWriter, r *http.Reque
 // @Success     200  {object} []dtos.Webhook
 // @Router      /webhooks [get]
 func (h *WebhookAiHandler) ListWebhooksApi(w http.ResponseWriter, r *http.Request) {
-	user := middlewares.GetAuthenticatedUser(r)
+	user := middlewares.GetApiAuthenticatedUser(r)
 	webhooks, err := h.Service.ListWebhooks(user.ID)
 	if err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
@@ -107,7 +107,7 @@ func (h *WebhookAiHandler) ListWebhooksApi(w http.ResponseWriter, r *http.Reques
 // @Router      /webhooks/{id} [get]
 func (h *WebhookAiHandler) GetWebhookApi(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
-	user := middlewares.GetAuthenticatedUser(r)
+	user := middlewares.GetApiAuthenticatedUser(r)
 	webhook, err := h.Service.GetUserWebhook(webhookID, user.ID)
 
 	if err != nil {
@@ -141,7 +141,7 @@ func (h *WebhookAiHandler) GetWebhookApi(w http.ResponseWriter, r *http.Request)
 // @Router      /webhooks/{id} [put]
 func (h *WebhookAiHandler) UpdateWebhookApi(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
-	user := middlewares.GetAuthenticatedUser(r)
+	user := middlewares.GetApiAuthenticatedUser(r)
 	webhook, err := h.Service.GetUserWebhook(webhookID, user.ID)
 	if err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
@@ -208,7 +208,7 @@ func (h *WebhookAiHandler) UpdateWebhookApi(w http.ResponseWriter, r *http.Reque
 // @Router       /webhooks/{id} [delete]
 func (h *WebhookAiHandler) DeleteWebhookApi(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	user := middlewares.GetAuthenticatedUser(r)
+	user := middlewares.GetApiAuthenticatedUser(r)
 	if err := h.Service.DeleteWebhook(id, user.ID); err != nil {
 		utils.RenderJSON(w, http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),

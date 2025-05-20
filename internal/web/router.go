@@ -8,16 +8,18 @@ import (
 	"webhook-tester/internal/handlers"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
-	"webhook-tester/internal/store"
-
-	"github.com/wader/gormstore/v2"
-	"gorm.io/gorm"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 )
 
-func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http.Handler {
+func NewWebRouter(
+	wrs *service.WebhookRequestService,
+	ws *service.WebhookService,
+	authSvc *service.AuthService,
+	metricsRec metrics.Recorder,
+	logger *log.Logger,
+) http.Handler {
 	r := chi.NewRouter()
 
 	// CSRF Setup
@@ -37,40 +39,24 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 
 	r.Use(csrfMiddleware)
 
-	recorder := metrics.PrometheusRecorder{}
-	h := &handlers.Handler{
-		DB:           db,
-		SessionStore: sessionStore,
-		Logger:       logger,
-		Metrics:      &recorder,
-	}
-
+	webhookReqHandler := handlers.NewWebhookRequestHandler(wrs, authSvc, ws, &metricsRec, logger)
 	r.Route("/requests", func(r chi.Router) {
-		r.Get("/{id}", h.GetRequest)
-		r.Post("/{id}/delete", h.DeleteRequest)
-		r.Post("/{id}/replay", h.ReplayRequest)
+		r.Get("/{id}", webhookReqHandler.GetRequest)
+		r.Post("/{id}/delete", webhookReqHandler.DeleteRequest)
+		r.Post("/{id}/replay", webhookReqHandler.ReplayRequest)
 	})
 
-	wr := store.NewGormWebookRepo(db, logger)
-	ws := service.NewWebhookService(wr)
-
-	hh := handlers.NewHomeHandler(ws, sessionStore, logger, &recorder, db)
+	hh := handlers.NewHomeHandler(ws, authSvc, logger, metricsRec)
 	r.Get("/", hh.Home)
 
-	webhookHandler := handlers.NewWebhookHandler(ws,
-		sessionStore,
-		logger,
-		&recorder,
-	)
+	webhookHandler := handlers.NewWebhookHandler(ws, authSvc, logger, metricsRec)
 	r.Post("/create-webhook", webhookHandler.Create)
 	r.Post("/delete-requests/{id}", webhookHandler.DeleteRequests)
 	r.Post("/delete-webhook/{id}", webhookHandler.DeleteWebhook)
 	r.Post("/update-webhook/{id}", webhookHandler.UpdateWebhook)
 	r.Get("/webhook-stream/{id}", webhookHandler.StreamWebhookEvents)
 
-	userRepo := store.NewGormUserRepo(db, logger)
-	authSvc := service.NewAuthService(userRepo)
-	authHandler := handlers.NewAuthHandler(authSvc, logger, &recorder, sessionStore)
+	authHandler := handlers.NewAuthHandler(authSvc, logger, metricsRec)
 	r.Get("/register", authHandler.RegisterGet)
 	r.Post("/register", authHandler.RegisterPost)
 	r.Get("/login", authHandler.LoginGet)
@@ -81,8 +67,9 @@ func Router(db *gorm.DB, sessionStore *gormstore.Store, logger *log.Logger) http
 	r.Get("/reset-password", authHandler.ResetPasswordGet)
 	r.Post("/reset-password", authHandler.ResetPasswordPost)
 
-	r.Get("/privacy", h.PrivacyPolicy)
-	r.Get("/terms", h.TermsAndConditions)
+	lh := handlers.NewLegalHandler()
+	r.Get("/privacy", lh.PrivacyPolicy)
+	r.Get("/terms", lh.TermsAndConditions)
 
 	return r
 }

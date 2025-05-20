@@ -6,7 +6,13 @@ import (
 	"webhook-tester/internal/utils"
 )
 
-func (h *Handler) PrivacyPolicy(w http.ResponseWriter, r *http.Request) {
+type LegalHandler struct{}
+
+func NewLegalHandler() *LegalHandler {
+	return &LegalHandler{}
+}
+
+func (h *LegalHandler) PrivacyPolicy(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Year int
 	}{
@@ -15,7 +21,7 @@ func (h *Handler) PrivacyPolicy(w http.ResponseWriter, r *http.Request) {
 	utils.RenderHtmlWithoutLayout(w, r, "policy", data)
 }
 
-func (h *Handler) TermsAndConditions(w http.ResponseWriter, r *http.Request) {
+func (h *LegalHandler) TermsAndConditions(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Year int
 	}{
