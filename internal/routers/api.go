@@ -1,4 +1,4 @@
-package api
+package routers
 
 import (
 	"gorm.io/gorm"
@@ -12,7 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func Router(svc *service.WebhookService, db *gorm.DB, l *log.Logger) http.Handler {
+func NewApiRouter(svc *service.WebhookService, db *gorm.DB, l *log.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	h := handlers.NewWebhookApiHandler(svc, &metrics.PrometheusRecorder{}, l)

@@ -1,4 +1,4 @@
-package webhook
+package routers
 
 import (
 	"github.com/go-chi/chi/v5"
