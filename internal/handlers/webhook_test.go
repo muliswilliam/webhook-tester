@@ -327,7 +327,7 @@ func (suite *WebhookHandlerTestSuite) TestUpdateWebhook_FormData() {
 			updated = *args.Get(0).(*models.Webhook)
 		})
 
-	fmt.Printf("updated: %+v\n", updated)
+// 330: 	fmt.Printf("updated: %+v\n", updated)
 	suite.recorder.On("IncWebhooksUpdated").Return()
 
 	form := url.Values{}
