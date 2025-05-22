@@ -3,14 +3,15 @@ package service
 import (
 	"errors"
 	"fmt"
-	"github.com/wader/gormstore/v2"
-	"gorm.io/gorm"
 	"net/http"
 	"os"
 	"time"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/repository"
 	"webhook-tester/internal/utils"
+
+	"github.com/wader/gormstore/v2"
+	"gorm.io/gorm"
 )
 
 //go:generate mockgen -source=auth.go -destination=./mocks/auth_mock.go -package=mocks
@@ -35,7 +36,7 @@ type authService struct {
 }
 
 // NewAuthService creates an AuthService
-func NewAuthService(userRepo repository.UserRepository, db *gorm.DB, authSecret string) *authService {
+func NewAuthService(userRepo repository.UserRepository, db *gorm.DB, authSecret string) AuthService {
 	// build the GORM‐backed session store
 	store := gormstore.New(db, []byte(authSecret))
 	quit := make(chan struct{})
