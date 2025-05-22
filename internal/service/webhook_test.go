@@ -2,6 +2,8 @@ package service_test
 
 import (
 	"errors"
+	"net/http"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
@@ -33,22 +35,47 @@ func (suite *WebhookServiceTestSuite) TestWebookService_CreateWebhook() {
 	suite.NoError(err)
 }
 
+func (suite *WebhookServiceTestSuite) TestWebookService_CreateWebhook_WithDefaultResponseCode() {
+	wh := &models.Webhook{}
+	suite.mockRepo.On("Insert", mock.Anything).
+		Return(nil).
+		Run(func(args mock.Arguments) {
+			wh = args.Get(0).(*models.Webhook)
+		})
+	err := suite.svc.CreateWebhook(&models.Webhook{ID: "id", Title: "title", UserID: 1})
+	suite.NoError(err)
+	suite.Equal(http.StatusOK, wh.ResponseCode)
+}
+
 func (suite *WebhookServiceTestSuite) TestWebookService_CreateWebhook_Error() {
 	suite.mockRepo.On("Insert", mock.Anything).Return(errors.New("insert error"))
 	err := suite.svc.CreateWebhook(&models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1})
 	suite.Error(err)
 }
 
-func (suite *WebhookServiceTestSuite) TestWebhookService_Get() {
+func (suite *WebhookServiceTestSuite) TestWebhookService_GetWebhook() {
 	suite.mockRepo.On("Get", "id").Return(&models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}, nil)
 	wh, err := suite.svc.GetWebhook("id")
 	suite.NoError(err)
 	suite.Equal(&models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}, wh)
 }
 
-func (suite *WebhookServiceTestSuite) TestWebhookService_Get_Error() {
+func (suite *WebhookServiceTestSuite) TestWebhookService_GetWebhook_Error() {
 	suite.mockRepo.On("Get", "missing").Return(&models.Webhook{}, errors.New("not found"))
 	_, err := suite.svc.GetWebhook("missing")
+	suite.Error(err)
+}
+
+func (suite *WebhookServiceTestSuite) TestWebhookService_GetUserWebhook() {
+	suite.mockRepo.On("GetByUser", "id", uint(1)).Return(&models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}, nil)
+	wh, err := suite.svc.GetUserWebhook("id", 1)
+	suite.NoError(err)
+	suite.Equal(&models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}, wh)
+}
+
+func (suite *WebhookServiceTestSuite) TestWebhookService_GetUserWebhook_Error() {
+	suite.mockRepo.On("GetByUser", "missing", uint(1)).Return(&models.Webhook{}, errors.New("not found"))
+	_, err := suite.svc.GetUserWebhook("missing", 1)
 	suite.Error(err)
 }
 
@@ -92,5 +119,42 @@ func (suite *WebhookServiceTestSuite) TestWebhookService_Delete() {
 func (suite *WebhookServiceTestSuite) TestWebhookService_Delete_Error() {
 	suite.mockRepo.On("Delete", "id", uint(1)).Return(errors.New("delete error"))
 	err := suite.svc.DeleteWebhook("id", 1)
+	suite.Error(err)
+}
+
+func (suite *WebhookServiceTestSuite) TestWebhookService_GetWebhookWithRequests() {
+	suite.mockRepo.On("GetWithRequests", "id").Return(&models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}, nil)
+	wh, err := suite.svc.GetWebhookWithRequests("id")
+	suite.NoError(err)
+	suite.Equal(&models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}, wh)
+}
+
+func (suite *WebhookServiceTestSuite) TestWebhookService_GetWebhookWithRequests_Error() {
+	suite.mockRepo.On("GetWithRequests", "missing").Return(&models.Webhook{}, errors.New("not found"))
+	_, err := suite.svc.GetWebhookWithRequests("missing")
+	suite.Error(err)
+}
+
+func (suite *WebhookServiceTestSuite) TestWebhookService_CreateRequest() {
+	suite.mockRepo.On("InsertRequest", mock.Anything).Return(nil)
+	err := suite.svc.CreateRequest(&models.WebhookRequest{WebhookID: "id", Method: "POST"})
+	suite.NoError(err)
+}
+
+func (suite *WebhookServiceTestSuite) TestWebhookService_CreateRequest_Error() {
+	suite.mockRepo.On("InsertRequest", mock.Anything).Return(errors.New("insert error"))
+	err := suite.svc.CreateRequest(&models.WebhookRequest{WebhookID: "id", Method: "POST"})
+	suite.Error(err)
+}
+
+func (suite *WebhookServiceTestSuite) TestWebhookService_CleanPublicWebhooks() {
+	suite.mockRepo.On("CleanPublic", mock.Anything).Return(nil)
+	err := suite.svc.CleanPublicWebhooks(time.Hour)
+	suite.NoError(err)
+}
+
+func (suite *WebhookServiceTestSuite) TestWebhookService_CleanPublicWebhooks_Error() {
+	suite.mockRepo.On("CleanPublic", mock.Anything).Return(errors.New("clean error"))
+	err := suite.svc.CleanPublicWebhooks(time.Hour)
 	suite.Error(err)
 }
