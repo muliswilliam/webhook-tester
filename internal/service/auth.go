@@ -31,29 +31,53 @@ type AuthService interface {
 
 // AuthService holds user business logic
 type authService struct {
-	repo         repository.UserRepository
-	sessionStore *gormstore.Store
+	repo              repository.UserRepository
+	passwordHasher    utils.PasswordHasher
+	passwordValidator utils.PasswordValidator
+	sessionStore      *gormstore.Store
 }
 
 // NewAuthService creates an AuthService
-func NewAuthService(userRepo repository.UserRepository, db *gorm.DB, authSecret string) AuthService {
+func NewAuthService(
+	userRepo repository.UserRepository,
+	db *gorm.DB,
+	passwordHasher utils.PasswordHasher,
+	passwordValidator utils.PasswordValidator,
+	authSecret string,
+) AuthService {
 	// build the GORM‐backed session store
 	store := gormstore.New(db, []byte(authSecret))
 	quit := make(chan struct{})
 	go store.PeriodicCleanup(48*time.Hour, quit)
 
 	return &authService{
-		repo:         userRepo,
-		sessionStore: store,
+		repo:              userRepo,
+		passwordHasher:    passwordHasher,
+		passwordValidator: passwordValidator,
+		sessionStore:      store,
 	}
 }
 
 // Register creates a new user with hashed password
 func (s *authService) Register(email, plainPassword, fullName string) (*models.User, error) {
-	if _, err := s.repo.GetByEmail(email); err == nil {
+	if _, err := s.repo.GetByEmail(email); err != nil {
 		return nil, fmt.Errorf("email already taken")
 	}
-	hash, err := utils.HashPassword(plainPassword)
+
+	rules := utils.PasswordRules{
+		MinLength:        8,
+		RequireLowercase: true,
+		RequireUppercase: true,
+		RequireNumber:    true,
+	}
+
+	err := s.passwordValidator.Validate(plainPassword, rules)
+	fmt.Println("validate error", err)
+	if err != nil {
+		return nil, err
+	}
+
+	hash, err := s.passwordHasher.HashPassword(plainPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +98,7 @@ func (s *authService) Authenticate(email, plainPassword string) (*models.User, e
 	if err != nil {
 		return nil, errors.New("invalid credentials")
 	}
-	if !utils.CheckPasswordHash(plainPassword, user.Password) {
+	if !s.passwordHasher.CheckPasswordHash(plainPassword, user.Password) {
 		return nil, errors.New("invalid credentials")
 	}
 	return user, nil
@@ -177,11 +201,11 @@ func (s *authService) ResetPassword(token, newPassword string) error {
 		RequireUppercase: true,
 		RequireNumber:    true,
 	}
-	if err := utils.ValidatePassword(newPassword, rules); err != nil {
+	if err := s.passwordValidator.Validate(newPassword, rules); err != nil {
 		return err
 	}
 
-	hash, err := utils.HashPassword(newPassword)
+	hash, err := s.passwordHasher.HashPassword(newPassword)
 	if err != nil {
 		return err
 	}

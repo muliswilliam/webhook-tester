@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
@@ -75,38 +74,15 @@ func (h *AuthHandler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 	email := r.FormValue("email")
 	password := r.FormValue("password")
 
-	rules := utils.PasswordRules{
-		MinLength:        8,
-		RequireLowercase: true,
-		RequireUppercase: true,
-		RequireNumber:    true,
-	}
-	if err := utils.ValidatePassword(password, rules); err != nil {
-		// re-render with error and preserve inputs
+	_, err := h.auth.Register(email, password, fullName)
+	if err != nil {
+		h.logger.Printf("error registering user: %v", err)
 		h.renderRegisterForm(w, r, &RegisterPageData{
 			Error:     err.Error(),
 			FullName:  fullName,
 			Email:     email,
 			CSRFField: csrf.TemplateField(r),
 		})
-		return
-	}
-
-	_, err := h.auth.Register(email, password, fullName)
-	if err != nil {
-		// Duplicate email?
-		if strings.Contains(err.Error(), "email already taken") {
-			h.renderRegisterForm(w, r, &RegisterPageData{
-				Error:     "That email is already registered",
-				FullName:  fullName,
-				Email:     email,
-				CSRFField: csrf.TemplateField(r),
-			})
-			return
-		}
-		// Otherwise: unexpected
-		h.logger.Printf("error registering user: %v", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"webhook-tester/internal/routers"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/store"
+	"webhook-tester/internal/utils"
 
 	"github.com/MarceloPetrucio/go-scalar-api-reference"
 	"github.com/go-chi/chi/v5"
@@ -45,7 +46,7 @@ func (srv *Server) MountHandlers() {
 	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
 	webhookSvc := service.NewWebhookService(repo)
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
-	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
+	authSvc := service.NewAuthService(userRepo, srv.DB, utils.NewPasswordHasher(), utils.NewPasswordValidator(), authSecret)
 	metricsRec := appMetrics.PrometheusRecorder{}
 	// Basic CORS
 	// for more ideas, see: https://developer.github.com/v3/#cross-origin-resource-sharing
