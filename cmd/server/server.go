@@ -2,6 +2,10 @@ package server
 
 import (
 	"fmt"
+	"webhook-tester/internal/routers"
+	"webhook-tester/internal/service"
+	"webhook-tester/internal/store"
+
 	"github.com/MarceloPetrucio/go-scalar-api-reference"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -9,14 +13,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
 	metricsMiddleware "github.com/slok/go-http-metrics/middleware"
-	"webhook-tester/internal/routers"
-	"webhook-tester/internal/service"
-	"webhook-tester/internal/store"
 
 	"github.com/slok/go-http-metrics/middleware/std"
 	"github.com/wader/gormstore/v2"
 
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"os"
@@ -25,6 +25,8 @@ import (
 	_ "webhook-tester/docs"
 	"webhook-tester/internal/db"
 	appMetrics "webhook-tester/internal/metrics"
+
+	"gorm.io/gorm"
 )
 
 type Server struct {
@@ -72,7 +74,7 @@ func (srv *Server) MountHandlers() {
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
-	r.Mount("/", routers.NewWebRouter(*webhookReqSvc, webhookSvc, authSvc, &metricsRec, srv.Logger))
+	r.Mount("/", routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, &metricsRec, srv.Logger))
 
 	r.Mount("/api", routers.NewApiRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))
 	r.Mount("/webhooks", routers.NewWebhookRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))
