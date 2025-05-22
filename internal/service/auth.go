@@ -13,27 +13,42 @@ import (
 	"webhook-tester/internal/utils"
 )
 
+//go:generate mockgen -source=auth.go -destination=./mocks/auth_mock.go -package=mocks
+
+type AuthService interface {
+	Register(email, plainPassword, fullName string) (*models.User, error)
+	Authenticate(email, plainPassword string) (*models.User, error)
+	Authorize(r *http.Request) (uint, error)
+	GetCurrentUser(r *http.Request) (*models.User, error)
+	CreateSession(w http.ResponseWriter, r *http.Request, user *models.User) error
+	ClearSession(w http.ResponseWriter, r *http.Request)
+	ForgotPassword(email, domain string) (string, error)
+	ValidateResetToken(token string) (*models.User, error)
+	ResetPassword(token, newPassword string) error
+	ValidateAPIKey(key string) (*models.User, error)
+}
+
 // AuthService holds user business logic
-type AuthService struct {
+type authService struct {
 	repo         repository.UserRepository
 	sessionStore *gormstore.Store
 }
 
 // NewAuthService creates an AuthService
-func NewAuthService(userRepo repository.UserRepository, db *gorm.DB, authSecret string) *AuthService {
+func NewAuthService(userRepo repository.UserRepository, db *gorm.DB, authSecret string) *authService {
 	// build the GORM‐backed session store
 	store := gormstore.New(db, []byte(authSecret))
 	quit := make(chan struct{})
 	go store.PeriodicCleanup(48*time.Hour, quit)
 
-	return &AuthService{
+	return &authService{
 		repo:         userRepo,
 		sessionStore: store,
 	}
 }
 
 // Register creates a new user with hashed password
-func (s *AuthService) Register(email, plainPassword, fullName string) (*models.User, error) {
+func (s *authService) Register(email, plainPassword, fullName string) (*models.User, error) {
 	if _, err := s.repo.GetByEmail(email); err == nil {
 		return nil, fmt.Errorf("email already taken")
 	}
@@ -53,7 +68,7 @@ func (s *AuthService) Register(email, plainPassword, fullName string) (*models.U
 }
 
 // Authenticate verifies credentials
-func (s *AuthService) Authenticate(email, plainPassword string) (*models.User, error) {
+func (s *authService) Authenticate(email, plainPassword string) (*models.User, error) {
 	user, err := s.repo.GetByEmail(email)
 	if err != nil {
 		return nil, errors.New("invalid credentials")
@@ -65,7 +80,7 @@ func (s *AuthService) Authenticate(email, plainPassword string) (*models.User, e
 }
 
 // Authorize extracts and validates the user_id from the session cookie.
-func (s *AuthService) Authorize(r *http.Request) (uint, error) {
+func (s *authService) Authorize(r *http.Request) (uint, error) {
 	const Name = "_webhook_tester_session_id"
 	authErr := errors.New("unauthorized")
 	sess, err := s.sessionStore.Get(r, Name)
@@ -81,7 +96,7 @@ func (s *AuthService) Authorize(r *http.Request) (uint, error) {
 }
 
 // GetCurrentUser pulls the session and looks up the full User record.
-func (s *AuthService) GetCurrentUser(r *http.Request) (*models.User, error) {
+func (s *authService) GetCurrentUser(r *http.Request) (*models.User, error) {
 	userID, err := s.Authorize(r)
 	if err != nil {
 		return nil, err
@@ -90,7 +105,7 @@ func (s *AuthService) GetCurrentUser(r *http.Request) (*models.User, error) {
 }
 
 // CreateSession establishes a new session cookie for the given user.
-func (s *AuthService) CreateSession(w http.ResponseWriter, r *http.Request, user *models.User) error {
+func (s *authService) CreateSession(w http.ResponseWriter, r *http.Request, user *models.User) error {
 	const Name = "_webhook_tester_session_id"
 	sess, err := s.sessionStore.Get(r, Name)
 	if err != nil {
@@ -105,7 +120,7 @@ func (s *AuthService) CreateSession(w http.ResponseWriter, r *http.Request, user
 }
 
 // ClearSession invalidates the current session cookie.
-func (s *AuthService) ClearSession(w http.ResponseWriter, r *http.Request) {
+func (s *authService) ClearSession(w http.ResponseWriter, r *http.Request) {
 	const Name = "_webhook_tester_session_id"
 	if sess, err := s.sessionStore.Get(r, Name); err == nil {
 		sess.Options.MaxAge = -1
@@ -114,7 +129,7 @@ func (s *AuthService) ClearSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // ForgotPassword generates a reset token, sets expiry, and returns the token
-func (s *AuthService) ForgotPassword(email, domain string) (string, error) {
+func (s *authService) ForgotPassword(email, domain string) (string, error) {
 	user, err := s.repo.GetByEmail(email)
 	if err != nil {
 		return "", fmt.Errorf("user not found")
@@ -133,7 +148,7 @@ func (s *AuthService) ForgotPassword(email, domain string) (string, error) {
 }
 
 // ValidateResetToken looks up the user by token and ensures it hasn't expired.
-func (s *AuthService) ValidateResetToken(token string) (*models.User, error) {
+func (s *authService) ValidateResetToken(token string) (*models.User, error) {
 	user, err := s.repo.GetByResetToken(token)
 	if err != nil {
 		return nil, fmt.Errorf("invalid or expired token")
@@ -146,7 +161,7 @@ func (s *AuthService) ValidateResetToken(token string) (*models.User, error) {
 
 // ResetPassword validates the token, enforces password rules, hashes,
 // and then persists the new password.
-func (s *AuthService) ResetPassword(token, newPassword string) error {
+func (s *authService) ResetPassword(token, newPassword string) error {
 	user, err := s.repo.GetByResetToken(token)
 	if err != nil {
 		return fmt.Errorf("invalid or expired reset link")
@@ -176,7 +191,7 @@ func (s *AuthService) ResetPassword(token, newPassword string) error {
 	return s.repo.Update(user)
 }
 
-func (s *AuthService) ValidateAPIKey(key string) (*models.User, error) {
+func (s *authService) ValidateAPIKey(key string) (*models.User, error) {
 	user, err := s.repo.GetByAPIKey(key)
 	if err != nil {
 		return nil, fmt.Errorf("invalid API key")

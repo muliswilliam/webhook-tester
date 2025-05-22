@@ -22,15 +22,15 @@ import (
 )
 
 type WebhookHandler struct {
-	webhookSvc *service.WebhookService
-	authSvc    *service.AuthService
+	webhookSvc service.WebhookService
+	authSvc    service.AuthService
 	logger     *log.Logger
 	metrics    metrics.Recorder
 }
 
 func NewWebhookHandler(
-	webhookSvc *service.WebhookService,
-	authSvc *service.AuthService,
+	webhookSvc service.WebhookService,
+	authSvc service.AuthService,
 	logger *log.Logger,
 	metrics metrics.Recorder) *WebhookHandler {
 	return &WebhookHandler{
@@ -67,7 +67,7 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if headersStr != "" {
 		err := json.Unmarshal([]byte(headersStr), &headers)
 		if err != nil {
-			log.Printf("error parsing json %s", err)
+			h.logger.Printf("error parsing json %s", err)
 		}
 	}
 
@@ -101,6 +101,7 @@ func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) 
 
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
 	}
 
 	webhookID := chi.URLParam(r, "id")
@@ -124,12 +125,14 @@ func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
 	}
 
 	webhookID := chi.URLParam(r, "id")
 
 	if webhookID == "" {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
 	}
 
 	err = h.webhookSvc.DeleteWebhook(webhookID, userID)
@@ -137,6 +140,7 @@ func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Printf("Error deleting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -184,6 +188,7 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Printf("Error getting webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
 	wh.Title = title

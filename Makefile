@@ -5,10 +5,11 @@ SWAG_MAIN=cmd/main.go
 APP_NAME=webhook-tester
 DOCKER_COMPOSE=docker-compose
 
-.PHONY: help up down logs restart services docs generate
+.PHONY: help up down logs restart services docs generate coverage
 
-generate:
-	go generate ./...
+coverage:
+	go test -v -coverprofile=coverage.out ./... && go tool cover -html=coverage.out -o coverage.html && open coverage.html
+
 docs:
 	@echo "🔄 Generating Swagger docs..."
 	$(SWAG_CMD) init --parseDependency --parseInternal -g $(SWAG_MAIN)

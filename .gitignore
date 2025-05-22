@@ -34,3 +34,7 @@ go.work.sum
 # tmp
 tmp/
 *.log
+
+# coverage
+coverage.out
+coverage.html

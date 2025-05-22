@@ -72,7 +72,7 @@ func (srv *Server) MountHandlers() {
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
-	r.Mount("/", routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, &metricsRec, srv.Logger))
+	r.Mount("/", routers.NewWebRouter(*webhookReqSvc, webhookSvc, authSvc, &metricsRec, srv.Logger))
 
 	r.Mount("/api", routers.NewApiRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))
 	r.Mount("/webhooks", routers.NewWebhookRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))

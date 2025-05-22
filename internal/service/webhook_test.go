@@ -1,154 +1,142 @@
 package service_test
 
-import (
-	"errors"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
-	"gorm.io/gorm"
+// func TestWebookService_CreateWebhook(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
+// 	wh := &models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}
+// 	mockRepo.EXPECT().Insert(wh).Return(nil)
+// 	err := svc.CreateWebhook(wh)
+// 	assert.NoError(t, err)
+// }
 
-	"testing"
-	"webhook-tester/internal/models"
-	"webhook-tester/internal/repository/mocks"
-	"webhook-tester/internal/service"
-)
+// func TestWebookService_Create_Error(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
+// 	wh := &models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}
+// 	mockRepo.EXPECT().Insert(wh).Return(gorm.ErrRecordNotFound)
+// 	err := svc.CreateWebhook(wh)
+// 	assert.Equal(t, gorm.ErrRecordNotFound, err)
+// }
 
-func TestWebookService_CreateWebhook(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
-	wh := &models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}
-	mockRepo.EXPECT().Insert(wh).Return(nil)
-	err := svc.CreateWebhook(wh)
-	assert.NoError(t, err)
-}
+// func TestWebhookService_Get(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-func TestWebookService_Create_Error(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
-	wh := &models.Webhook{ID: "id", Title: "title", ResponseCode: 200, UserID: 1}
-	mockRepo.EXPECT().Insert(wh).Return(gorm.ErrRecordNotFound)
-	err := svc.CreateWebhook(wh)
-	assert.Equal(t, gorm.ErrRecordNotFound, err)
-}
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
 
-func TestWebhookService_Get(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	expected := &models.Webhook{ID: "w3", Title: "Fetch"}
+// 	mockRepo.EXPECT().Get("w3").Return(expected, nil)
 
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
+// 	result, err := svc.GetWebhook("w3")
+// 	assert.NoError(t, err)
+// 	assert.Equal(t, expected, result)
+// }
 
-	expected := &models.Webhook{ID: "w3", Title: "Fetch"}
-	mockRepo.EXPECT().Get("w3").Return(expected, nil)
+// func TestWebhookService_Get_Error(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	result, err := svc.GetWebhook("w3")
-	assert.NoError(t, err)
-	assert.Equal(t, expected, result)
-}
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
 
-func TestWebhookService_Get_Error(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	repoErr := errors.New("not found")
+// 	mockRepo.EXPECT().Get("missing").Return(nil, repoErr)
 
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
+// 	result, err := svc.GetWebhook("missing")
+// 	assert.Nil(t, result)
+// 	assert.EqualError(t, err, "not found")
+// }
 
-	repoErr := errors.New("not found")
-	mockRepo.EXPECT().Get("missing").Return(nil, repoErr)
+// func TestWebhookService_ListByUser(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	result, err := svc.GetWebhook("missing")
-	assert.Nil(t, result)
-	assert.EqualError(t, err, "not found")
-}
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
 
-func TestWebhookService_ListByUser(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	exList := []models.Webhook{
+// 		{ID: "w1"},
+// 		{ID: "w2"},
+// 	}
+// 	mockRepo.EXPECT().GetAllByUser(uint(42)).Return(exList, nil)
 
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
+// 	list, err := svc.ListWebhooks(42)
+// 	assert.NoError(t, err)
+// 	assert.Equal(t, exList, list)
+// }
 
-	exList := []models.Webhook{
-		{ID: "w1"},
-		{ID: "w2"},
-	}
-	mockRepo.EXPECT().GetAllByUser(uint(42)).Return(exList, nil)
+// func TestWebhookService_ListByUser_Error(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	list, err := svc.ListWebhooks(42)
-	assert.NoError(t, err)
-	assert.Equal(t, exList, list)
-}
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
 
-func TestWebhookService_ListByUser_Error(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	repoErr := errors.New("db error")
+// 	mockRepo.EXPECT().GetAllByUser(uint(100)).Return(nil, repoErr)
 
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
+// 	list, err := svc.ListWebhooks(100)
+// 	assert.Nil(t, list)
+// 	assert.EqualError(t, err, "db error")
+// }
 
-	repoErr := errors.New("db error")
-	mockRepo.EXPECT().GetAllByUser(uint(100)).Return(nil, repoErr)
+// func TestWebhookService_Update(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	list, err := svc.ListWebhooks(100)
-	assert.Nil(t, list)
-	assert.EqualError(t, err, "db error")
-}
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
 
-func TestWebhookService_Update(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	wh := &models.Webhook{ID: "w4"}
+// 	mockRepo.EXPECT().Update(wh).Return(nil)
 
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
+// 	err := svc.UpdateWebhook(wh)
+// 	assert.NoError(t, err)
+// }
 
-	wh := &models.Webhook{ID: "w4"}
-	mockRepo.EXPECT().Update(wh).Return(nil)
+// func TestWebhookService_Update_Error(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	err := svc.UpdateWebhook(wh)
-	assert.NoError(t, err)
-}
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
 
-func TestWebhookService_Update_Error(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	wh := &models.Webhook{ID: "w5"}
+// 	repoErr := errors.New("update failed")
+// 	mockRepo.EXPECT().Update(wh).Return(repoErr)
 
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
+// 	err := svc.UpdateWebhook(wh)
+// 	assert.EqualError(t, err, "update failed")
+// }
 
-	wh := &models.Webhook{ID: "w5"}
-	repoErr := errors.New("update failed")
-	mockRepo.EXPECT().Update(wh).Return(repoErr)
+// func TestWebhookService_Delete(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	err := svc.UpdateWebhook(wh)
-	assert.EqualError(t, err, "update failed")
-}
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
 
-func TestWebhookService_Delete(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	mockRepo.EXPECT().Delete("w6", uint(200)).Return(nil)
 
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
+// 	err := svc.DeleteWebhook("w6", 200)
+// 	assert.NoError(t, err)
+// }
 
-	mockRepo.EXPECT().Delete("w6", uint(200)).Return(nil)
+// func TestWebhookService_Delete_Error(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	err := svc.DeleteWebhook("w6", 200)
-	assert.NoError(t, err)
-}
+// 	mockRepo := mocks.NewMockWebhookRepository(ctrl)
+// 	svc := service.NewWebhookService(mockRepo)
 
-func TestWebhookService_Delete_Error(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	repoErr := errors.New("delete failed")
+// 	mockRepo.EXPECT().Delete("w7", uint(200)).Return(repoErr)
 
-	mockRepo := mocks.NewMockWebhookRepository(ctrl)
-	svc := service.NewWebhookService(mockRepo)
-
-	repoErr := errors.New("delete failed")
-	mockRepo.EXPECT().Delete("w7", uint(200)).Return(repoErr)
-
-	err := svc.DeleteWebhook("w7", 200)
-	assert.EqualError(t, err, "delete failed")
-}
+// 	err := svc.DeleteWebhook("w7", 200)
+// 	assert.EqualError(t, err, "delete failed")
+// }

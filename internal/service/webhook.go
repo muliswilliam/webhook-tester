@@ -7,18 +7,32 @@ import (
 	"webhook-tester/internal/repository"
 )
 
+type WebhookService interface {
+	CreateWebhook(w *models.Webhook) error
+	GetWebhook(id string) (*models.Webhook, error)
+	GetUserWebhook(id string, userID uint) (*models.Webhook, error)
+	ListWebhooks(userID uint) ([]models.Webhook, error)
+	UpdateWebhook(w *models.Webhook) error
+	CreateRequest(wr *models.WebhookRequest) error
+	DeleteWebhook(id string, userID uint) error
+	GetWebhookWithRequests(id string) (*models.Webhook, error)
+	CleanPublicWebhooks(d time.Duration) error
+}
+
+var _ WebhookService = (*webhookService)(nil)
+
 // WebhookService encapsulates business logic for webhooks.
-type WebhookService struct {
+type webhookService struct {
 	repo repository.WebhookRepository
 }
 
 // NewWebhookService constructs a WebhookService with the given repository.
-func NewWebhookService(repo repository.WebhookRepository) *WebhookService {
-	return &WebhookService{repo: repo}
+func NewWebhookService(repo repository.WebhookRepository) *webhookService {
+	return &webhookService{repo: repo}
 }
 
 // CreateWebhook creates a new webhook record.
-func (s *WebhookService) CreateWebhook(w *models.Webhook) error {
+func (s *webhookService) CreateWebhook(w *models.Webhook) error {
 	if w.ResponseCode == 0 {
 		w.ResponseCode = http.StatusOK
 	}
@@ -26,17 +40,17 @@ func (s *WebhookService) CreateWebhook(w *models.Webhook) error {
 }
 
 // GetWebhook retrieves a public webhook by ID.
-func (s *WebhookService) GetWebhook(id string) (*models.Webhook, error) {
+func (s *webhookService) GetWebhook(id string) (*models.Webhook, error) {
 	return s.repo.Get(id)
 }
 
 // GetUserWebhook retrieves a webhook by ID for a specific user.
-func (s *WebhookService) GetUserWebhook(id string, userID uint) (*models.Webhook, error) {
+func (s *webhookService) GetUserWebhook(id string, userID uint) (*models.Webhook, error) {
 	return s.repo.GetByUser(id, userID)
 }
 
 // ListWebhooks lists public or user-specific webhooks.
-func (s *WebhookService) ListWebhooks(userID uint) ([]models.Webhook, error) {
+func (s *webhookService) ListWebhooks(userID uint) ([]models.Webhook, error) {
 	if userID == 0 {
 		return s.repo.GetAll()
 	}
@@ -44,25 +58,25 @@ func (s *WebhookService) ListWebhooks(userID uint) ([]models.Webhook, error) {
 }
 
 // UpdateWebhook updates an existing webhook.
-func (s *WebhookService) UpdateWebhook(w *models.Webhook) error {
+func (s *webhookService) UpdateWebhook(w *models.Webhook) error {
 	return s.repo.Update(w)
 }
 
-func (s *WebhookService) CreateRequest(wr *models.WebhookRequest) error {
+func (s *webhookService) CreateRequest(wr *models.WebhookRequest) error {
 	return s.repo.InsertRequest(wr)
 }
 
 // DeleteWebhook deletes a webhook and its requests.
-func (s *WebhookService) DeleteWebhook(id string, userID uint) error {
+func (s *webhookService) DeleteWebhook(id string, userID uint) error {
 	return s.repo.Delete(id, userID)
 }
 
 // GetWebhookWithRequests fetches a webhook along with its requests.
-func (s *WebhookService) GetWebhookWithRequests(id string) (*models.Webhook, error) {
+func (s *webhookService) GetWebhookWithRequests(id string) (*models.Webhook, error) {
 	return s.repo.GetWithRequests(id)
 }
 
 // CleanPublicWebhooks cleans up old public webhooks.
-func (s *WebhookService) CleanPublicWebhooks(d time.Duration) error {
+func (s *webhookService) CleanPublicWebhooks(d time.Duration) error {
 	return s.repo.CleanPublic(d)
 }

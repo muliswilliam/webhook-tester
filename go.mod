@@ -15,7 +15,6 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/swaggo/swag v1.16.4
 	github.com/unrolled/render v1.7.0
-	go.uber.org/mock v0.5.2
 	gorm.io/datatypes v1.2.5
 	gorm.io/driver/postgres v1.5.7
 	gorm.io/gorm v1.25.12
@@ -42,6 +41,7 @@ require (
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/tools v0.32.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect

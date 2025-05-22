@@ -42,12 +42,12 @@ type ResetPasswordPageData struct {
 
 // AuthHandler handles registration and login
 type AuthHandler struct {
-	auth    *service.AuthService
+	auth    service.AuthService
 	metrics metrics.Recorder
 	logger  *log.Logger
 }
 
-func NewAuthHandler(auth *service.AuthService, l *log.Logger, m metrics.Recorder) *AuthHandler {
+func NewAuthHandler(auth service.AuthService, l *log.Logger, m metrics.Recorder) *AuthHandler {
 	return &AuthHandler{auth: auth, logger: l, metrics: m}
 }
 

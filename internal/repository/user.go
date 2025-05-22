@@ -2,8 +2,6 @@ package repository
 
 import "webhook-tester/internal/models"
 
-//go:generate mockgen -source=user.go -destination=./mocks/user_mock.go -package=mocks
-
 type UserRepository interface {
 	// Create Creates a new user record
 	Create(user *models.User) error

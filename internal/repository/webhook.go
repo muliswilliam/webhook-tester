@@ -5,8 +5,6 @@ import (
 	"webhook-tester/internal/models"
 )
 
-//go:generate mockgen -source=webhook.go -destination=./mocks/webhook_mock.go -package=mocks
-
 // WebhookRepository defines data access behavior for webhooks.
 type WebhookRepository interface {
 	// Insert a new webhook
