@@ -16,15 +16,15 @@ import (
 )
 
 type HomeHandler struct {
-	webhookSvc *service.WebhookService
-	authSvc    *service.AuthService
+	webhookSvc service.WebhookService
+	authSvc    service.AuthService
 	Logger     *log.Logger
 	Metrics    metrics.Recorder
 }
 
 func NewHomeHandler(
-	webhookSvc *service.WebhookService,
-	authSvc *service.AuthService,
+	webhookSvc service.WebhookService,
+	authSvc service.AuthService,
 	l *log.Logger,
 	mr metrics.Recorder,
 ) *HomeHandler {
@@ -49,7 +49,7 @@ type HomePageData struct {
 
 var sessionIdName = "_webhook_tester_guest_session_id"
 
-func createDefaultWebhook(svc *service.WebhookService, l *log.Logger) (string, error) {
+func createDefaultWebhook(svc service.WebhookService, l *log.Logger) (string, error) {
 	defaultWh := models.Webhook{
 		ID:           utils.GenerateID(),
 		Title:        "Default Webhook",

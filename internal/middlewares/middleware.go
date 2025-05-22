@@ -11,7 +11,7 @@ import (
 
 type ctxKeyUser struct{}
 
-func RequireAPIKey(auth *service.AuthService) func(http.Handler) http.Handler {
+func RequireAPIKey(auth service.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiKey := r.Header.Get("X-API-Key")

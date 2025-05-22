@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func NewApiRouter(webhookSvc *service.WebhookService, authSvc *service.AuthService, l *log.Logger, metricsRec metrics.Recorder) http.Handler {
+func NewApiRouter(webhookSvc service.WebhookService, authSvc service.AuthService, l *log.Logger, metricsRec metrics.Recorder) http.Handler {
 	r := chi.NewRouter()
 
 	h := handlers.NewWebhookApiHandler(webhookSvc, metricsRec, l)

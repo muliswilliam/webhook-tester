@@ -2,6 +2,11 @@ package server
 
 import (
 	"fmt"
+	"webhook-tester/internal/routers"
+	"webhook-tester/internal/service"
+	"webhook-tester/internal/store"
+	"webhook-tester/internal/utils"
+
 	"github.com/MarceloPetrucio/go-scalar-api-reference"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -9,14 +14,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
 	metricsMiddleware "github.com/slok/go-http-metrics/middleware"
-	"webhook-tester/internal/routers"
-	"webhook-tester/internal/service"
-	"webhook-tester/internal/store"
 
 	"github.com/slok/go-http-metrics/middleware/std"
 	"github.com/wader/gormstore/v2"
 
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"os"
@@ -25,6 +26,8 @@ import (
 	_ "webhook-tester/docs"
 	"webhook-tester/internal/db"
 	appMetrics "webhook-tester/internal/metrics"
+
+	"gorm.io/gorm"
 )
 
 type Server struct {
@@ -43,7 +46,7 @@ func (srv *Server) MountHandlers() {
 	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
 	webhookSvc := service.NewWebhookService(repo)
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
-	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
+	authSvc := service.NewAuthService(userRepo, srv.DB, utils.NewPasswordHasher(), utils.NewPasswordValidator(), authSecret)
 	metricsRec := appMetrics.PrometheusRecorder{}
 	// Basic CORS
 	// for more ideas, see: https://developer.github.com/v3/#cross-origin-resource-sharing

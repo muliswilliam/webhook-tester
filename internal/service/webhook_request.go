@@ -5,37 +5,45 @@ import (
 	"webhook-tester/internal/repository"
 )
 
+type WebhookRequestService interface {
+	Record(rq *models.WebhookRequest) error
+	Get(id string) (*models.WebhookRequest, error)
+	List(webhookID string) ([]models.WebhookRequest, error)
+	Delete(id string) error
+	DeleteAll(webhookID string) error
+}
+
 // WebhookRequestService encapsulates business logic for webhook events.
-type WebhookRequestService struct {
+type webhookRequestService struct {
 	repo repository.WebhookRequestRepository
 }
 
 // NewWebhookRequestService constructs a WebhookRequestService.
-func NewWebhookRequestService(repo repository.WebhookRequestRepository) *WebhookRequestService {
-	return &WebhookRequestService{repo: repo}
+func NewWebhookRequestService(repo repository.WebhookRequestRepository) WebhookRequestService {
+	return &webhookRequestService{repo: repo}
 }
 
 // Record records a new webhook request event.
-func (s *WebhookRequestService) Record(rq *models.WebhookRequest) error {
+func (s *webhookRequestService) Record(rq *models.WebhookRequest) error {
 	return s.repo.Insert(rq)
 }
 
 // Get retrieves a single request by ID.
-func (s *WebhookRequestService) Get(id string) (*models.WebhookRequest, error) {
+func (s *webhookRequestService) Get(id string) (*models.WebhookRequest, error) {
 	return s.repo.GetByID(id)
 }
 
 // List returns recent requests for a webhook.
-func (s *WebhookRequestService) List(webhookID string) ([]models.WebhookRequest, error) {
+func (s *webhookRequestService) List(webhookID string) ([]models.WebhookRequest, error) {
 	return s.repo.ListByWebhook(webhookID)
 }
 
 // Delete removes a single request.
-func (s *WebhookRequestService) Delete(id string) error {
+func (s *webhookRequestService) Delete(id string) error {
 	return s.repo.DeleteByID(id)
 }
 
 // DeleteAll removes all requests for a webhook.
-func (s *WebhookRequestService) DeleteAll(webhookID string) error {
+func (s *webhookRequestService) DeleteAll(webhookID string) error {
 	return s.repo.DeleteByWebhook(webhookID)
 }

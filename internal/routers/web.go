@@ -14,9 +14,9 @@ import (
 )
 
 func NewWebRouter(
-	wrs *service.WebhookRequestService,
-	ws *service.WebhookService,
-	authSvc *service.AuthService,
+	wrs service.WebhookRequestService,
+	ws service.WebhookService,
+	authSvc service.AuthService,
 	metricsRec metrics.Recorder,
 	logger *log.Logger,
 ) http.Handler {
@@ -39,7 +39,7 @@ func NewWebRouter(
 
 	r.Use(csrfMiddleware)
 
-	webhookReqHandler := handlers.NewWebhookRequestHandler(wrs, authSvc, ws, &metricsRec, logger)
+	webhookReqHandler := handlers.NewWebhookRequestHandler(wrs, authSvc, ws, metricsRec, logger)
 	r.Route("/requests", func(r chi.Router) {
 		r.Get("/{id}", webhookReqHandler.GetRequest)
 		r.Post("/{id}/delete", webhookReqHandler.DeleteRequest)

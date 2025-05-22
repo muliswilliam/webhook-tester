@@ -4,7 +4,6 @@ go 1.24.1
 
 require (
 	github.com/MarceloPetrucio/go-scalar-api-reference v0.0.0-20240521013641-ce5d2efe0e06
-	github.com/go-chi/chi v1.5.5
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-chi/cors v1.2.1
 	github.com/gorilla/csrf v1.7.3
@@ -13,6 +12,7 @@ require (
 	github.com/prometheus/client_golang v1.22.0
 	github.com/robfig/cron v1.2.0
 	github.com/slok/go-http-metrics v0.13.0
+	github.com/stretchr/testify v1.10.0
 	github.com/swaggo/swag v1.16.4
 	github.com/unrolled/render v1.7.0
 	gorm.io/datatypes v1.2.5
@@ -21,6 +21,7 @@ require (
 )
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -41,6 +42,7 @@ require (
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	golang.org/x/sync v0.13.0 // indirect
 	golang.org/x/tools v0.32.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
@@ -57,7 +59,6 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-sqlite3 v1.14.27 // indirect
-	github.com/stretchr/testify v1.10.0
 	github.com/wader/gormstore/v2 v2.0.3
 	golang.org/x/crypto v0.37.0
 	golang.org/x/sys v0.32.0 // indirect

@@ -19,12 +19,12 @@ import (
 )
 
 type WebhookAiHandler struct {
-	Service *service.WebhookService
+	Service service.WebhookService
 	Metrics metrics.Recorder
 	Logger  *log.Logger
 }
 
-func NewWebhookApiHandler(svc *service.WebhookService, m metrics.Recorder, l *log.Logger) *WebhookAiHandler {
+func NewWebhookApiHandler(svc service.WebhookService, m metrics.Recorder, l *log.Logger) *WebhookAiHandler {
 	return &WebhookAiHandler{Service: svc, Metrics: m, Logger: l}
 }
 
