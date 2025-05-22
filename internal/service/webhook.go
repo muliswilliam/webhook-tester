@@ -27,7 +27,7 @@ type webhookService struct {
 }
 
 // NewWebhookService constructs a WebhookService with the given repository.
-func NewWebhookService(repo repository.WebhookRepository) *webhookService {
+func NewWebhookService(repo repository.WebhookRepository) WebhookService {
 	return &webhookService{repo: repo}
 }
 
@@ -51,9 +51,6 @@ func (s *webhookService) GetUserWebhook(id string, userID uint) (*models.Webhook
 
 // ListWebhooks lists public or user-specific webhooks.
 func (s *webhookService) ListWebhooks(userID uint) ([]models.Webhook, error) {
-	if userID == 0 {
-		return s.repo.GetAll()
-	}
 	return s.repo.GetAllByUser(userID)
 }
 

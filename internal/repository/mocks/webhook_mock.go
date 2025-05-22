@@ -3,6 +3,7 @@ package repositoryMocks
 import (
 	"time"
 	models "webhook-tester/internal/models"
+	"webhook-tester/internal/repository"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -10,6 +11,8 @@ import (
 type WebhookRepositoryMock struct {
 	mock.Mock
 }
+
+var _ repository.WebhookRepository = (*WebhookRepositoryMock)(nil)
 
 func (m *WebhookRepositoryMock) CleanPublic(d time.Duration) error {
 	args := m.Called(d)
