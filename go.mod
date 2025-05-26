@@ -3,6 +3,7 @@ module webhook-tester
 go 1.24.1
 
 require (
+	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/MarceloPetrucio/go-scalar-api-reference v0.0.0-20240521013641-ce5d2efe0e06
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-chi/cors v1.2.1
@@ -15,13 +16,13 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/swaggo/swag v1.16.4
 	github.com/unrolled/render v1.7.0
+	github.com/wader/gormstore v0.0.0-20250507185730-91a1cf2c0c61
 	gorm.io/datatypes v1.2.5
 	gorm.io/driver/postgres v1.5.7
 	gorm.io/gorm v1.25.12
 )
 
 require (
-	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -34,6 +35,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20231201235250-de7065d80cb9 // indirect
 	github.com/jackc/pgx/v5 v5.5.5 // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
+	github.com/jinzhu/gorm v1.9.16 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
@@ -55,7 +57,7 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
-	github.com/gorilla/sessions v1.4.0 // indirect
+	github.com/gorilla/sessions v1.4.0
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-sqlite3 v1.14.27 // indirect

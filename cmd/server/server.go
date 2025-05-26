@@ -45,7 +45,7 @@ func (srv *Server) MountHandlers() {
 	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
 	webhookSvc := service.NewWebhookService(repo)
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
-	sessionStore := service.NewSessionStore(srv.GormStore)
+	sessionStore := service.NewSessionStore(service.NewGormStore(srv.GormStore))
 	authSvc := service.NewAuthService(userRepo, sessionStore, utils.NewPasswordHasher(), utils.NewPasswordValidator())
 	metricsRec := appMetrics.PrometheusRecorder{}
 	// Basic CORS

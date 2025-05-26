@@ -2,7 +2,6 @@ package service
 
 import (
 	"errors"
-	"log"
 	"net/http"
 
 	"github.com/gorilla/sessions"
@@ -13,19 +12,36 @@ type SessionStore interface {
 	Get(r *http.Request, sessionName string) (*sessions.Session, error)
 	GetValue(r *http.Request, sessionName, key string) (interface{}, error)
 	New(r *http.Request, w http.ResponseWriter, sessionName string, key string, value interface{}, options sessions.Options) (*sessions.Session, error)
-	Exists(r *http.Request, sessionName string) (bool, error)
 	Save(r *http.Request, w http.ResponseWriter, session *sessions.Session) error
 	Delete(r *http.Request, w http.ResponseWriter, sessionName string) error
 }
 
-type sessionStore struct {
+type Store interface {
+	Get(r *http.Request, sessionName string) (*sessions.Session, error)
+	Save(r *http.Request, w http.ResponseWriter, session *sessions.Session) error
+}
+
+type GormStore struct {
 	store *gormstore.Store
 }
 
-func NewSessionStore(store *gormstore.Store) SessionStore {
-	if store == nil {
-		log.Fatal("session store is nil")
-	}
+func NewGormStore(store *gormstore.Store) Store {
+	return &GormStore{store: store}
+}
+
+func (s *GormStore) Get(r *http.Request, sessionName string) (*sessions.Session, error) {
+	return s.store.Get(r, sessionName)
+}
+
+func (s *GormStore) Save(r *http.Request, w http.ResponseWriter, session *sessions.Session) error {
+	return s.store.Save(r, w, session)
+}
+
+type sessionStore struct {
+	store Store
+}
+
+func NewSessionStore(store Store) SessionStore {
 	return &sessionStore{store: store}
 }
 
@@ -59,14 +75,6 @@ func (s *sessionStore) New(r *http.Request, w http.ResponseWriter, sessionName s
 		return nil, err
 	}
 	return sess, nil
-}
-
-func (s *sessionStore) Exists(r *http.Request, name string) (bool, error) {
-	_, err := s.store.Get(r, name)
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 func (s *sessionStore) Save(r *http.Request, w http.ResponseWriter, session *sessions.Session) error {
