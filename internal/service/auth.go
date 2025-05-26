@@ -5,28 +5,35 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/repository"
 	"webhook-tester/internal/utils"
 
-	"github.com/wader/gormstore/v2"
-	"gorm.io/gorm"
+	"github.com/gorilla/sessions"
 )
 
-//go:generate mockgen -source=auth.go -destination=./mocks/auth_mock.go -package=mocks
+const (
+	SessionName       = "_webhook_tester_session_id"
+	GuestSessionName  = "_webhook_tester_guest_session_id"
+	UserIDKey         = "user_id"
+	GuestWebhookIDKey = "webhook_id"
+)
 
 type AuthService interface {
 	Register(email, plainPassword, fullName string) (*models.User, error)
 	Authenticate(email, plainPassword string) (*models.User, error)
 	Authorize(r *http.Request) (uint, error)
 	GetCurrentUser(r *http.Request) (*models.User, error)
-	CreateSession(w http.ResponseWriter, r *http.Request, user *models.User) error
-	ClearSession(w http.ResponseWriter, r *http.Request)
+	CreateSession(w http.ResponseWriter, r *http.Request, userID uint) error
+	ClearSession(w http.ResponseWriter, r *http.Request, name string)
 	ForgotPassword(email, domain string) (string, error)
 	ValidateResetToken(token string) (*models.User, error)
 	ResetPassword(token, newPassword string) error
 	ValidateAPIKey(key string) (*models.User, error)
+	CreateGuestSession(r *http.Request, w http.ResponseWriter, webhookID string) error
+	GetGuestSession(r *http.Request) (string, error)
 }
 
 // AuthService holds user business logic
@@ -34,27 +41,21 @@ type authService struct {
 	repo              repository.UserRepository
 	passwordHasher    utils.PasswordHasher
 	passwordValidator utils.PasswordValidator
-	sessionStore      *gormstore.Store
+	sessionStore      SessionStore
 }
 
 // NewAuthService creates an AuthService
 func NewAuthService(
 	userRepo repository.UserRepository,
-	db *gorm.DB,
+	sessionStore SessionStore,
 	passwordHasher utils.PasswordHasher,
 	passwordValidator utils.PasswordValidator,
-	authSecret string,
 ) AuthService {
-	// build the GORM‐backed session store
-	store := gormstore.New(db, []byte(authSecret))
-	quit := make(chan struct{})
-	go store.PeriodicCleanup(48*time.Hour, quit)
-
 	return &authService{
 		repo:              userRepo,
 		passwordHasher:    passwordHasher,
 		passwordValidator: passwordValidator,
-		sessionStore:      store,
+		sessionStore:      sessionStore,
 	}
 }
 
@@ -106,18 +107,16 @@ func (s *authService) Authenticate(email, plainPassword string) (*models.User, e
 
 // Authorize extracts and validates the user_id from the session cookie.
 func (s *authService) Authorize(r *http.Request) (uint, error) {
-	const Name = "_webhook_tester_session_id"
 	authErr := errors.New("unauthorized")
-	sess, err := s.sessionStore.Get(r, Name)
+	uid, err := s.sessionStore.GetValue(r, SessionName, UserIDKey)
 	if err != nil {
 		return 0, authErr
 	}
-	raw, ok := sess.Values["user_id"]
-	uid, ok2 := raw.(uint)
-	if !ok || !ok2 {
-		return 0, authErr
+	userId, err := strconv.ParseUint(uid.(string), 10, 64)
+	if err != nil {
+		return 0, errors.New("uid is invalid")
 	}
-	return uid, nil
+	return uint(userId), nil
 }
 
 // GetCurrentUser pulls the session and looks up the full User record.
@@ -130,27 +129,19 @@ func (s *authService) GetCurrentUser(r *http.Request) (*models.User, error) {
 }
 
 // CreateSession establishes a new session cookie for the given user.
-func (s *authService) CreateSession(w http.ResponseWriter, r *http.Request, user *models.User) error {
-	const Name = "_webhook_tester_session_id"
-	sess, err := s.sessionStore.Get(r, Name)
-	if err != nil {
-		// if there was no existing session, we still want a brand‐new one
-		sess, _ = s.sessionStore.New(r, Name)
-	}
-	sess.Values["user_id"] = user.ID
-	sess.Options.MaxAge = 86400 * 2 // two days
-	sess.Options.HttpOnly = true
-	sess.Options.Secure = os.Getenv("ENV") == "prod"
-	return s.sessionStore.Save(r, w, sess)
+func (s *authService) CreateSession(w http.ResponseWriter, r *http.Request, userID uint) error {
+	_, err := s.sessionStore.New(r, w, SessionName, UserIDKey, userID, sessions.Options{
+		MaxAge:   86400 * 2,
+		HttpOnly: true,
+		Secure:   os.Getenv("ENV") == "prod",
+	})
+
+	return err
 }
 
 // ClearSession invalidates the current session cookie.
-func (s *authService) ClearSession(w http.ResponseWriter, r *http.Request) {
-	const Name = "_webhook_tester_session_id"
-	if sess, err := s.sessionStore.Get(r, Name); err == nil {
-		sess.Options.MaxAge = -1
-		_ = s.sessionStore.Save(r, w, sess)
-	}
+func (s *authService) ClearSession(w http.ResponseWriter, r *http.Request, name string) {
+	_ = s.sessionStore.Delete(r, w, name)
 }
 
 // ForgotPassword generates a reset token, sets expiry, and returns the token
@@ -222,4 +213,26 @@ func (s *authService) ValidateAPIKey(key string) (*models.User, error) {
 		return nil, fmt.Errorf("invalid API key")
 	}
 	return user, nil
+}
+
+func (s *authService) CreateGuestSession(r *http.Request, w http.ResponseWriter, webhookID string) error {
+	cookie := &http.Cookie{
+		Name:     GuestSessionName,
+		Value:    webhookID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   os.Getenv("ENV") == "prod",
+		MaxAge:   86400 * 2, // 2 days
+	}
+	http.SetCookie(w, cookie)
+	return nil
+}
+
+func (s *authService) GetGuestSession(r *http.Request) (string, error) {
+	cookie, err := r.Cookie(GuestSessionName)
+	if err != nil {
+		return "", err
+	}
+
+	return cookie.Value, nil
 }

@@ -31,13 +31,13 @@ func (m *AuthServiceMock) GetCurrentUser(r *http.Request) (*models.User, error) 
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
-func (m *AuthServiceMock) CreateSession(w http.ResponseWriter, r *http.Request, user *models.User) error {
-	args := m.Called(w, r, user)
+func (m *AuthServiceMock) CreateSession(w http.ResponseWriter, r *http.Request, userID uint) error {
+	args := m.Called(w, r, userID)
 	return args.Error(0)
 }
 
-func (m *AuthServiceMock) ClearSession(w http.ResponseWriter, r *http.Request) {
-	m.Called(w, r)
+func (m *AuthServiceMock) ClearSession(w http.ResponseWriter, r *http.Request, name string) {
+	m.Called(w, r, name)
 }
 
 func (m *AuthServiceMock) ForgotPassword(email, domain string) (string, error) {
@@ -58,4 +58,14 @@ func (m *AuthServiceMock) ResetPassword(token, newPassword string) error {
 func (m *AuthServiceMock) ValidateAPIKey(key string) (*models.User, error) {
 	args := m.Called(key)
 	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *AuthServiceMock) CreateGuestSession(r *http.Request, w http.ResponseWriter, webhookID string) error {
+	args := m.Called(r, w, webhookID)
+	return args.Error(0)
+}
+
+func (m *AuthServiceMock) GetGuestSession(r *http.Request) (string, error) {
+	args := m.Called(r)
+	return args.String(0), args.Error(1)
 }
