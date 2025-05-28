@@ -20,20 +20,20 @@ import (
 )
 
 type WebhookRequestHandler struct {
-	reqService     *service.WebhookRequestService
-	authSvc        *service.AuthService
-	metrics        *metrics.Recorder
+	reqService     service.WebhookRequestService
+	authSvc        service.AuthService
+	metrics        metrics.Recorder
 	logger         *log.Logger
-	webhookService *service.WebhookService
-	sessionStore   *gormstore.Store
+	webhookService service.WebhookService
+	sessionStore   gormstore.Store
 }
 
 // NewWebhookRequestHandler creates a new handler.
 func NewWebhookRequestHandler(
-	reqSvc *service.WebhookRequestService,
-	authSvc *service.AuthService,
-	webhookSvc *service.WebhookService,
-	metricsRec *metrics.Recorder,
+	reqSvc service.WebhookRequestService,
+	authSvc service.AuthService,
+	webhookSvc service.WebhookService,
+	metricsRec metrics.Recorder,
 	logger *log.Logger,
 ) *WebhookRequestHandler {
 	return &WebhookRequestHandler{reqService: reqSvc, webhookService: webhookSvc, metrics: metricsRec, logger: logger, authSvc: authSvc}

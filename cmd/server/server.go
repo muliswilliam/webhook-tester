@@ -2,6 +2,11 @@ package server
 
 import (
 	"fmt"
+	"webhook-tester/internal/routers"
+	"webhook-tester/internal/service"
+	"webhook-tester/internal/store"
+	"webhook-tester/internal/utils"
+
 	"github.com/MarceloPetrucio/go-scalar-api-reference"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -9,14 +14,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
 	metricsMiddleware "github.com/slok/go-http-metrics/middleware"
-	"webhook-tester/internal/routers"
-	"webhook-tester/internal/service"
-	"webhook-tester/internal/store"
 
 	"github.com/slok/go-http-metrics/middleware/std"
 	"github.com/wader/gormstore/v2"
 
-	"gorm.io/gorm"
 	"log"
 	"net/http"
 	"os"
@@ -25,25 +26,27 @@ import (
 	_ "webhook-tester/docs"
 	"webhook-tester/internal/db"
 	appMetrics "webhook-tester/internal/metrics"
+
+	"gorm.io/gorm"
 )
 
 type Server struct {
-	Router       *chi.Mux
-	DB           *gorm.DB
-	SessionStore *gormstore.Store
-	Logger       *log.Logger
-	Srv          *http.Server
+	Router    *chi.Mux
+	DB        *gorm.DB
+	GormStore *gormstore.Store
+	Logger    *log.Logger
+	Srv       *http.Server
 }
 
 func (srv *Server) MountHandlers() {
 	r := srv.Router
-	authSecret := os.Getenv("AUTH_SECRET")
 	repo := store.NewGormWebookRepo(srv.DB, srv.Logger)
 	userRepo := store.NewGormUserRepo(srv.DB, srv.Logger)
 	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
 	webhookSvc := service.NewWebhookService(repo)
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
-	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
+	sessionStore := service.NewSessionStore(service.NewGormStore(srv.GormStore))
+	authSvc := service.NewAuthService(userRepo, sessionStore, utils.NewPasswordHasher(), utils.NewPasswordValidator())
 	metricsRec := appMetrics.PrometheusRecorder{}
 	// Basic CORS
 	// for more ideas, see: https://developer.github.com/v3/#cross-origin-resource-sharing
@@ -110,10 +113,15 @@ func NewServer() *Server {
 		IdleTimeout: time.Minute,
 	}
 
+	gs := gormstore.New(conn, []byte(os.Getenv("AUTH_SECRET")))
+	quit := make(chan struct{})
+	go gs.PeriodicCleanup(48*time.Hour, quit)
+
 	return &Server{
-		Router: r,
-		DB:     conn,
-		Logger: log.New(os.Stdout, "[server] ", log.LstdFlags),
-		Srv:    &srv,
+		Router:    r,
+		DB:        conn,
+		GormStore: gs,
+		Logger:    log.New(os.Stdout, "[server] ", log.LstdFlags),
+		Srv:       &srv,
 	}
 }

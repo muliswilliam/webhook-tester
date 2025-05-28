@@ -7,24 +7,25 @@ import (
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
 
-	"github.com/gorilla/csrf"
 	"log"
 	"net/http"
 	"os"
 	"time"
 	"webhook-tester/internal/models"
+
+	"github.com/gorilla/csrf"
 )
 
 type HomeHandler struct {
-	webhookSvc *service.WebhookService
-	authSvc    *service.AuthService
+	webhookSvc service.WebhookService
+	authSvc    service.AuthService
 	Logger     *log.Logger
 	Metrics    metrics.Recorder
 }
 
 func NewHomeHandler(
-	webhookSvc *service.WebhookService,
-	authSvc *service.AuthService,
+	webhookSvc service.WebhookService,
+	authSvc service.AuthService,
 	l *log.Logger,
 	mr metrics.Recorder,
 ) *HomeHandler {
@@ -38,7 +39,7 @@ func NewHomeHandler(
 
 type HomePageData struct {
 	CSRFField       template.HTML
-	User            models.User
+	User            *models.User
 	Webhooks        []models.Webhook
 	Webhook         models.Webhook
 	ResponseHeaders string
@@ -47,9 +48,7 @@ type HomePageData struct {
 	Year            int
 }
 
-var sessionIdName = "_webhook_tester_guest_session_id"
-
-func createDefaultWebhook(svc *service.WebhookService, l *log.Logger) (string, error) {
+func createDefaultWebhook(svc service.WebhookService, l *log.Logger) (string, error) {
 	defaultWh := models.Webhook{
 		ID:           utils.GenerateID(),
 		Title:        "Default Webhook",
@@ -65,60 +64,61 @@ func createDefaultWebhook(svc *service.WebhookService, l *log.Logger) (string, e
 	return defaultWh.ID, nil
 }
 
-func createDefaultWebhookCookie(webhookID string, w http.ResponseWriter) *http.Cookie {
-	cookie := &http.Cookie{
-		Name:     sessionIdName,
-		Value:    webhookID,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   false,     // Set to true in production
-		MaxAge:   86400 * 2, // 2 days
-	}
-	http.SetCookie(w, cookie)
-	return cookie
-}
-
-func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
-	userID, _ := h.authSvc.Authorize(r)
-
-	// Get or create default webhook via cookie
-	cookie, err := r.Cookie(sessionIdName)
-	if err != nil && userID == 0 {
+func (h *HomeHandler) handleGuestSession(w http.ResponseWriter, r *http.Request) {
+	// get guest webhook ID
+	var guestWebhook *models.Webhook
+	guestWebhookID, _ := h.authSvc.GetGuestSession(r)
+	if guestWebhookID == "" {
 		defaultWhID, err := createDefaultWebhook(h.webhookSvc, h.Logger)
 		if err != nil {
 			h.Logger.Printf("Error creating default webhook: %v", err)
 			http.Error(w, "failed to create webhook", http.StatusInternalServerError)
 			return
 		}
-		cookie = createDefaultWebhookCookie(defaultWhID, w)
-		h.Metrics.IncWebhooksCreated()
-	}
-	var webhooks []models.Webhook
-	var webhook models.Webhook
-	var activeWebhook models.Webhook
-
-	// Determine active webhook ID
-	address := r.URL.Query().Get("address")
-	var webhookID = address
-	if webhookID == "" && cookie != nil {
-		webhookID = cookie.Value
-	}
-
-	if webhookID != "" && userID == 0 {
-		wrr, err := h.webhookSvc.GetWebhookWithRequests(webhookID)
+		err = h.authSvc.CreateGuestSession(r, w, defaultWhID)
 		if err != nil {
-			log.Printf("failed to get webhook: %v", err)
-			cookie.MaxAge = -1
-			http.SetCookie(w, cookie)
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+			h.Logger.Printf("Error creating default webhook cookie: %v", err)
+			http.Error(w, "failed to create webhook cookie", http.StatusInternalServerError)
+
 			return
 		}
-		webhook = *wrr
-		webhooks = append(webhooks, webhook)
+		guestWebhook, _ = h.webhookSvc.GetWebhookWithRequests(defaultWhID)
+		h.Metrics.IncWebhooksCreated()
 	} else {
-		// Load user's other webhooks if logged in
-		webhooks, _ = h.webhookSvc.ListWebhooks(userID)
+		guestWebhook, _ = h.webhookSvc.GetWebhookWithRequests(guestWebhookID)
 	}
+
+	// RenderHtml the home page
+	data := HomePageData{
+		CSRFField: csrf.TemplateField(r),
+		User:      &models.User{},
+		Webhooks: []models.Webhook{
+			*guestWebhook,
+		},
+		Webhook:         *guestWebhook,
+		ResponseHeaders: "",
+		RequestsCount:   0,
+		Domain:          os.Getenv("DOMAIN"),
+		Year:            time.Now().Year(),
+	}
+	utils.RenderHtml(w, r, "home", data)
+}
+
+func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
+	var webhooks []models.Webhook
+	var activeWebhook models.Webhook
+	var user *models.User
+	address := r.URL.Query().Get("address")
+
+	userID, _ := h.authSvc.Authorize(r)
+
+	if userID == 0 {
+		h.handleGuestSession(w, r)
+		return
+	}
+
+	user, _ = h.authSvc.GetCurrentUser(r)
+	webhooks, _ = h.webhookSvc.ListWebhooks(userID)
 
 	if address != "" {
 		aw, err := h.webhookSvc.GetWebhookWithRequests(address)
@@ -126,7 +126,7 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 			log.Printf("failed to get webhook: %v", err)
 		}
 		activeWebhook = *aw
-	} else if len(webhooks) > 0 {
+	} else {
 		activeWebhook = webhooks[0]
 	}
 
@@ -140,12 +140,10 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	user, _ := h.authSvc.GetCurrentUser(r)
-
 	// RenderHtml the home page
 	data := HomePageData{
 		CSRFField:       csrf.TemplateField(r),
-		User:            *user,
+		User:            user,
 		Webhooks:        webhooks,
 		Webhook:         activeWebhook,
 		ResponseHeaders: headersJSON,

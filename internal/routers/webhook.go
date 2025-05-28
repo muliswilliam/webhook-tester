@@ -10,8 +10,8 @@ import (
 )
 
 func NewWebhookRouter(
-	webhookSvc *service.WebhookService,
-	authSvc *service.AuthService,
+	webhookSvc service.WebhookService,
+	authSvc service.AuthService,
 	logger *log.Logger,
 	metrics metrics.Recorder,
 ) http.Handler {
