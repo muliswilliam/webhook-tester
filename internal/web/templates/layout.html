@@ -169,7 +169,7 @@
       class="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
       <div
-        class="bg-white w-full max-w-lg rounded-lg shadow-lg p-6 relative"
+        class="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg shadow-lg p-6 relative"
         @click.away="showModal = false"
       >
         <h2 class="text-lg font-semibold text-gray-800 mb-4">Create Webhook</h2>
@@ -177,9 +177,9 @@
         <form method="POST" action="/create-webhook" class="space-y-4 text-sm">
           {{ .CSRFField }}
           <div>
-            <label for="title" class="block font-medium mb-1">Title</label>
+            <label for="create_title" class="block font-medium mb-1">Title</label>
             <input
-              id="title"
+              id="create_title"
               type="text"
               name="title"
               class="w-full border rounded px-3 py-2"
@@ -189,11 +189,11 @@
 
           <div class="flex gap-4">
             <div class="flex-1">
-              <label for="response_code" class="block font-medium mb-1"
+              <label for="create_response_code" class="block font-medium mb-1"
                 >Response Code</label
               >
               <input
-                id="response_code"
+                id="create_response_code"
                 type="number"
                 name="response_code"
                 class="w-full border rounded px-3 py-2"
@@ -202,11 +202,11 @@
               />
             </div>
             <div class="flex-1">
-              <label for="content_type" class="block font-medium mb-1"
+              <label for="create_content_type" class="block font-medium mb-1"
                 >Content Type</label
               >
               <select
-                id="content_type"
+                id="create_content_type"
                 name="content_type"
                 class="w-full border rounded px-3 py-2"
               >
@@ -218,11 +218,11 @@
           </div>
 
           <div>
-            <label for="response_delay" class="block font-medium mb-1"
+            <label for="create_response_delay" class="block font-medium mb-1"
               >Delay (ms)</label
             >
             <input
-              id="response_delay"
+              id="create_response_delay"
               type="number"
               name="response_delay"
               class="w-full border rounded px-3 py-2"
@@ -231,9 +231,9 @@
           </div>
 
           <div>
-            <label for="payload" class="block font-medium mb-1">Payload</label>
+            <label for="create_payload" class="block font-medium mb-1">Payload</label>
             <textarea
-              id="payload"
+              id="create_payload"
               name="payload"
               rows="4"
               class="w-full border rounded px-3 py-2 font-mono"
@@ -294,12 +294,12 @@
           <div class="flex items-center space-x-2">
             <input
               type="checkbox"
-              id="notify"
+              id="create_notify"
               name="notify_on_event"
               value="true"
               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
-            <label for="notify" class="text-sm text-gray-700 font-medium">
+            <label for="create_notify" class="text-sm text-gray-700 font-medium">
               Notify on Request
             </label>
           </div>

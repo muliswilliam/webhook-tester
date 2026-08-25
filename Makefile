@@ -5,12 +5,18 @@ SWAG_MAIN=cmd/main.go
 APP_NAME=webhook-tester
 DOCKER_COMPOSE=docker-compose
 
-.PHONY: help up down logs restart services docs
+.PHONY: help up down logs restart services docs css
 
 docs:
 	@echo "🔄 Generating Swagger docs..."
 	$(SWAG_CMD) init --parseDependency --parseInternal -g $(SWAG_MAIN)
 	@echo "✅ Swagger docs generated in ./$(SWAG_OUT)"
+
+# Rebuild static/css/tailwind.css after changing templates or Tailwind classes
+css:
+	@echo "🎨 Building Tailwind CSS..."
+	npx --yes tailwindcss@3 -i static/css/input.css -o static/css/tailwind.css --minify
+	@echo "✅ CSS built to static/css/tailwind.css"
 
 # Start all services
 up:
@@ -57,3 +63,4 @@ help:
 	@echo "  logs             View logs (requires SERVICE=app or SERVICE=db)"
 	@echo "  restart          Restart a specific service (requires SERVICE=app or SERVICE=db)"
 	@echo "  services         List available service names"
+	@echo "  css              Rebuild static/css/tailwind.css from templates"

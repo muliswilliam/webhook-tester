@@ -50,10 +50,14 @@ type HomePageData struct {
 var sessionIdName = "_webhook_tester_guest_session_id"
 
 func createDefaultWebhook(svc *service.WebhookService, l *log.Logger) (string, error) {
+	contentType := "application/json"
+	payload := `{"message":"ok"}`
 	defaultWh := models.Webhook{
 		ID:           utils.GenerateID(),
 		Title:        "Default Webhook",
 		ResponseCode: http.StatusOK,
+		ContentType:  &contentType,
+		Payload:      &payload,
 	}
 
 	err := svc.CreateWebhook(&defaultWh)
@@ -124,8 +128,9 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		aw, err := h.webhookSvc.GetWebhookWithRequests(address)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
+		} else {
+			activeWebhook = *aw
 		}
-		activeWebhook = *aw
 	} else if len(webhooks) > 0 {
 		activeWebhook = webhooks[0]
 	}
@@ -141,6 +146,9 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, _ := h.authSvc.GetCurrentUser(r)
+	if user == nil {
+		user = &models.User{}
+	}
 
 	// RenderHtml the home page
 	data := HomePageData{

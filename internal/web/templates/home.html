@@ -242,10 +242,10 @@ $csrfField := .CSRFField }} {{$activeWebhook := .Webhook}}
     >
       {{ .Body }}
       <div class="absolute bottom-2 right-2 text-xs flex gap-4 text-gray-500">
-        <label class="inline-flex items-center space-x-1">
-          <input type="checkbox" disabled checked />
+        <span class="inline-flex items-center space-x-1" title="Body is displayed formatted">
+          <span aria-hidden="true">✅</span>
           <span>Format JSON</span>
-        </label>
+        </span>
         <button class="hover:underline text-blue-600">Copy</button>
       </div>
     </div>
@@ -308,7 +308,7 @@ $csrfField := .CSRFField }} {{$activeWebhook := .Webhook}}
       class="fixed inset-0 z-50 flex items-center justify-center p-4"
     >
       <div
-        class="bg-white w-full max-w-lg rounded-lg shadow-lg p-6 relative"
+        class="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg shadow-lg p-6 relative"
         @click.away="showEditModal = false"
       >
         <h2 class="text-lg font-semibold text-gray-800 mb-4">Update Webhook</h2>
@@ -383,7 +383,7 @@ $csrfField := .CSRFField }} {{$activeWebhook := .Webhook}}
               name="payload"
               rows="4"
               class="w-full border rounded px-3 py-2 font-mono"
-            >{{ .Webhook.Payload }}</textarea>
+            >{{ if .Webhook.Payload }}{{ .Webhook.Payload }}{{ end }}</textarea>
           </div>
 
           <div>
