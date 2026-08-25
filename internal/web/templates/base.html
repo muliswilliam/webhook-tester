@@ -12,11 +12,12 @@
     <script>
       (function () {
         try {
-          var savedTheme = localStorage.getItem("webhook-tester-theme");
+          var savedTheme = localStorage.getItem("webhook-tester-theme") || "system";
           var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-          var useDark = savedTheme ? savedTheme === "dark" : prefersDark;
+          var useDark = savedTheme === "dark" || (savedTheme === "system" && prefersDark);
           document.documentElement.classList.toggle("dark", useDark);
           document.documentElement.dataset.mode = useDark ? "dark" : "light";
+          document.documentElement.dataset.theme = savedTheme;
           document.documentElement.style.colorScheme = useDark ? "dark" : "light";
         } catch (_) {}
       })();
@@ -42,10 +43,15 @@
     </script>
   </head>
   <body>
-    <button id="theme-toggle" type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Switch color theme" title="Switch color theme">
-      <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
-      <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg>
-    </button>
+    <label class="theme-picker" for="theme-select">
+      <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
+      <span>Theme</span>
+      <select id="theme-select" class="theme-select" aria-label="Color theme" onchange="setThemePreference(this.value)">
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
     {{ block "body" . }} {{ end }}
   </body>
 </html>

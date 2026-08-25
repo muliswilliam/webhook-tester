@@ -83,12 +83,9 @@
   .data-table td { @apply border-t px-4 py-3 text-sm; border-color: var(--app-border); }
   .data-table td:first-child { @apply w-1/3 font-mono text-xs text-slate-500; }
   .modal-panel { @apply w-full max-w-xl overflow-y-auto rounded-xl border p-6 shadow-2xl shadow-black/20; background-color: var(--app-surface-solid); border-color: var(--app-border-strong); }
-  .theme-toggle { @apply fixed bottom-3 right-3 z-[60] inline-grid h-11 w-11 cursor-pointer place-items-center rounded-lg border transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2; background-color: var(--app-surface-solid); border-color: var(--app-border); color: var(--app-muted); --tw-ring-color: var(--focus); --tw-ring-offset-color: var(--app-bg); }
-  .theme-toggle:hover { background-color: var(--app-muted-surface); color: var(--app-fg); }
-  .theme-icon { @apply h-5 w-5; }
-  .theme-icon-moon { @apply hidden; }
-  .dark .theme-icon-sun { @apply hidden; }
-  .dark .theme-icon-moon { @apply block; }
+  .theme-picker { @apply fixed bottom-3 right-3 z-[60] flex h-11 items-center gap-2 rounded-lg border px-3 text-xs font-medium; background-color: var(--app-surface-solid); border-color: var(--app-border-strong); color: var(--app-muted); }
+  .theme-picker:focus-within { @apply ring-2 ring-offset-2; --tw-ring-color: var(--focus); --tw-ring-offset-color: var(--app-bg); }
+  .theme-select { @apply cursor-pointer appearance-none bg-transparent pr-4 text-xs font-semibold outline-none; color: var(--app-secondary); background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%); background-position: calc(100% - 5px) 50%, 100% 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
 }
 
 html:not(.dark) .text-white { color: #1d1d1f; }

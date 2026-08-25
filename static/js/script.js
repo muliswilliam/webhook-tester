@@ -9,40 +9,42 @@ function copyCurl() {
     }
 }
 
-function currentTheme() {
-    return document.documentElement.classList.contains("dark") ? "dark" : "light";
+function themePreference() {
+    const saved = localStorage.getItem("webhook-tester-theme");
+    return ["system", "light", "dark"].includes(saved) ? saved : "system";
 }
 
-function updateThemeToggle() {
-    const toggle = document.getElementById("theme-toggle");
-    if (!toggle) return;
-
-    const nextTheme = currentTheme() === "dark" ? "light" : "dark";
-    const label = `Switch to ${nextTheme} theme`;
-    toggle.setAttribute("aria-label", label);
-    toggle.setAttribute("title", label);
+function resolvedTheme(preference) {
+    if (preference === "system") {
+        return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    return preference;
 }
 
-function applyTheme(theme, persist = true) {
+function applyTheme(preference, persist = true) {
+    const theme = resolvedTheme(preference);
     const useDark = theme === "dark";
     document.documentElement.classList.toggle("dark", useDark);
-    document.documentElement.dataset.mode = useDark ? "dark" : "light";
-    document.documentElement.style.colorScheme = useDark ? "dark" : "light";
-    if (persist) localStorage.setItem("webhook-tester-theme", theme);
-    updateThemeToggle();
+    document.documentElement.dataset.mode = theme;
+    document.documentElement.dataset.theme = preference;
+    document.documentElement.style.colorScheme = theme;
+    if (persist) localStorage.setItem("webhook-tester-theme", preference);
+
+    const select = document.getElementById("theme-select");
+    if (select) select.value = preference;
 }
 
-function toggleTheme() {
-    applyTheme(currentTheme() === "dark" ? "light" : "dark");
+function setThemePreference(preference) {
+    applyTheme(preference);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    updateThemeToggle();
+    applyTheme(themePreference(), false);
 
     const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
     colorScheme.addEventListener("change", event => {
-        if (!localStorage.getItem("webhook-tester-theme")) {
-            applyTheme(event.matches ? "dark" : "light", false);
+        if (themePreference() === "system") {
+            applyTheme("system", false);
         }
     });
 });
