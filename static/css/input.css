@@ -1,3 +1,157 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --app-bg: oklch(98.75% 0 0);
+    --app-fg: oklch(21% 0.006 285.885);
+    --app-strong: oklch(14.5% 0 0);
+    --app-surface: #ffffff;
+    --app-surface-solid: #ffffff;
+    --app-elevated: oklch(98% 0 0);
+    --app-muted-surface: oklch(96% 0 0);
+    --app-border: oklch(93.5% 0 0);
+    --app-border-strong: oklch(14.5% 0 0 / 0.1);
+    --app-muted: oklch(55.6% 0 0);
+    --app-secondary: oklch(26.9% 0 0);
+    --brand-orange: #f6821f;
+    --accent-text: oklch(42.4% 0.199 265.638);
+    --interact: oklch(0.5772 0.2324 260);
+    --interact-hover: oklch(48.8% 0.243 264.376);
+    --interact-soft: oklch(93.2% 0.032 255.6 / 0.45);
+    --focus: oklch(15% 0 0);
+    --success: oklch(0.5772 0.2324 260);
+  }
+  .dark,
+  [data-mode="dark"] {
+    color-scheme: dark;
+    --app-bg: oklch(10% 0 0);
+    --app-fg: oklch(97% 0 0);
+    --app-strong: oklch(98.5% 0 0);
+    --app-surface: oklch(17% 0 0);
+    --app-surface-solid: oklch(17% 0 0);
+    --app-elevated: oklch(12% 0 0);
+    --app-muted-surface: oklch(21% 0.006 285.885);
+    --app-border: oklch(26.9% 0 0);
+    --app-border-strong: oklch(32% 0 0);
+    --app-muted: oklch(70.8% 0 0);
+    --app-secondary: oklch(92.2% 0 0);
+    --brand-orange: #f6821f;
+    --accent-text: oklch(70.7% 0.165 254.624);
+    --interact: color-mix(in oklch, oklch(0.5772 0.2324 260), black 10%);
+    --interact-hover: oklch(48.8% 0.243 264.376);
+    --interact-soft: oklch(38% 0.145 265.5 / 0.22);
+    --focus: oklch(93.5% 0 0);
+    --success: var(--interact);
+  }
+  * { border-color: var(--app-border); }
+  html { @apply antialiased; background-color: var(--app-bg); }
+  body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background-color: var(--app-bg); color: var(--app-fg); }
+  h1, h2, h3, h4 { letter-spacing: -0.025em; }
+  code, pre, .font-mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+  [x-cloak] { display: none !important; }
+  ::selection { color: #ffffff; background-color: var(--interact); }
+}
+
+@layer components {
+  .app-shell { @apply min-h-screen; background-color: var(--app-bg); color: var(--app-fg); }
+  .topbar { @apply sticky top-0 z-30 flex h-16 items-center justify-between border-b px-4 backdrop-blur-xl md:px-6; background-color: color-mix(in srgb, var(--app-bg) 86%, transparent); border-color: var(--app-border); }
+  .brand-mark { @apply grid h-9 w-9 place-items-center rounded-lg border; border-color: color-mix(in srgb, var(--brand-orange) 35%, transparent); background-color: var(--brand-orange); color: #1d1d1f; }
+  .top-link { @apply rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition duration-200 hover:bg-slate-800/70 hover:text-white focus-visible:outline-none focus-visible:ring-2; --tw-ring-color: var(--focus); }
+  .top-link-primary { @apply rounded-lg px-4 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2; background-color: var(--interact); color: #ffffff; --tw-ring-color: var(--focus); --tw-ring-offset-color: var(--app-bg); }
+  .top-link-primary:hover { background-color: var(--interact-hover); }
+  .sidebar { @apply fixed inset-y-0 left-0 z-40 flex w-[19rem] -translate-x-full flex-col border-r transition-transform duration-200 md:static md:z-20 md:translate-x-0; background-color: var(--app-bg); border-color: var(--app-border); }
+  .sidebar-card { @apply rounded-lg border p-3 transition duration-200; background-color: color-mix(in srgb, var(--app-surface) 60%, transparent); border-color: var(--app-border); }
+  .sidebar-card:hover { background-color: var(--app-surface-solid); border-color: var(--app-border-strong); }
+  .surface { @apply rounded-lg border; background-color: var(--app-surface); border-color: var(--app-border); }
+  .eyebrow { @apply text-[11px] font-semibold uppercase tracking-[0.14em]; color: var(--app-muted); }
+  .btn { @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50; --tw-ring-color: var(--focus); --tw-ring-offset-color: var(--app-bg); }
+  .btn-primary { @apply btn; background-color: var(--interact); color: #ffffff; }
+  .btn-primary:hover { background-color: var(--interact-hover); }
+  .btn-secondary { @apply btn border; background-color: var(--app-muted-surface); border-color: var(--app-border-strong); color: var(--app-secondary); }
+  .btn-secondary:hover { background-color: var(--app-surface-solid); border-color: var(--app-border-strong); }
+  .btn-danger { @apply btn border; background-color: transparent; border-color: var(--app-border-strong); color: var(--app-secondary); }
+  .btn-danger:hover { border-color: color-mix(in srgb, #dc2626 35%, transparent); background-color: color-mix(in srgb, #dc2626 8%, transparent); color: #dc2626; }
+  .icon-btn { @apply inline-grid h-11 w-11 cursor-pointer place-items-center rounded-lg border transition focus-visible:outline-none focus-visible:ring-2; background-color: var(--app-muted-surface); border-color: var(--app-border-strong); color: var(--app-secondary); --tw-ring-color: var(--focus); }
+  .icon-btn:hover { background-color: var(--app-surface-solid); border-color: #94a3b8; color: var(--app-fg); }
+  .field { @apply min-h-11 w-full rounded-lg border px-3.5 py-2.5 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2; background-color: var(--app-surface-solid); border-color: var(--app-border-strong); color: var(--app-fg); }
+  .field:focus { border-color: var(--focus); --tw-ring-color: color-mix(in srgb, var(--focus) 15%, transparent); }
+  .field-label { @apply mb-1.5 block text-sm font-medium; color: var(--app-secondary); }
+  .method-badge { @apply inline-flex rounded-md border px-2 py-1 font-mono text-[11px] font-bold tracking-wide; border-color: var(--app-border); background-color: var(--app-muted-surface); color: var(--app-secondary); }
+  .data-table td { @apply border-t px-4 py-3 text-sm; border-color: var(--app-border); }
+  .data-table td:first-child { @apply w-1/3 font-mono text-xs text-slate-500; }
+  .modal-panel { @apply w-full max-w-xl overflow-y-auto rounded-xl border p-6 shadow-2xl shadow-black/20; background-color: var(--app-surface-solid); border-color: var(--app-border-strong); }
+  .theme-toggle { @apply fixed bottom-3 right-3 z-[60] inline-grid h-11 w-11 cursor-pointer place-items-center rounded-lg border transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2; background-color: var(--app-surface-solid); border-color: var(--app-border); color: var(--app-muted); --tw-ring-color: var(--focus); --tw-ring-offset-color: var(--app-bg); }
+  .theme-toggle:hover { background-color: var(--app-muted-surface); color: var(--app-fg); }
+  .theme-icon { @apply h-5 w-5; }
+  .theme-icon-moon { @apply hidden; }
+  .dark .theme-icon-sun { @apply hidden; }
+  .dark .theme-icon-moon { @apply block; }
+}
+
+html:not(.dark) .text-white { color: #1d1d1f; }
+html:not(.dark) .text-slate-300 { color: #3f3f3f; }
+html:not(.dark) .text-slate-400 { color: #575757; }
+html:not(.dark) .text-slate-500,
+html:not(.dark) .text-slate-600,
+html:not(.dark) .text-slate-700 { color: #676767; }
+html:not(.dark) .text-emerald-200,
+html:not(.dark) .text-emerald-300,
+html:not(.dark) .text-emerald-400 { color: var(--accent-text); }
+html:not(.dark) .text-amber-100,
+html:not(.dark) .text-amber-200,
+html:not(.dark) .text-amber-300 { color: #92400e; }
+html:not(.dark) .text-amber-100\/60 { color: rgba(146, 64, 14, 0.78); }
+html:not(.dark) .text-red-300 { color: #b91c1c; }
+html:not(.dark) .border-slate-600,
+html:not(.dark) .border-slate-700,
+html:not(.dark) .border-slate-800 { border-color: var(--app-border); }
+html:not(.dark) .bg-slate-800\/30,
+html:not(.dark) .bg-slate-800\/70,
+html:not(.dark) .bg-slate-900 { background-color: var(--app-muted-surface); }
+html:not(.dark) .hover\:bg-slate-800:hover { background-color: #e8e8e5; }
+html:not(.dark) .code-surface { background-color: #1d1d1f; border-color: #333333; color: #dededb; }
+html:not(.dark) .code-surface .text-slate-300,
+html:not(.dark) .code-surface .text-slate-400,
+html:not(.dark) .code-surface .text-slate-500 { color: #94a3b8; }
+html:not(.dark) .code-surface .text-emerald-300,
+html:not(.dark) .code-surface .text-emerald-400 { color: #f5f5f5; }
+html:not(.dark) .code-surface .text-sky-300,
+html:not(.dark) .code-surface .text-amber-200,
+html:not(.dark) .code-surface .text-violet-300 { color: #d4d4d4; }
+.dark .code-surface .text-emerald-300,
+.dark .code-surface .text-emerald-400 { color: #f5f5f5; }
+.dark .code-surface .text-sky-300,
+.dark .code-surface .text-amber-200,
+.dark .code-surface .text-violet-300 { color: #d4d4d4; }
+.code-surface .bg-red-400\/70,
+.code-surface .bg-amber-300\/70,
+.code-surface .bg-emerald-400\/70 { background-color: #737373; }
+
+.bg-emerald-400 { background-color: var(--interact); }
+.bg-emerald-400\/10 { background-color: var(--interact-soft); }
+.border-emerald-400\/20,
+.border-emerald-400\/25,
+.border-emerald-400\/30 { border-color: color-mix(in srgb, var(--interact) 30%, transparent); }
+.text-emerald-200,
+.text-emerald-300,
+.text-emerald-400 { color: var(--accent-text); }
+.hover\:text-emerald-300:hover { color: var(--accent-text); }
+.focus\:ring-emerald-400:focus,
+.focus-visible\:ring-emerald-400:focus-visible { --tw-ring-color: var(--focus); }
+.status-dot { background-color: var(--success); }
+.status-label { color: var(--app-muted); }
+.dark .status-label { color: var(--app-muted); }
+.status-badge { border-color: var(--app-border); background-color: var(--app-muted-surface); color: var(--app-secondary); }
+.dark .status-badge { color: var(--app-secondary); }
+.temporary-banner { background-color: var(--app-elevated); border-color: var(--app-border); }
+.temporary-banner .text-amber-100,
+.temporary-banner .text-amber-100\/60,
+.temporary-banner .text-amber-300 { color: var(--app-muted); }
+.temporary-banner .border-amber-300\/20 { border-color: var(--app-border-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}

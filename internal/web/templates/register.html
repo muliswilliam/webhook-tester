@@ -1,57 +1,11 @@
-{{ define "title" }}Register - Webhook Tester{{ end }}
-
+{{ define "title" }}Create account - Webhook Tester{{ end }}
 {{ define "body" }}
-<div class="w-[400px] mx-auto mt-12 bg-white p-6 rounded shadow-md border">
-  <h1 class="text-2xl font-bold mb-4">Create an account</h1>
-
-  {{ if .Error }}
-  <div class="mb-4 p-3 text-sm text-red-700 bg-red-100 rounded">
-    {{ .Error }}
-  </div>
-  {{ end }}
-
-
-  <form method="POST" action="/register" class="space-y-4 text-sm">
-    {{ .CSRFField }}
-    <div>
-      <label for="name" class="block font-medium mb-1">Full Name</label>
-      <input type="text" name="name" id="name" required class="w-full border rounded px-3 py-2" value="{{ .FullName }}"
-             placeholder="Your full name"/>
-    </div>
-    <div>
-      <label for="email" class="block font-medium mb-1">Email</label>
-      <input type="email" name="email" id="email" required class="w-full border rounded px-3 py-2"
-             placeholder="Your email" value="{{ .Email }}"/>
-    </div>
-    <div x-data="{ show : false }" class="relative">
-      <label for="password" class="block font-medium mb-1">Password</label>
-      <input type="password" name="password" id="password" required class="w-full border rounded px-3 py-2"
-             placeholder="Password" value="{{ .Password }}" :type="show ? 'text' : 'password'"
-      />
-      <button
-        type="button"
-        @click="show = !show"
-        class="absolute right-2 top-[35px] text-sm text-gray-500 hover:text-gray-700"
-        tabindex="-1"
-      >
-        <img
-          :src="show ? '/static/icons/eye-off-outline.svg' : '/static/icons/eye-outline.svg'"
-          alt="toggle password"
-          class="w-5 h-5 text-gray-500 hover:text-gray-700"
-        />
-      </button>
-    </div>
-
-    <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-      Register
-    </button>
-
-    <div class="text-sm text-center text-gray-600 mt-4">
-      Already have an account?
-      <a href="/login" class="text-blue-600 font-medium hover:underline">
-        Log in
-      </a>
-    </div>
-  </form>
-</div>
+<main class="app-shell grid min-h-screen lg:grid-cols-2">
+  <section class="hidden border-r border-slate-800 p-12 lg:flex lg:flex-col lg:justify-between"><a href="/" class="flex items-center gap-3"><span class="brand-mark">+</span><span class="font-semibold">Webhook Tester</span></a><div class="max-w-lg"><p class="eyebrow">Keep every signal</p><h1 class="mt-5 text-4xl font-semibold leading-tight tracking-tight">Your webhook history, ready when you are.</h1><p class="mt-5 text-lg leading-8 text-slate-500">Create durable endpoints, replay captured events, and debug without losing context.</p></div><p class="text-xs text-slate-700">No credit card required.</p></section>
+  <section class="flex min-h-screen items-center justify-center p-5 sm:p-8"><div class="w-full max-w-md"><a href="/" class="mb-10 flex items-center gap-3 lg:hidden"><span class="brand-mark">+</span><span class="font-semibold">Webhook Tester</span></a><p class="eyebrow">Free account</p><h1 class="mt-3 text-3xl font-semibold tracking-tight">Create your workspace</h1><p class="mt-2 text-sm text-slate-500">Keep endpoints and request history beyond this session.</p>
+    {{ if .Error }}<div class="mt-6 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{{ .Error }}</div>{{ end }}
+    <form method="POST" action="/register" class="mt-8 space-y-5">{{ .CSRFField }}<div><label for="name" class="field-label">Full name</label><input type="text" name="name" id="name" required class="field" value="{{ .FullName }}" placeholder="Your full name" /></div><div><label for="email" class="field-label">Email address</label><input type="email" name="email" id="email" required class="field" value="{{ .Email }}" placeholder="you@example.com" /></div><div x-data="{ show: false }" class="relative"><label for="password" class="field-label">Password</label><input name="password" id="password" required class="field pr-14" value="{{ .Password }}" placeholder="Create a password" :type="show ? 'text' : 'password'" /><button type="button" @click="show = !show" class="absolute bottom-0 right-0 grid h-11 w-12 place-items-center text-slate-500 hover:text-white" :aria-label="show ? 'Hide password' : 'Show password'"><img :src="show ? '/static/icons/eye-off-outline.svg' : '/static/icons/eye-outline.svg'" alt="" class="h-5 w-5 invert opacity-60" /></button></div><button type="submit" class="btn-primary w-full">Create account</button></form>
+    <p class="mt-7 text-center text-sm text-slate-500">Already have an account? <a href="/login" class="font-medium text-emerald-400 hover:text-emerald-300">Sign in</a></p>
+  </div></section>
+</main>
 {{ end }}

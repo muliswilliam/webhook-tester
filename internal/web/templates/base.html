@@ -3,13 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Webhook Tester — Debug & Mock Webhooks in Real Time</title>
-    <meta name="description" content="Webhook Tester is a lightweight, developer-friendly platform to create unique HTTP endpoints, inspect incoming webhook payloads, and replay requests—all in real time." />
+    <title>{{ block "title" . }}Webhook Tester - Debug webhooks in real time{{ end }}</title>
+    <meta name="description" content="Create unique HTTP endpoints, inspect incoming webhook payloads, and replay requests in real time." />
     <meta name="keywords" content="webhook tester, webhook debugging, mock webhooks, webhook playground, Go webhooks, HTTP testing" />
     <link rel="canonical" href="https://webhook-tester.williammuli.dev/" />
     <meta name="robots" content="index,follow" />
 
-    <link rel="stylesheet" href="/static/css/tailwind.css" />
+    <script>
+      (function () {
+        try {
+          var savedTheme = localStorage.getItem("webhook-tester-theme");
+          var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var useDark = savedTheme ? savedTheme === "dark" : prefersDark;
+          document.documentElement.classList.toggle("dark", useDark);
+          document.documentElement.dataset.mode = useDark ? "dark" : "light";
+          document.documentElement.style.colorScheme = useDark ? "dark" : "light";
+        } catch (_) {}
+      })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/css/tailwind.css?v=20260825-theme" />
     <script src="https://unpkg.com/alpinejs" defer></script>
     <script src="/static/js/script.js"></script>
     <script
@@ -25,7 +41,11 @@
         };
     </script>
   </head>
-  <body class="bg-gray-100 text-gray-900 flex flex-col min-h-screen">
+  <body>
+    <button id="theme-toggle" type="button" class="theme-toggle" onclick="toggleTheme()" aria-label="Switch color theme" title="Switch color theme">
+      <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
+      <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"/></svg>
+    </button>
     {{ block "body" . }} {{ end }}
   </body>
 </html>

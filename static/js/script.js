@@ -9,6 +9,44 @@ function copyCurl() {
     }
 }
 
+function currentTheme() {
+    return document.documentElement.classList.contains("dark") ? "dark" : "light";
+}
+
+function updateThemeToggle() {
+    const toggle = document.getElementById("theme-toggle");
+    if (!toggle) return;
+
+    const nextTheme = currentTheme() === "dark" ? "light" : "dark";
+    const label = `Switch to ${nextTheme} theme`;
+    toggle.setAttribute("aria-label", label);
+    toggle.setAttribute("title", label);
+}
+
+function applyTheme(theme, persist = true) {
+    const useDark = theme === "dark";
+    document.documentElement.classList.toggle("dark", useDark);
+    document.documentElement.dataset.mode = useDark ? "dark" : "light";
+    document.documentElement.style.colorScheme = useDark ? "dark" : "light";
+    if (persist) localStorage.setItem("webhook-tester-theme", theme);
+    updateThemeToggle();
+}
+
+function toggleTheme() {
+    applyTheme(currentTheme() === "dark" ? "light" : "dark");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    updateThemeToggle();
+
+    const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+    colorScheme.addEventListener("change", event => {
+        if (!localStorage.getItem("webhook-tester-theme")) {
+            applyTheme(event.matches ? "dark" : "light", false);
+        }
+    });
+});
+
 function sseRequestStream(webhookID) {
     return {
         connect() {

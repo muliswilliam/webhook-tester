@@ -1,444 +1,92 @@
-{{ define "title" }}Home - Webhook Tester {{ end }} {{ define "content" }} {{
-$csrfField := .CSRFField }} {{$activeWebhook := .Webhook}}
-
-<div class="max-w-8xl w-full mx-auto" x-data="{ showEditModal : false }">
-  <!-- Alert -->
+{{ define "title" }}Webhook workspace{{ end }}
+{{ define "content" }}
+{{ $csrfField := .CSRFField }}{{ $activeWebhook := .Webhook }}
+<div x-data="{ showEditModal: false }" class="space-y-6">
   {{ if not .User.ID }}
-  <div
-    class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 p-4 rounded mb-6"
-  >
-    <p>
-      <strong>Note:</strong> Incoming webhook data will be stored temporarily.
-      <a href="/register" class="underline text-blue-600"
-        >Create a free account</a
-      >
-      to retain request logs and enable advanced features like replay.
-    </p>
-  </div>
-  {{ end }} {{ if .User.ID }}
-  <div class="mb-6 bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-    <h2 class="text-md font-medium text-gray-700 mb-2">Your API Key</h2>
-    <div x-data="{ copied: false }" class="flex items-center space-x-2">
-      <input
-        x-ref="apikey"
-        readonly
-        type="text"
-        value="{{ .User.APIKey }}"
-        class="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-100 text-sm font-mono"
-      />
-      <button
-        @click="
-        navigator.clipboard.writeText($refs.apikey.value);
-        copied = true;
-        setTimeout(() => copied = false, 1500);
-      "
-        class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded text-sm"
-        x-text="copied ? '✅ Copied' : '📋 Copy'"
-      ></button>
-    </div>
-    <p class="text-xs text-gray-500 mt-2">
-      Use this key in the <code>X-API-Key</code> header to authenticate your API
-      requests.
-    </p>
+  <div class="temporary-banner flex flex-col gap-4 rounded-lg border border-amber-300/15 bg-amber-300/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex gap-3"><svg class="mt-0.5 h-5 w-5 shrink-0 text-amber-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg><div><p class="text-sm font-medium text-amber-100">Temporary workspace</p><p class="mt-1 text-sm text-amber-100/60">This endpoint expires after two days. Create an account to keep request history.</p></div></div>
+    <a href="/register" class="btn-secondary shrink-0 border-amber-300/20 text-amber-100">Save this workspace</a>
   </div>
   {{ end }}
 
-  <!-- Webhook URL Box -->
+  {{ if .User.ID }}
+  <section class="surface p-5" x-data="{ copied: false }">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p class="eyebrow">Authentication</p><h2 class="mt-1 text-base font-semibold">API key</h2></div><div class="flex min-w-0 flex-1 gap-2 sm:max-w-2xl"><input x-ref="apikey" readonly value="{{ .User.APIKey }}" class="field min-w-0 font-mono" aria-label="API key" /><button @click="navigator.clipboard.writeText($refs.apikey.value); copied = true; setTimeout(() => copied = false, 1500)" class="btn-secondary shrink-0"><span x-text="copied ? 'Copied' : 'Copy'"></span></button></div></div>
+  </section>
+  {{ end }}
+
   {{ if .Webhook.ID }}
-
-  <!-- Webhook Actions -->
-  <div class="flex items-center justify-between mb-6">
-    <h2 class="text-xl font-semibold text-gray-800">{{ .Webhook.Title }}</h2>
-
-    <div class="flex flex-wrap gap-2 h-[28px]">
-      <!-- Edit -->
-      <button
-        class="bg-blue-600 text-white text-sm px-3 py-1 rounded hover:bg-blue-700 h-[28px]"
-        @click="showEditModal = true"
-      >
-        Edit
-      </button>
-
-      <!-- Delete All Requests -->
-      <form method="POST" action="/delete-requests/{{ .Webhook.ID }}">
-        {{ .CSRFField }}
-        <button
-          type="submit"
-          class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
-        >
-          Reset requests
-        </button>
-      </form>
-
-      <!-- Delete Webhook -->
-      <form method="POST" action="/delete-webhook/{{ .Webhook.ID }}">
-        {{ .CSRFField }}
-        <button
-          type="submit"
-          class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
-        >
-          Delete webhook
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm mb-6">
-    <h2 class="text-md font-medium text-gray-700 mb-2">Your Webhook URL</h2>
-
-    <div x-data="{ copied: false }">
-      <div class="flex items-center space-x-2">
-        <input
-          x-ref="url"
-          readonly
-          type="text"
-          value="{{ .Domain }}/webhooks/{{ .Webhook.ID }}"
-          class="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-100 text-sm font-mono"
-        />
-        <button
-          @click="
-        navigator.clipboard.writeText($refs.url.value);
-        copied = true;
-        setTimeout(() => copied = false, 1500);
-      "
-          class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-2 rounded text-sm"
-          x-text="copied ? '✅ Copied' : '📋 Copy'"
-        ></button>
+  <section>
+    <div class="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div><div class="mb-3 flex items-center gap-2"><span class="relative flex h-2.5 w-2.5"><span class="status-dot absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-40 motion-reduce:animate-none"></span><span class="status-dot relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400"></span></span><span class="status-label eyebrow">Listening now</span></div><h1 class="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{{ .Webhook.Title }}</h1><p class="mt-2 text-sm text-slate-500">Inspect payloads as they arrive and tune the response without leaving this workspace.</p></div>
+      <div class="flex flex-wrap gap-2">
+        <button class="btn-secondary" @click="showEditModal = true"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>Edit response</button>
+        <form method="POST" action="/delete-requests/{{ .Webhook.ID }}">{{ .CSRFField }}<button type="submit" class="btn-secondary">Clear requests</button></form>
+        <form method="POST" action="/delete-webhook/{{ .Webhook.ID }}">{{ .CSRFField }}<button type="submit" class="btn-danger" aria-label="Delete webhook"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/></svg><span class="hidden sm:inline">Delete endpoint</span></button></form>
       </div>
     </div>
 
-    <p class="text-xs text-gray-500 mt-2">
-      Use this endpoint to capture any HTTP request. We'll log and display the
-      details in real-time.
-    </p>
-  </div>
-
-  <!--  Curl example-->
-  <div
-    x-data="copyCurl()"
-    class="relative bg-gray-900 rounded-lg text-white p-4 shadow-sm mb-6"
-  >
-    <div class="mb-2 text-sm text-gray-300 font-semibold">
-      Try it with <code>curl</code>
-    </div>
-
-    <!-- Copy Button -->
-    <button
-      @click="copy($refs.curl)"
-      x-text="copied ? '✅ Copied!' : '📋 Copy'"
-      class="absolute right-4 top-4 bg-gray-700 hover:bg-gray-600 text-white text-xs px-2 py-1 rounded"
-    ></button>
-
-    <!-- Curl Command -->
-    <pre
-      x-ref="curl"
-      class="text-sm overflow-x-auto font-mono leading-6 whitespace-pre-wrap"
-    >
-<span class="text-green-400">curl</span> -X POST <span
-      class="text-blue-400">{{ .Domain }}/webhooks/{{ .Webhook.ID }}</span> \
-  -H <span class="text-yellow-300">"Content-Type: application/json"</span> \
-  -d <span class="text-purple-300">'{"event":"test","status":"success"}'</span>
-  </pre>
-  </div>
-  {{ end }} {{ if .Webhook.Requests }}
-  <h2 class="text-xl font-medium text-gray-900 mb-2">
-    {{ .RequestsCount }} Requests Received
-  </h2>
-  {{ end }} {{ range .Webhook.Requests }}
-  <div class="my-6 bg-white rounded-lg p-2">
-    <!-- Method + Request ID -->
-    <div class="flex items-center justify-between mb-4">
-      <div class="flex items-center space-x-2">
-        <span
-          class="bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded"
-          >{{ .Method }}</span
-        >
-        <span class="text-gray-700 font-mono text-sm break-all">
-          {{ .ID }}
-        </span>
-        <span class="text-sm text-gray-500 italic">
-          {{ .ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
-        </span>
+    <div class="grid gap-5 xl:grid-cols-[1.15fr_.85fr]">
+      <div class="surface p-5 sm:p-6" x-data="{ copied: false }">
+        <div class="mb-4 flex items-center justify-between"><div><p class="eyebrow">Endpoint URL</p><h2 class="mt-1 text-base font-semibold text-white">Send requests here</h2></div><span class="status-badge rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-xs font-medium text-emerald-300">Public</span></div>
+        <div class="flex flex-col gap-2 sm:flex-row"><input x-ref="url" readonly value="{{ .Domain }}/webhooks/{{ .Webhook.ID }}" class="field min-w-0 font-mono text-emerald-200" aria-label="Webhook endpoint URL" /><button @click="navigator.clipboard.writeText($refs.url.value); copied = true; setTimeout(() => copied = false, 1500)" class="btn-primary shrink-0"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg><span x-text="copied ? 'Copied' : 'Copy URL'"></span></button></div>
+        <p class="mt-3 text-xs leading-5 text-slate-500">Accepts GET, POST, PUT, PATCH, and DELETE requests. New events appear in real time.</p>
       </div>
-      <div class="flex gap-2">
-        <form method="POST" action="/requests/{{ .ID }}/replay">
-          {{ $csrfField }}
-          <button
-            class="ml-2 px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Replay
-          </button>
-        </form>
-        <form method="POST" action="/requests/{{ .ID }}/delete">
-          {{ $csrfField }}
-          <button
-            class="bg-red-600 text-white text-sm px-3 py-1 rounded hover:bg-red-700"
-          >
-            Delete
-          </button>
-        </form>
+
+      <div class="surface code-surface overflow-hidden" x-data="{ copied: false }">
+        <div class="flex items-center justify-between border-b border-slate-800 px-5 py-3"><div class="flex items-center gap-2"><span class="h-2.5 w-2.5 rounded-full bg-red-400/70"></span><span class="h-2.5 w-2.5 rounded-full bg-amber-300/70"></span><span class="h-2.5 w-2.5 rounded-full bg-emerald-400/70"></span><span class="ml-2 text-xs text-slate-500">Quick test</span></div><button @click="navigator.clipboard.writeText($refs.curl.innerText); copied = true; setTimeout(() => copied = false, 1500)" class="text-xs font-medium text-slate-400 hover:text-white" x-text="copied ? 'Copied' : 'Copy command'"></button></div>
+        <pre x-ref="curl" class="overflow-x-auto p-5 text-xs leading-6 text-slate-300"><span class="text-emerald-300">curl</span> -X POST \
+  <span class="text-sky-300">{{ .Domain }}/webhooks/{{ .Webhook.ID }}</span> \
+  -H <span class="text-amber-200">"Content-Type: application/json"</span> \
+  -d <span class="text-violet-300">'{"event":"payment.succeeded"}'</span></pre>
       </div>
     </div>
-
-    <!-- Request Headers Table -->
-    <h2 class="text-md font-semibold mb-2">Request Headers</h2>
-    <div class="overflow-x-auto mb-6">
-      <table class="w-full text-sm text-left">
-        <tbody>
-          {{ range $key, $val := .Headers }}
-          <tr class="border-t">
-            <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
-              {{ $key }}
-            </td>
-            <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Response Headers Table -->
-    {{ if $activeWebhook.ResponseHeaders }}
-    <h2 class="text-md font-semibold mb-2">Response Headers</h2>
-    <div class="overflow-x-auto mb-6">
-      <table class="w-full text-sm text-left">
-        <tbody>
-          {{ range $key, $val := $activeWebhook.ResponseHeaders }}
-          <tr class="border-t">
-            <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
-              {{ $key }}
-            </td>
-            <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
-    </div>
-    {{ end }}
-
-    <!-- Query Params -->
-    {{ if .Query }}
-    <h2 class="text-md font-semibold mb-2">Params</h2>
-    <div class="overflow-x-auto mb-6">
-      <table class="w-full text-sm text-left">
-        <tbody>
-          {{ range $key, $val := .Query }}
-          <tr class="border-t">
-            <td class="py-1 pr-4 text-gray-600 whitespace-nowrap font-medium">
-              {{ $key }}
-            </td>
-            <td class="py-1 text-gray-800 break-all">{{ $val }}</td>
-          </tr>
-          {{ end }}
-        </tbody>
-      </table>
-    </div>
-    {{ end }}
-
-    <!-- Body -->
-    <h2 class="text-md font-semibold mb-2">Body</h2>
-    <div
-      class="bg-white border rounded p-3 text-sm font-mono whitespace-pre-wrap break-words min-h-[120px] relative"
-    >
-      {{ .Body }}
-      <div class="absolute bottom-2 right-2 text-xs flex gap-4 text-gray-500">
-        <span class="inline-flex items-center space-x-1" title="Body is displayed formatted">
-          <span aria-hidden="true">✅</span>
-          <span>Format JSON</span>
-        </span>
-        <button class="hover:underline text-blue-600">Copy</button>
-      </div>
-    </div>
-
-    <hr class="my-6 border-t-2 border-gray-400" />
-  </div>
-
-  {{ else }}
-  <!-- About the Tool -->
-  <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm mb-6">
-    <h3 class="text-xl font-semibold mb-4">What is Webhook Tester?</h3>
-    <p class="text-sm text-gray-700 mb-4">
-      Webhook Tester is a lightweight platform that lets developers create
-      temporary webhook endpoints to inspect and debug HTTP requests in
-      real-time. Whether you're integrating with Stripe, GitHub, Twilio, or any
-      custom service, this tool gives you full visibility into the requests your
-      app is sending or receiving.
-    </p>
-    <p class="text-sm text-gray-700">
-      Capture headers, query parameters, request bodies, and more — all without
-      writing a single line of backend code. Tailor responses, simulate delays,
-      and replay requests to your own servers.
-    </p>
-  </div>
-
-  <!-- How It Works Section -->
-  <div class="bg-white border border-gray-100 p-6 rounded-lg shadow-sm">
-    <h3 class="text-xl font-semibold mb-4">How it works</h3>
-    <ol class="list-decimal pl-6 space-y-2 text-gray-700 text-sm">
-      <li>Click <strong>Create Webhook</strong> to generate a unique URL.</li>
-      <li>
-        Send an HTTP request (POST, GET, PUT, etc.) to the URL from any tool or
-        service.
-      </li>
-      <li>Watch the request appear instantly in your dashboard.</li>
-      <li>
-        Inspect headers, body, method, and more — replay or forward the request
-        if needed.
-      </li>
-    </ol>
-  </div>
-
+  </section>
   {{ end }}
 
-  <!--  Edit webhook modal -->
-  <div>
-    <!-- Modal Backdrop -->
-    <div
-      x-show="showEditModal"
-      x-transition.opacity
-      class="fixed inset-0 bg-black/40 z-40"
-      @click="showEditModal = false"
-      @keydown.escape.window="showEditModal = false"
-    ></div>
+  <section>
+    <div class="mb-4 flex items-center justify-between"><div><p class="eyebrow">Request log</p><h2 class="mt-1 text-lg font-semibold text-white">{{ .RequestsCount }} captured {{ if eq .RequestsCount 1 }}request{{ else }}requests{{ end }}</h2></div><span class="hidden text-xs text-slate-600 sm:block">Updates automatically</span></div>
+    {{ if .Webhook.Requests }}
+    <div class="space-y-4">
+      {{ range .Webhook.Requests }}
+      <article class="surface overflow-hidden" x-data="{ open: true, copied: false }">
+        <button class="flex min-h-16 w-full cursor-pointer items-center justify-between gap-4 px-4 text-left hover:bg-slate-800/30 sm:px-5" @click="open = !open" :aria-expanded="open">
+          <span class="flex min-w-0 items-center gap-3"><span class="method-badge">{{ .Method }}</span><span class="truncate font-mono text-xs text-slate-400">{{ .ID }}</span></span>
+          <span class="flex shrink-0 items-center gap-3"><span class="hidden text-xs text-slate-600 sm:block">{{ .ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}</span><svg class="h-4 w-4 text-slate-500 transition-transform" :class="open ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></span>
+        </button>
+        <div x-show="open" x-transition class="border-t border-slate-800">
+          <div class="grid lg:grid-cols-2">
+            <div class="border-b border-slate-800 lg:border-b-0 lg:border-r"><div class="flex items-center justify-between px-4 py-3 sm:px-5"><h3 class="text-sm font-semibold text-slate-300">Headers</h3><span class="text-xs text-slate-600">{{ .Method }}</span></div><div class="overflow-x-auto"><table class="data-table w-full"><tbody>{{ range $key, $val := .Headers }}<tr><td>{{ $key }}</td><td class="break-all text-slate-300">{{ $val }}</td></tr>{{ end }}</tbody></table></div></div>
+            <div><div class="flex items-center justify-between px-4 py-3 sm:px-5"><h3 class="text-sm font-semibold text-slate-300">Body</h3><button @click.stop="navigator.clipboard.writeText($refs.body.innerText); copied = true; setTimeout(() => copied = false, 1500)" class="text-xs font-medium text-emerald-400 hover:text-emerald-300" x-text="copied ? 'Copied' : 'Copy JSON'"></button></div><pre x-ref="body" class="code-surface min-h-40 overflow-x-auto border-t border-slate-800 bg-slate-950/50 p-5 text-xs leading-6 text-slate-300">{{ .Body }}</pre></div>
+          </div>
+          {{ if .Query }}<div class="border-t border-slate-800"><div class="px-5 py-3 text-sm font-semibold text-slate-300">Query parameters</div><div class="overflow-x-auto"><table class="data-table w-full"><tbody>{{ range $key, $val := .Query }}<tr><td>{{ $key }}</td><td class="break-all text-slate-300">{{ $val }}</td></tr>{{ end }}</tbody></table></div></div>{{ end }}
+          <div class="flex justify-end gap-2 border-t border-slate-800 bg-slate-950/25 p-3"><form method="POST" action="/requests/{{ .ID }}/replay">{{ $csrfField }}<button class="btn-secondary">Replay request</button></form><form method="POST" action="/requests/{{ .ID }}/delete">{{ $csrfField }}<button class="btn-danger">Delete</button></form></div>
+        </div>
+      </article>
+      {{ end }}
+    </div>
+    {{ else }}
+    <div class="surface grid min-h-64 place-items-center p-8 text-center"><div class="max-w-md"><div class="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-slate-700 bg-slate-800/70 text-slate-400"><svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 4h16v16H4zM8 9h8M8 13h5"/></svg></div><h3 class="mt-5 text-base font-semibold text-white">Waiting for your first request</h3><p class="mt-2 text-sm leading-6 text-slate-500">Copy the endpoint above and send any HTTP request. The payload, headers, and query parameters will appear here instantly.</p></div></div>
+    {{ end }}
+  </section>
 
-    <!-- Modal Box -->
-    <div
-      x-show="showEditModal"
-      x-transition
-      class="fixed inset-0 z-50 flex items-center justify-center p-4"
-    >
-      <div
-        class="bg-white w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg shadow-lg p-6 relative"
-        @click.away="showEditModal = false"
-      >
-        <h2 class="text-lg font-semibold text-gray-800 mb-4">Update Webhook</h2>
-
-        <form
-          method="POST"
-          action="/update-webhook/{{ .Webhook.ID }}"
-          class="space-y-4 text-sm"
-        >
+  <div x-cloak x-show="showEditModal" @keydown.escape.window="showEditModal = false">
+    <div x-show="showEditModal" x-transition.opacity class="fixed inset-0 z-40 bg-slate-950/80 backdrop-blur-sm" @click="showEditModal = false"></div>
+    <div x-show="showEditModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="modal-panel max-h-[90vh]" @click.away="showEditModal = false" role="dialog" aria-modal="true" aria-labelledby="edit-webhook-title">
+        <div class="mb-6 flex items-start justify-between"><div><p class="eyebrow">Response settings</p><h2 id="edit-webhook-title" class="mt-2 text-xl font-semibold">Edit webhook</h2></div><button class="icon-btn" @click="showEditModal = false" aria-label="Close dialog"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+        <form method="POST" action="/update-webhook/{{ .Webhook.ID }}" class="space-y-5">
           {{ .CSRFField }}
-          <div>
-            <label for="title" class="block font-medium mb-1">Title</label>
-            <input
-              id="title"
-              type="text"
-              name="title"
-              class="w-full border rounded px-3 py-2"
-              value="{{ .Webhook.Title }}"
-              required
-            />
-          </div>
-
-          <div class="flex gap-4">
-            <div class="flex-1">
-              <label for="response_code" class="block font-medium mb-1"
-                >Response Code</label
-              >
-              <input
-                id="response_code"
-                type="number"
-                name="response_code"
-                class="w-full border rounded px-3 py-2"
-                value="{{ .Webhook.ResponseCode }}"
-                required
-              />
-            </div>
-            <div class="flex-1">
-              <label for="content_type" class="block font-medium mb-1"
-                >Content Type</label
-              >
-              <select
-                id="content_type"
-                name="content_type"
-                class="w-full border rounded px-3 py-2"
-                value="{{ .Webhook.ContentType }}"
-              >
-                <option value="application/json">application/json</option>
-                <option value="text/plain">text/plain</option>
-                <option value="text/html">text/html</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label for="response_delay" class="block font-medium mb-1"
-              >Delay (ms)</label
-            >
-            <input
-              id="response_delay"
-              type="number"
-              name="response_delay"
-              class="w-full border rounded px-3 py-2"
-              value="{{ .Webhook.ResponseDelay }}"
-            />
-          </div>
-
-          <div>
-            <label for="payload" class="block font-medium mb-1">Payload</label>
-            <!-- prettier-ignore -->
-            <textarea
-              id="payload"
-              name="payload"
-              rows="4"
-              class="w-full border rounded px-3 py-2 font-mono"
-            >{{ if .Webhook.Payload }}{{ .Webhook.Payload }}{{ end }}</textarea>
-          </div>
-
-          <div>
-            <label for="response_headers" class="block font-medium mb-1"
-              >Response Headers (JSON)</label
-            >
-            <!-- prettier-ignore -->
-            <textarea
-              id="response_headers"
-              name="response_headers"
-              rows="4"
-              class="w-full border rounded px-3 py-2 font-mono"
-              placeholder='{ "X-Test": "123", "Cache-Control": "no-store" }'
-            >{{ .ResponseHeaders }}</textarea>
-          </div>
-
-          <div class="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              id="notify"
-              name="notify_on_event"
-              value="true"
-              {{
-              if
-              .Webhook.NotifyOnEvent
-              }}checked{{
-              end
-              }}
-              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <label for="notify" class="text-sm text-gray-700 font-medium">
-              Notify on Request
-            </label>
-          </div>
-
-          <div class="flex justify-end gap-2 pt-4">
-            <button
-              type="button"
-              @click="showEditModal = false"
-              class="px-4 py-2 rounded border text-gray-600 hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            >
-              Update
-            </button>
-          </div>
+          <div><label for="title" class="field-label">Title</label><input id="title" name="title" class="field" value="{{ .Webhook.Title }}" required /></div>
+          <div class="grid gap-4 sm:grid-cols-2"><div><label for="response_code" class="field-label">Response code</label><input id="response_code" type="number" name="response_code" class="field" value="{{ .Webhook.ResponseCode }}" required /></div><div><label for="content_type" class="field-label">Content type</label><select id="content_type" name="content_type" class="field"><option value="application/json">application/json</option><option value="text/plain">text/plain</option><option value="text/html">text/html</option></select></div></div>
+          <div><label for="response_delay" class="field-label">Response delay (ms)</label><input id="response_delay" type="number" name="response_delay" class="field" value="{{ .Webhook.ResponseDelay }}" /></div>
+          <div><label for="payload" class="field-label">Response payload</label><textarea id="payload" name="payload" rows="4" class="field font-mono">{{ if .Webhook.Payload }}{{ .Webhook.Payload }}{{ end }}</textarea></div>
+          <div><label for="response_headers" class="field-label">Response headers (JSON)</label><textarea id="response_headers" name="response_headers" rows="3" class="field font-mono" placeholder='{ "X-Test": "123" }'>{{ .ResponseHeaders }}</textarea></div>
+          <label class="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-800 px-3"><input type="checkbox" id="notify" name="notify_on_event" value="true" {{ if .Webhook.NotifyOnEvent }}checked{{ end }} class="rounded border-slate-600 bg-slate-900 text-emerald-400 focus:ring-emerald-400" /><span class="text-sm text-slate-300">Notify me when a request arrives</span></label>
+          <div class="flex justify-end gap-3 pt-2"><button type="button" @click="showEditModal = false" class="btn-secondary">Cancel</button><button type="submit" class="btn-primary">Save changes</button></div>
         </form>
       </div>
     </div>
   </div>
-  <!--  End edit webhook modal -->
 </div>
-
 {{ end }}

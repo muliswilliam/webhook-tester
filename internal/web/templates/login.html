@@ -1,63 +1,15 @@
-{{ define "title" }}Login{{ end }} {{ define "body" }}
-<!-- Login Form Container -->
-<div class="w-[400px] mx-auto mt-16 bg-white border rounded-lg shadow p-8">
-  <h1 class="text-2xl font-semibold mb-6 text-center text-blue-600">Sign in</h1>
-
-  {{ if .Error }}
-  <div class="mb-4 p-3 text-sm text-red-700 bg-red-100 rounded">
-    {{ .Error }}
-  </div>
-  {{ end }}
-
-  <form method="POST" action="/login" class="space-y-5">
-    {{ .CSRFField }}
-    <!-- Username / Email -->
-    <div>
-      <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-      <input
-        type="email"
-        name="email"
-        id="email"
-        required
-        class="w-full border border-gray-300 px-3 py-2 rounded shadow-sm focus:outline-none focus:ring focus:border-blue-400"
-        placeholder="you@example.com"
-      />
-    </div>
-
-    <!-- Password -->
-    <div>
-      <label for="password" class="block text-sm font-medium text-gray-700 mb-1"
-      >Password</label
-      >
-      <input
-        type="password"
-        name="password"
-        id="password"
-        required
-        class="w-full border border-gray-300 px-3 py-2 rounded shadow-sm focus:outline-none focus:ring focus:border-blue-400"
-        placeholder="password"
-      />
-    </div>
-
-    <!-- Submit -->
-    <div>
-      <button
-        type="submit"
-        class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition"
-      >
-        Sign In
-      </button>
-    </div>
-  </form>
-
-  <p class="text-sm text-center text-gray-500 mt-6">
-    Don't have an account?
-    <a href="/register" class="text-blue-600 hover:underline">Create one</a>
-  </p>
-  <div class="text-center text-sm mt-4">
-    <a href="/forgot-password" class="text-blue-600 hover:underline">
-      Forgot your password?
-    </a>
-  </div>
-</div>
+{{ define "title" }}Sign in - Webhook Tester{{ end }}
+{{ define "body" }}
+<main class="app-shell grid min-h-screen lg:grid-cols-2">
+  <section class="hidden border-r border-slate-800 p-12 lg:flex lg:flex-col lg:justify-between">
+    <a href="/" class="flex items-center gap-3"><span class="brand-mark"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg></span><span class="font-semibold">Webhook Tester</span></a>
+    <div class="max-w-lg"><p class="eyebrow">Developer workspace</p><h1 class="mt-5 text-4xl font-semibold leading-tight tracking-tight">See exactly what your integrations send.</h1><p class="mt-5 text-lg leading-8 text-slate-500">Capture, inspect, and replay webhook requests from one focused workspace.</p></div>
+    <p class="text-xs text-slate-700">Built for fast integration debugging.</p>
+  </section>
+  <section class="flex min-h-screen items-center justify-center p-5 sm:p-8"><div class="w-full max-w-md"><a href="/" class="mb-10 flex items-center gap-3 lg:hidden"><span class="brand-mark">+</span><span class="font-semibold">Webhook Tester</span></a><p class="eyebrow">Welcome back</p><h1 class="mt-3 text-3xl font-semibold tracking-tight">Sign in to your workspace</h1><p class="mt-2 text-sm text-slate-500">Continue inspecting your webhook traffic.</p>
+    {{ if .Error }}<div class="mt-6 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">{{ .Error }}</div>{{ end }}
+    <form method="POST" action="/login" class="mt-8 space-y-5">{{ .CSRFField }}<div><label for="email" class="field-label">Email address</label><input type="email" name="email" id="email" required class="field" placeholder="you@example.com" /></div><div><div class="flex items-center justify-between"><label for="password" class="field-label">Password</label><a href="/forgot-password" class="mb-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300">Forgot password?</a></div><input type="password" name="password" id="password" required class="field" placeholder="Enter your password" /></div><button type="submit" class="btn-primary w-full">Sign in</button></form>
+    <p class="mt-7 text-center text-sm text-slate-500">New to Webhook Tester? <a href="/register" class="font-medium text-emerald-400 hover:text-emerald-300">Create an account</a></p>
+  </div></section>
+</main>
 {{ end }}
