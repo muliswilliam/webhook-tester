@@ -11,7 +11,7 @@
     showModal: false,
     sidebarOpen: false,
     desktop: window.matchMedia('(min-width: 768px)').matches,
-    sidebarCollapsed: (localStorage.getItem('webhook-tester-sidebar-collapsed') ?? $el.dataset.sidebarCollapsedDefault) === '1',
+    sidebarCollapsed: (localStorage.getItem('webhook-tester-sidebar-collapsed') ?? $el.dataset.sidebarCollapsedDefault.trim()) === '1',
     get railCollapsed() { return this.sidebarCollapsed && this.desktop },
     toggleSidebarCollapsed() { this.sidebarCollapsed = !this.sidebarCollapsed; localStorage.setItem('webhook-tester-sidebar-collapsed', this.sidebarCollapsed ? '1' : '0') },
     openSidebar() { this.sidebarOpen = true; this.$nextTick(() => this.$refs.sidebarCloseBtn.focus()) },
