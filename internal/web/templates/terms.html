@@ -1,11 +1,13 @@
 {{ define "title" }}Terms & Conditions - Webhook Tester{{ end }} {{ define
 "body" }}
-<div class="max-w-4xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
-  <h1 class="text-3xl font-bold text-gray-900 mb-6">Terms & Conditions</h1>
+<div class="app-shell min-h-screen">
+  <header class="document-header"><a href="/" class="flex items-center gap-3"><span class="brand-mark">+</span><span class="text-sm font-semibold">Webhook Tester</span></a><div class="flex items-center gap-2">{{ template "theme-control" . }}<a href="/" class="top-link">Workspace</a></div></header>
+<main class="document-wrap">
+  <h1 class="mb-6 text-3xl font-bold">Terms & Conditions</h1>
 
-  <p class="text-sm text-gray-500 mb-8">Effective Date: {{ .Year }}</p>
+  <p class="mb-8 text-sm text-muted">Effective Date: {{ .Year }}</p>
 
-  <div class="space-y-8 text-gray-700 text-sm leading-6">
+  <div class="legal-prose space-y-8 text-sm leading-6">
     <section>
       <h2 class="text-xl font-semibold text-gray-800 mb-2">
         1. Acceptance of Terms
@@ -97,5 +99,7 @@
       </p>
     </section>
   </div>
+</main>
+<footer class="document-footer"><span>Webhook Tester</span><nav class="flex gap-4" aria-label="Legal navigation"><a href="/privacy" class="text-link">Privacy</a><a href="mailto:hello@srninety.one" class="text-link">Contact</a></nav></footer>
 </div>
 {{ end }}
