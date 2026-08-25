@@ -1,11 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ block "title" . }}Webhook Tester - Debug webhooks in real time{{ end }}</title>
-    <meta name="description" content="Create unique HTTP endpoints, inspect incoming webhook payloads, and replay requests in real time." />
-    <meta name="keywords" content="webhook tester, webhook debugging, mock webhooks, webhook playground, Go webhooks, HTTP testing" />
+    <meta
+      name="description"
+      content="Create unique HTTP endpoints, inspect incoming webhook payloads, and replay requests in real time."
+    />
+    <meta
+      name="keywords"
+      content="webhook tester, webhook debugging, mock webhooks, webhook playground, Go webhooks, HTTP testing"
+    />
     <link rel="canonical" href="https://webhook-tester.williammuli.dev/" />
     <meta name="robots" content="index,follow" />
 
@@ -26,7 +32,10 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/static/css/tailwind.css?v=20260825-ux" />
     <script src="https://unpkg.com/alpinejs" defer></script>
     <script src="/static/js/script.js"></script>
@@ -44,21 +53,47 @@
     </script>
   </head>
   <body>
-    {{ block "body" . }} {{ end }}
+    {{ block "body" . }}{{ end }}
   </body>
 </html>
 
 {{ define "theme-control" }}
-<label class="theme-picker" for="theme-select">
-  <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg>
-  <span class="hidden xl:inline">Theme</span>
-  <span class="relative inline-flex items-center">
-  <select id="theme-select" class="theme-select" aria-label="Color theme" onchange="setThemePreference(this.value)">
-    <option value="system">System</option>
-    <option value="light">Light</option>
-    <option value="dark">Dark</option>
-  </select>
-  <svg class="pointer-events-none absolute right-0.5 h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-  </span>
-</label>
+  <label class="theme-picker" for="theme-select">
+    <svg
+      class="h-4 w-4 shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="3" />
+      <path
+        d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"
+      />
+    </svg>
+    <span class="hidden xl:inline">Theme</span>
+    <span class="relative inline-flex items-center">
+      <select
+        id="theme-select"
+        class="theme-select"
+        aria-label="Color theme"
+        onchange="setThemePreference(this.value)"
+      >
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+      <svg
+        class="pointer-events-none absolute right-0.5 h-3 w-3"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        aria-hidden="true"
+      >
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    </span>
+  </label>
 {{ end }}

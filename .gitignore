@@ -34,3 +34,5 @@ go.work.sum
 # tmp
 tmp/
 *.log
+node_modules/
+

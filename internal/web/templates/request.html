@@ -1,44 +1,136 @@
 {{ define "title" }}Request {{ .Request.ID }}{{ end }}
 {{ define "content" }}
-<div class="space-y-6" x-data="{ copiedID: false, copiedBody: false }">
-  <nav aria-label="Breadcrumb">
-    <a href="/?address={{ .Webhook.ID }}" class="text-link inline-flex min-h-11 items-center gap-2 text-sm font-medium">
-      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-      Back to {{ .Webhook.Title }}
-    </a>
-  </nav>
+  <div class="space-y-6" x-data="{ copiedID: false, copiedBody: false }">
+    <nav aria-label="Breadcrumb">
+      <a
+        href="/?address={{ .Webhook.ID }}"
+        class="text-link inline-flex min-h-11 items-center gap-2 text-sm font-medium"
+      >
+        <svg
+          class="h-4 w-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="m15 18-6-6 6-6" />
+        </svg>
+        Back to
+        {{ .Webhook.Title }}
+      </a>
+    </nav>
 
-  <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-    <div class="min-w-0">
-      <div class="mb-3 flex items-center gap-3"><span class="method-badge">{{ .Request.Method }}</span><span class="text-xs text-muted">{{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}</span></div>
-      <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Captured request</h1>
-      <button class="mt-2 flex max-w-full items-center gap-2 text-left font-mono text-xs text-muted hover:text-[var(--app-fg)]" @click="navigator.clipboard.writeText('{{ .Request.ID }}'); copiedID = true; setTimeout(() => copiedID = false, 1500)" :aria-label="copiedID ? 'Request ID copied' : 'Copy request ID'">
-        <span class="truncate">{{ .Request.ID }}</span>
-        <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3"/></svg>
-        <span class="font-sans" x-text="copiedID ? 'Copied' : ''"></span>
-      </button>
-    </div>
-    <div class="flex flex-wrap gap-2">
-      <form method="POST" action="/requests/{{ .Request.ID }}/replay">{{ .CSRFField }}<button class="btn-primary">Replay request</button></form>
-      <form method="POST" action="/requests/{{ .Request.ID }}/delete" onsubmit="return confirm('Delete this captured request?')">{{ .CSRFField }}<button class="btn-danger">Delete request</button></form>
-    </div>
-  </header>
+    <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div class="min-w-0">
+        <div class="mb-3 flex items-center gap-3">
+          <span class="method-badge">{{ .Request.Method }}</span>
+          <span class="text-xs text-muted">
+            {{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
+          </span>
+        </div>
+        <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Captured request</h1>
+        <button
+          class="mt-2 flex max-w-full items-center gap-2 text-left font-mono text-xs text-muted hover:text-[var(--app-fg)]"
+          @click="navigator.clipboard.writeText('{{ .Request.ID }}'); copiedID = true; setTimeout(() => copiedID = false, 1500)"
+          :aria-label="copiedID ? 'Request ID copied' : 'Copy request ID'"
+        >
+          <span class="truncate">{{ .Request.ID }}</span>
+          <svg
+            class="h-4 w-4 shrink-0"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <rect x="9" y="9" width="11" height="11" rx="2" />
+            <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
+          </svg>
+          <span class="font-sans" x-text="copiedID ? 'Copied' : ''"></span>
+        </button>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+          {{ .CSRFField }}
+          <button class="btn-primary">Replay request</button>
+        </form>
+        <form
+          method="POST"
+          action="/requests/{{ .Request.ID }}/delete"
+          onsubmit="return confirm('Delete this captured request?')"
+        >
+          {{ .CSRFField }}
+          <button class="btn-danger">Delete request</button>
+        </form>
+      </div>
+    </header>
 
-  <section class="surface overflow-hidden" aria-labelledby="request-body-title">
-    <div class="section-bar"><div><p class="eyebrow">Payload</p><h2 id="request-body-title" class="mt-1 text-base font-semibold">Request body</h2></div><button @click="navigator.clipboard.writeText($refs.body.innerText); copiedBody = true; setTimeout(() => copiedBody = false, 1500)" class="text-link text-sm font-medium" x-text="copiedBody ? 'Copied' : 'Copy body'"></button></div>
-    <pre x-ref="body" class="code-surface min-h-56 overflow-x-auto border-t p-5 text-xs leading-6 sm:text-sm">{{ .Request.Body }}</pre>
-  </section>
-
-  <div class="grid gap-6 xl:grid-cols-2">
-    <section class="surface overflow-hidden" aria-labelledby="request-headers-title">
-      <div class="section-bar"><div><p class="eyebrow">Metadata</p><h2 id="request-headers-title" class="mt-1 text-base font-semibold">Headers</h2></div></div>
-      <div class="max-h-[32rem] overflow-auto"><table class="data-table w-full"><tbody>{{ range $key, $val := .Request.Headers }}<tr><td>{{ $key }}</td><td class="break-all">{{ $val }}</td></tr>{{ else }}<tr><td colspan="2">No headers captured</td></tr>{{ end }}</tbody></table></div>
+    <section class="surface overflow-hidden" aria-labelledby="request-body-title">
+      <div class="section-bar">
+        <div>
+          <p class="eyebrow">Payload</p>
+          <h2 id="request-body-title" class="mt-1 text-base font-semibold">Request body</h2>
+        </div>
+        <button
+          @click="navigator.clipboard.writeText($refs.body.innerText); copiedBody = true; setTimeout(() => copiedBody = false, 1500)"
+          class="text-link text-sm font-medium"
+          x-text="copiedBody ? 'Copied' : 'Copy body'"
+        ></button>
+      </div>
+      <pre
+        x-ref="body"
+        class="code-surface min-h-56 overflow-x-auto border-t p-5 text-xs leading-6 sm:text-sm"
+      >
+{{ .Request.Body }}</pre>
     </section>
 
-    <section class="surface overflow-hidden" aria-labelledby="request-query-title">
-      <div class="section-bar"><div><p class="eyebrow">URL data</p><h2 id="request-query-title" class="mt-1 text-base font-semibold">Query parameters</h2></div></div>
-      <div class="max-h-[32rem] overflow-auto"><table class="data-table w-full"><tbody>{{ range $key, $val := .Request.Query }}<tr><td>{{ $key }}</td><td class="break-all">{{ $val }}</td></tr>{{ else }}<tr><td colspan="2">No query parameters</td></tr>{{ end }}</tbody></table></div>
-    </section>
+    <div class="grid gap-6 xl:grid-cols-2">
+      <section class="surface overflow-hidden" aria-labelledby="request-headers-title">
+        <div class="section-bar">
+          <div>
+            <p class="eyebrow">Metadata</p>
+            <h2 id="request-headers-title" class="mt-1 text-base font-semibold">Headers</h2>
+          </div>
+        </div>
+        <div class="max-h-[32rem] overflow-auto">
+          <table class="data-table w-full">
+            <tbody>
+              {{ range $key, $val := .Request.Headers }}
+                <tr>
+                  <td>{{ $key }}</td>
+                  <td class="break-all">{{ $val }}</td>
+                </tr>
+              {{ else }}
+                <tr><td colspan="2">No headers captured</td></tr>
+              {{ end }}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="surface overflow-hidden" aria-labelledby="request-query-title">
+        <div class="section-bar">
+          <div>
+            <p class="eyebrow">URL data</p>
+            <h2 id="request-query-title" class="mt-1 text-base font-semibold">Query parameters</h2>
+          </div>
+        </div>
+        <div class="max-h-[32rem] overflow-auto">
+          <table class="data-table w-full">
+            <tbody>
+              {{ range $key, $val := .Request.Query }}
+                <tr>
+                  <td>{{ $key }}</td>
+                  <td class="break-all">{{ $val }}</td>
+                </tr>
+              {{ else }}
+                <tr><td colspan="2">No query parameters</td></tr>
+              {{ end }}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </div>
-</div>
 {{ end }}

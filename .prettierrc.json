@@ -1,0 +1,13 @@
+{
+  "printWidth": 100,
+  "htmlWhitespaceSensitivity": "ignore",
+  "plugins": ["prettier-plugin-go-template"],
+  "overrides": [
+    {
+      "files": ["internal/web/templates/**/*.html"],
+      "options": {
+        "parser": "go-template"
+      }
+    }
+  ]
+}

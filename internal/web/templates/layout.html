@@ -1,126 +1,440 @@
 {{ define "body" }}
-<div
-  class="app-shell"
-  data-active-webhook="{{ .Webhook.ID }}"
-  x-data="{
+  <div
+    class="app-shell"
+    data-active-webhook="{{ .Webhook.ID }}"
+    data-sidebar-collapsed-default="{{ if .User.ID }}
+      0
+    {{ else }}
+      1
+    {{ end }}"
+    x-data="{
     showModal: false,
     sidebarOpen: false,
     desktop: window.matchMedia('(min-width: 768px)').matches,
-    sidebarCollapsed: (localStorage.getItem('webhook-tester-sidebar-collapsed') ?? '{{ if .User.ID }}0{{ else }}1{{ end }}') === '1',
+    sidebarCollapsed: (localStorage.getItem('webhook-tester-sidebar-collapsed') ?? $el.dataset.sidebarCollapsedDefault) === '1',
     get railCollapsed() { return this.sidebarCollapsed && this.desktop },
     toggleSidebarCollapsed() { this.sidebarCollapsed = !this.sidebarCollapsed; localStorage.setItem('webhook-tester-sidebar-collapsed', this.sidebarCollapsed ? '1' : '0') },
     openSidebar() { this.sidebarOpen = true; this.$nextTick(() => this.$refs.sidebarCloseBtn.focus()) },
     closeSidebar() { this.sidebarOpen = false; this.$nextTick(() => this.$refs.sidebarTrigger.focus()) }
   }"
-  x-init="window.matchMedia('(min-width: 768px)').addEventListener('change', event => { desktop = event.matches; if (desktop) sidebarOpen = false })"
-  @keydown.escape.window="if (sidebarOpen) closeSidebar()"
->
-  <a href="#main-content" class="skip-link">Skip to main content</a>
-  <header class="topbar" :inert="!desktop && sidebarOpen" :aria-hidden="(!desktop && sidebarOpen).toString()">
-    <div class="flex min-w-0 items-center gap-3">
-      <button x-ref="sidebarTrigger" class="icon-btn md:hidden" @click="openSidebar()" aria-label="Open webhook navigation" :aria-expanded="sidebarOpen.toString()">
-        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-      </button>
-      <a href="/" class="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]">
-        <span class="brand-mark"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="9"/></svg></span>
-        <span class="min-w-0"><span class="block truncate text-sm font-semibold tracking-tight">Webhook Tester</span><span class="hidden text-[10px] uppercase tracking-[0.16em] text-muted sm:block">Request workspace</span></span>
-      </a>
-    </div>
-    <nav class="flex items-center gap-1" aria-label="Primary navigation">
-      {{ template "theme-control" . }}
-      <a href="/docs" class="top-link hidden lg:block">API docs</a>
-      {{ if .User.ID }}
-      <span class="hidden px-2 text-sm text-muted xl:block">{{ .User.FullName }}</span>
-      <a href="/logout" class="top-link">Sign out</a>
-      {{ else }}
-      <a href="/login" class="top-link hidden sm:block">Sign in</a>
-      <a href="/register" class="top-link-primary hidden md:inline-flex">Create account</a>
-      {{ end }}
-    </nav>
-  </header>
-
-  <div class="flex h-[calc(100vh-4rem)] overflow-hidden">
-    <div x-cloak x-show="sidebarOpen" x-transition.opacity class="fixed inset-0 z-30 bg-black/55 md:hidden" @click="closeSidebar()" aria-hidden="true"></div>
-    <aside
-      class="sidebar"
-      :class="[sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0', railCollapsed ? 'sidebar-collapsed' : '']"
-      :inert="!desktop && !sidebarOpen"
-      :aria-hidden="(!desktop && !sidebarOpen).toString()"
-      aria-label="Webhook navigation"
+    x-init="window.matchMedia('(min-width: 768px)').addEventListener('change', event => { desktop = event.matches; if (desktop) sidebarOpen = false })"
+    @keydown.escape.window="if (sidebarOpen) closeSidebar()"
+  >
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <header
+      class="topbar"
+      :inert="!desktop && sidebarOpen"
+      :aria-hidden="(!desktop && sidebarOpen).toString()"
     >
-      <div class="flex h-16 items-center justify-between border-b px-4 md:hidden">
-        <span class="text-sm font-semibold">Webhooks</span>
-        <button x-ref="sidebarCloseBtn" class="icon-btn" @click="closeSidebar()" aria-label="Close webhook navigation">
-          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      <div class="flex min-w-0 items-center gap-3">
+        <button
+          x-ref="sidebarTrigger"
+          class="icon-btn md:hidden"
+          @click="openSidebar()"
+          aria-label="Open webhook navigation"
+          :aria-expanded="sidebarOpen.toString()"
+        >
+          <svg
+            class="h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
         </button>
+        <a
+          href="/"
+          class="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+        >
+          <span class="brand-mark">
+            <svg
+              class="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="M8 12h8M12 8v8" />
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          </span>
+          <span class="min-w-0">
+            <span class="block truncate text-sm font-semibold tracking-tight">Webhook Tester</span>
+            <span class="hidden text-[10px] uppercase tracking-[0.16em] text-muted sm:block">
+              Request workspace
+            </span>
+          </span>
+        </a>
       </div>
-
-      <div class="hidden items-center justify-between border-b px-3 py-2.5 md:flex">
-        <span class="text-xs font-semibold text-muted" x-show="!railCollapsed">Sidebar</span>
-        <button class="icon-btn md:ml-auto" @click="toggleSidebarCollapsed()" :aria-label="railCollapsed ? 'Expand webhook sidebar' : 'Collapse webhook sidebar'" :aria-expanded="(!railCollapsed).toString()">
-          <svg class="h-4 w-4 transition-transform" :class="railCollapsed ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 17 6 12l5-5M18 17l-5-5 5-5"/></svg>
-        </button>
-      </div>
-
-      <div class="flex items-center justify-between px-4 pb-3 pt-5" :class="railCollapsed ? 'md:flex-col md:gap-2 md:px-2' : ''">
-        <div x-show="!railCollapsed"><p class="eyebrow">Endpoints</p><p class="mt-1 text-xs text-muted">Live request streams</p></div>
+      <nav class="flex items-center gap-1" aria-label="Primary navigation">
+        {{ template "theme-control" . }}
+        <a href="/docs" class="top-link hidden lg:block">API docs</a>
         {{ if .User.ID }}
-        <button @click="showModal = true" class="icon-btn" aria-label="Create webhook"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+          <span class="hidden px-2 text-sm text-muted xl:block">{{ .User.FullName }}</span>
+          <a href="/logout" class="top-link">Sign out</a>
+        {{ else }}
+          <a href="/login" class="top-link hidden sm:block">Sign in</a>
+          <a href="/register" class="top-link-primary hidden md:inline-flex">Create account</a>
         {{ end }}
-      </div>
+      </nav>
+    </header>
 
-      {{ $activeID := .Webhook.ID }}
-      <div class="flex-1 space-y-2 overflow-y-auto px-3 py-2">
-        {{ range .Webhooks }}
-        <div x-data="{ open: true }" class="sidebar-card {{ if eq .ID $activeID }}sidebar-card-active{{ end }}" :class="railCollapsed ? 'md:flex md:justify-center md:px-2 md:py-2' : ''">
-          <div class="flex items-center gap-3">
-            <a href="/?address={{ .ID }}" x-show="railCollapsed" x-cloak class="grid h-9 w-9 shrink-0 place-items-center rounded-lg" title="{{ or .Title .ID }}" aria-label="{{ or .Title .ID }}" {{ if eq .ID $activeID }}aria-current="page"{{ end }}>
-              <span class="status-dot inline-flex h-2.5 w-2.5 rounded-full" aria-hidden="true"></span>
-            </a>
-            <span class="status-dot inline-flex h-2.5 w-2.5 shrink-0 rounded-full" aria-hidden="true" x-show="!railCollapsed"></span>
-            <a href="/?address={{ .ID }}" class="min-w-0 flex-1 truncate text-sm font-medium" x-show="!railCollapsed" {{ if eq .ID $activeID }}aria-current="page"{{ end }}>{{ or .Title .ID }}</a>
-            <button @click="open = !open" class="sidebar-disclosure" x-show="!railCollapsed" aria-label="Toggle request list" :aria-expanded="open.toString()"><svg class="h-4 w-4 transition-transform" :class="open ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="flex h-[calc(100vh-4rem)] overflow-hidden">
+      <div
+        x-cloak
+        x-show="sidebarOpen"
+        x-transition.opacity
+        class="fixed inset-0 z-30 bg-black/55 md:hidden"
+        @click="closeSidebar()"
+        aria-hidden="true"
+      ></div>
+      <aside
+        class="sidebar"
+        :class="[sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0', railCollapsed ? 'sidebar-collapsed' : '']"
+        :inert="!desktop && !sidebarOpen"
+        :aria-hidden="(!desktop && !sidebarOpen).toString()"
+        aria-label="Webhook navigation"
+      >
+        <div class="flex h-16 items-center justify-between border-b px-4 md:hidden">
+          <span class="text-sm font-semibold">Webhooks</span>
+          <button
+            x-ref="sidebarCloseBtn"
+            class="icon-btn"
+            @click="closeSidebar()"
+            aria-label="Close webhook navigation"
+          >
+            <svg
+              class="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="hidden items-center justify-between border-b px-3 py-2.5 md:flex">
+          <span class="text-xs font-semibold text-muted" x-show="!railCollapsed">Sidebar</span>
+          <button
+            class="icon-btn md:ml-auto"
+            @click="toggleSidebarCollapsed()"
+            :aria-label="railCollapsed ? 'Expand webhook sidebar' : 'Collapse webhook sidebar'"
+            :aria-expanded="(!railCollapsed).toString()"
+          >
+            <svg
+              class="h-4 w-4 transition-transform"
+              :class="railCollapsed ? 'rotate-180' : ''"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="M11 17 6 12l5-5M18 17l-5-5 5-5" />
+            </svg>
+          </button>
+        </div>
+
+        <div
+          class="flex items-center justify-between px-4 pb-3 pt-5"
+          :class="railCollapsed ? 'md:flex-col md:gap-2 md:px-2' : ''"
+        >
+          <div x-show="!railCollapsed">
+            <p class="eyebrow">Endpoints</p>
+            <p class="mt-1 text-xs text-muted">Live request streams</p>
           </div>
-          <div x-show="open && !railCollapsed" x-transition x-data="sseRequestStream('{{ .ID }}')" x-init="connect()" class="mt-2 space-y-1 border-t pt-2" id="request-log-{{ .ID }}">
-            {{ range .Requests }}
-            <a href="/requests/{{ .ID }}?address={{ .WebhookID }}" class="sidebar-request"><span class="method-badge">{{ .Method }}</span><span class="truncate font-mono text-[11px] text-muted">{{ .ID }}</span></a>
-            {{ else }}
-            <p class="px-2 py-2 text-xs">Waiting for a request...</p>
-            {{ end }}
+          {{ if .User.ID }}
+            <button @click="showModal = true" class="icon-btn" aria-label="Create webhook">
+              <svg
+                class="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          {{ end }}
+        </div>
+
+        {{ $activeID := .Webhook.ID }}
+        <div class="flex-1 space-y-2 overflow-y-auto px-3 py-2">
+          {{ range .Webhooks }}
+            <div
+              x-data="{ open: true }"
+              class="sidebar-card {{ if eq .ID $activeID }}sidebar-card-active{{ end }}"
+              :class="railCollapsed ? 'md:flex md:justify-center md:px-2 md:py-2' : ''"
+            >
+              <div class="flex items-center gap-3">
+                <a
+                  href="/?address={{ .ID }}"
+                  x-show="railCollapsed"
+                  x-cloak
+                  class="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
+                  title="{{ or .Title .ID }}"
+                  aria-label="{{ or .Title .ID }}"
+                  {{ if eq .ID $activeID }}aria-current="page"{{ end }}
+                >
+                  <span
+                    class="status-dot inline-flex h-2.5 w-2.5 rounded-full"
+                    aria-hidden="true"
+                  ></span>
+                </a>
+                <span
+                  class="status-dot inline-flex h-2.5 w-2.5 shrink-0 rounded-full"
+                  aria-hidden="true"
+                  x-show="!railCollapsed"
+                ></span>
+                <a
+                  href="/?address={{ .ID }}"
+                  class="min-w-0 flex-1 truncate text-sm font-medium"
+                  x-show="!railCollapsed"
+                  {{ if eq .ID $activeID }}aria-current="page"{{ end }}
+                >
+                  {{ or .Title .ID }}
+                </a>
+                <button
+                  @click="open = !open"
+                  class="sidebar-disclosure"
+                  x-show="!railCollapsed"
+                  aria-label="Toggle request list"
+                  :aria-expanded="open.toString()"
+                >
+                  <svg
+                    class="h-4 w-4 transition-transform"
+                    :class="open ? 'rotate-180' : ''"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </button>
+              </div>
+              <div
+                x-show="open && !railCollapsed"
+                x-transition
+                x-data="sseRequestStream('{{ .ID }}')"
+                x-init="connect()"
+                class="mt-2 space-y-1 border-t pt-2"
+                id="request-log-{{ .ID }}"
+              >
+                {{ range .Requests }}
+                  <a href="/requests/{{ .ID }}?address={{ .WebhookID }}" class="sidebar-request">
+                    <span class="method-badge">{{ .Method }}</span>
+                    <span class="truncate font-mono text-[11px] text-muted">{{ .ID }}</span>
+                  </a>
+                {{ else }}
+                  <p class="px-2 py-2 text-xs">Waiting for a request...</p>
+                {{ end }}
+              </div>
+            </div>
+          {{ end }}
+        </div>
+
+        <div class="border-t p-4" x-show="!railCollapsed">
+          <div class="help-card">
+            <p class="font-medium">Need a hand?</p>
+            <div class="mt-2 flex gap-3">
+              <a href="mailto:hello@srninety.one" class="text-link">Feedback</a>
+              <a
+                href="https://webhook-tester.sleekplan.app"
+                target="_blank"
+                rel="noreferrer"
+                class="text-link"
+              >
+                Request a feature
+              </a>
+            </div>
           </div>
         </div>
-        {{ end }}
+      </aside>
+
+      <div
+        class="min-w-0 flex-1 overflow-y-auto"
+        :inert="!desktop && sidebarOpen"
+        :aria-hidden="(!desktop && sidebarOpen).toString()"
+      >
+        <main
+          id="main-content"
+          tabindex="-1"
+          class="mx-auto w-full max-w-7xl p-4 pb-10 sm:p-6 lg:p-8"
+        >
+          {{ block "content" . }}{{ end }}
+        </main>
       </div>
+    </div>
 
-      <div class="border-t p-4" x-show="!railCollapsed">
-        <div class="help-card"><p class="font-medium">Need a hand?</p><div class="mt-2 flex gap-3"><a href="mailto:hello@srninety.one" class="text-link">Feedback</a><a href="https://webhook-tester.sleekplan.app" target="_blank" rel="noreferrer" class="text-link">Request a feature</a></div></div>
-      </div>
-    </aside>
-
-    <div class="min-w-0 flex-1 overflow-y-auto" :inert="!desktop && sidebarOpen" :aria-hidden="(!desktop && sidebarOpen).toString()"><main id="main-content" tabindex="-1" class="mx-auto w-full max-w-7xl p-4 pb-10 sm:p-6 lg:p-8">{{ block "content" . }}{{ end }}</main></div>
-  </div>
-
-  <div x-cloak x-show="showModal" @keydown.escape.window="showModal = false">
-    <div x-show="showModal" x-transition.opacity class="fixed inset-0 z-40 bg-black/55" @click="showModal = false" aria-hidden="true"></div>
-    <div x-show="showModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div class="modal-panel max-h-[90vh]" @click.away="showModal = false" role="dialog" aria-modal="true" aria-labelledby="create-webhook-title">
-        <div class="mb-6 flex items-start justify-between"><div><p class="eyebrow">New endpoint</p><h2 id="create-webhook-title" class="mt-2 text-xl font-semibold">Create webhook</h2></div><button class="icon-btn" @click="showModal = false" aria-label="Close dialog"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
-        <form method="POST" action="/create-webhook" class="space-y-5">
-          {{ .CSRFField }}
-          <div><label for="create_title" class="field-label">Title</label><input id="create_title" type="text" name="title" class="field" placeholder="Payment events" required /></div>
-          <div class="grid gap-4 sm:grid-cols-2"><div><label for="create_response_code" class="field-label">Response code</label><input id="create_response_code" type="number" inputmode="numeric" name="response_code" class="field" value="200" required /></div><div><label for="create_content_type" class="field-label">Content type</label><select id="create_content_type" name="content_type" class="field"><option value="application/json">application/json</option><option value="text/plain">text/plain</option><option value="text/html">text/html</option></select></div></div>
-          <div><label for="create_response_delay" class="field-label">Response delay (ms)</label><input id="create_response_delay" type="number" inputmode="numeric" name="response_delay" class="field" value="0" /></div>
-          <div><label for="create_payload" class="field-label">Response payload</label><textarea id="create_payload" name="payload" rows="4" class="field font-mono">{"message":"ok"}</textarea></div>
-          <div x-data="{ headers: {{ if .Webhook.ResponseHeaders }}{{ .Webhook.ResponseHeaders }}{{ else }}[]{{ end }} }" class="space-y-2">
-            <div class="flex items-center justify-between"><span class="field-label mb-0">Response headers</span><button type="button" @click="headers.push({key: '', value: ''})" class="text-link text-sm">Add header</button></div>
-            <template x-for="(header, index) in headers" :key="index"><div class="flex gap-2"><input type="text" class="field" placeholder="Header name" x-model="header.key" aria-label="Header name" /><input type="text" class="field" placeholder="Header value" x-model="header.value" aria-label="Header value" /><button type="button" @click="headers.splice(index, 1)" class="icon-btn shrink-0" aria-label="Remove header"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg></button></div></template>
-            <input type="hidden" name="response_headers" :value="JSON.stringify(headers.filter(h => h.key && h.value))" />
+    <div x-cloak x-show="showModal" @keydown.escape.window="showModal = false">
+      <div
+        x-show="showModal"
+        x-transition.opacity
+        class="fixed inset-0 z-40 bg-black/55"
+        @click="showModal = false"
+        aria-hidden="true"
+      ></div>
+      <div
+        x-show="showModal"
+        x-transition
+        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+      >
+        <div
+          class="modal-panel max-h-[90vh]"
+          @click.away="showModal = false"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-webhook-title"
+        >
+          <div class="mb-6 flex items-start justify-between">
+            <div>
+              <p class="eyebrow">New endpoint</p>
+              <h2 id="create-webhook-title" class="mt-2 text-xl font-semibold">Create webhook</h2>
+            </div>
+            <button class="icon-btn" @click="showModal = false" aria-label="Close dialog">
+              <svg
+                class="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="m6 6 12 12M18 6 6 18" />
+              </svg>
+            </button>
           </div>
-          <label class="check-row"><input type="checkbox" id="create_notify" name="notify_on_event" value="true" /><span>Notify me when a request arrives</span></label>
-          <div class="flex justify-end gap-3 pt-2"><button type="button" @click="showModal = false" class="btn-secondary">Cancel</button><button type="submit" class="btn-primary">Create endpoint</button></div>
-        </form>
+          <form method="POST" action="/create-webhook" class="space-y-5">
+            {{ .CSRFField }}
+            <div>
+              <label for="create_title" class="field-label">Title</label>
+              <input
+                id="create_title"
+                type="text"
+                name="title"
+                class="field"
+                placeholder="Payment events"
+                required
+              />
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label for="create_response_code" class="field-label">Response code</label>
+                <input
+                  id="create_response_code"
+                  type="number"
+                  inputmode="numeric"
+                  name="response_code"
+                  class="field"
+                  value="200"
+                  required
+                />
+              </div>
+              <div>
+                <label for="create_content_type" class="field-label">Content type</label>
+                <select id="create_content_type" name="content_type" class="field">
+                  <option value="application/json">application/json</option>
+                  <option value="text/plain">text/plain</option>
+                  <option value="text/html">text/html</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label for="create_response_delay" class="field-label">Response delay (ms)</label>
+              <input
+                id="create_response_delay"
+                type="number"
+                inputmode="numeric"
+                name="response_delay"
+                class="field"
+                value="0"
+              />
+            </div>
+            <div>
+              <label for="create_payload" class="field-label">Response payload</label>
+              <textarea id="create_payload" name="payload" rows="4" class="field font-mono">
+{"message":"ok"}</textarea>
+            </div>
+            <div
+              x-data="{ headers: {{ if .Webhook.ResponseHeaders }}
+                {{ .Webhook.ResponseHeaders }}
+              {{ else }}
+                []
+              {{ end }} }"
+              class="space-y-2"
+            >
+              <div class="flex items-center justify-between">
+                <span class="field-label mb-0">Response headers</span>
+                <button
+                  type="button"
+                  @click="headers.push({key: '', value: ''})"
+                  class="text-link text-sm"
+                >
+                  Add header
+                </button>
+              </div>
+              <template x-for="(header, index) in headers" :key="index">
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    class="field"
+                    placeholder="Header name"
+                    x-model="header.key"
+                    aria-label="Header name"
+                  />
+                  <input
+                    type="text"
+                    class="field"
+                    placeholder="Header value"
+                    x-model="header.value"
+                    aria-label="Header value"
+                  />
+                  <button
+                    type="button"
+                    @click="headers.splice(index, 1)"
+                    class="icon-btn shrink-0"
+                    aria-label="Remove header"
+                  >
+                    <svg
+                      class="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      aria-hidden="true"
+                    >
+                      <path d="M5 12h14" />
+                    </svg>
+                  </button>
+                </div>
+              </template>
+              <input
+                type="hidden"
+                name="response_headers"
+                :value="JSON.stringify(headers.filter(h => h.key && h.value))"
+              />
+            </div>
+            <label class="check-row">
+              <input type="checkbox" id="create_notify" name="notify_on_event" value="true" />
+              <span>Notify me when a request arrives</span>
+            </label>
+            <div class="flex justify-end gap-3 pt-2">
+              <button type="button" @click="showModal = false" class="btn-secondary">Cancel</button>
+              <button type="submit" class="btn-primary">Create endpoint</button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   </div>
-</div>
 {{ end }}
