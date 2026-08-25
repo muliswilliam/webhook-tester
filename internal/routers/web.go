@@ -3,6 +3,7 @@ package routers
 import (
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"webhook-tester/internal/handlers"
@@ -22,21 +23,37 @@ func NewWebRouter(
 ) http.Handler {
 	r := chi.NewRouter()
 
-	// CSRF Setup
+	// CSRF Setup.
+	//
+	// gorilla/csrf always assumes the request is served over HTTPS unless a
+	// request is explicitly marked as plaintext via csrf.PlaintextHTTPRequest,
+	// so we derive that flag (and the Secure cookie flag / trusted origin)
+	// from the app's own DOMAIN setting rather than guessing from ENV.
 	csrfKey := []byte(os.Getenv("AUTH_SECRET"))
-	isProd := strings.Contains(os.Getenv("ENV"), "prod")
+	domain := os.Getenv("DOMAIN")
+	isHTTPS := strings.HasPrefix(domain, "https://")
+
 	var trustedOrigins []string
-	if !isProd {
-		trustedOrigins = append(trustedOrigins, "localhost:3000")
+	if parsedDomain, err := url.Parse(domain); err == nil && parsedDomain.Host != "" {
+		trustedOrigins = append(trustedOrigins, parsedDomain.Host)
 	}
 
 	csrfMiddleware := csrf.Protect(
 		csrfKey,
-		csrf.Secure(isProd),
+		csrf.Secure(isHTTPS),
 		csrf.Path("/"),
 		csrf.TrustedOrigins(trustedOrigins),
 	)
 
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+			if !secure {
+				r = csrf.PlaintextHTTPRequest(r)
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	r.Use(csrfMiddleware)
 
 	webhookReqHandler := handlers.NewWebhookRequestHandler(wrs, authSvc, ws, &metricsRec, logger)
@@ -49,7 +66,7 @@ func NewWebRouter(
 	hh := handlers.NewHomeHandler(ws, authSvc, logger, metricsRec)
 	r.Get("/", hh.Home)
 
-	webhookHandler := handlers.NewWebhookHandler(ws, authSvc, logger, metricsRec)
+	webhookHandler := handlers.NewWebhookHandler(ws, wrs, authSvc, logger, metricsRec)
 	r.Post("/create-webhook", webhookHandler.Create)
 	r.Post("/delete-requests/{id}", webhookHandler.DeleteRequests)
 	r.Post("/delete-webhook/{id}", webhookHandler.DeleteWebhook)

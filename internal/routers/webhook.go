@@ -11,12 +11,13 @@ import (
 
 func NewWebhookRouter(
 	webhookSvc *service.WebhookService,
+	webhookReqSvc *service.WebhookRequestService,
 	authSvc *service.AuthService,
 	logger *log.Logger,
 	metrics metrics.Recorder,
 ) http.Handler {
 	r := chi.NewRouter()
-	wh := handlers.NewWebhookHandler(webhookSvc, authSvc, logger, metrics)
+	wh := handlers.NewWebhookHandler(webhookSvc, webhookReqSvc, authSvc, logger, metrics)
 
 	// Match all HTTP methods at /{webhookID}
 	r.HandleFunc("/*", wh.HandleWebhookRequest)

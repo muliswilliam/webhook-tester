@@ -75,7 +75,7 @@ func (srv *Server) MountHandlers() {
 	r.Mount("/", routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, &metricsRec, srv.Logger))
 
 	r.Mount("/api", routers.NewApiRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))
-	r.Mount("/webhooks", routers.NewWebhookRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))
+	r.Mount("/webhooks", routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, srv.Logger, &metricsRec))
 
 	// metrics
 	r.Handle("/metrics", promhttp.Handler())

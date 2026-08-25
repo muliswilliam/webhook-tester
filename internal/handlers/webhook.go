@@ -22,22 +22,25 @@ import (
 )
 
 type WebhookHandler struct {
-	webhookSvc *service.WebhookService
-	authSvc    *service.AuthService
-	logger     *log.Logger
-	metrics    metrics.Recorder
+	webhookSvc    *service.WebhookService
+	webhookReqSvc *service.WebhookRequestService
+	authSvc       *service.AuthService
+	logger        *log.Logger
+	metrics       metrics.Recorder
 }
 
 func NewWebhookHandler(
 	webhookSvc *service.WebhookService,
+	webhookReqSvc *service.WebhookRequestService,
 	authSvc *service.AuthService,
 	logger *log.Logger,
 	metrics metrics.Recorder) *WebhookHandler {
 	return &WebhookHandler{
-		webhookSvc: webhookSvc,
-		authSvc:    authSvc,
-		logger:     logger,
-		metrics:    metrics,
+		webhookSvc:    webhookSvc,
+		webhookReqSvc: webhookReqSvc,
+		authSvc:       authSvc,
+		logger:        logger,
+		metrics:       metrics,
 	}
 }
 
@@ -101,22 +104,25 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.authSvc.Authorize(r)
-
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		userID = 0 // anonymous/guest managing one of their own public webhooks
 	}
 
 	webhookID := chi.URLParam(r, "id")
-
 	if webhookID == "" {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
 	}
 
-	err = h.webhookSvc.DeleteWebhook(webhookID, userID)
+	if _, err := h.webhookSvc.GetUserWebhook(webhookID, userID); err != nil {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
 
-	if err != nil {
-		h.logger.Printf("Error deleting webhook: %v", err)
+	if err := h.webhookReqSvc.DeleteAll(webhookID); err != nil {
+		h.logger.Printf("Error deleting webhook requests: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
@@ -124,22 +130,20 @@ func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) 
 
 func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.authSvc.Authorize(r)
-
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		userID = 0 // anonymous/guest managing one of their own public webhooks
 	}
 
 	webhookID := chi.URLParam(r, "id")
-
 	if webhookID == "" {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
 	}
 
-	err = h.webhookSvc.DeleteWebhook(webhookID, userID)
-
-	if err != nil {
+	if err := h.webhookSvc.DeleteWebhook(webhookID, userID); err != nil {
 		h.logger.Printf("Error deleting webhook: %v", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -148,8 +152,7 @@ func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	userID, err := h.authSvc.Authorize(r)
 	if err != nil {
-		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-		return
+		userID = 0 // anonymous/guest managing one of their own public webhooks
 	}
 
 	webhookID := chi.URLParam(r, "id")
@@ -186,7 +189,8 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	wh, err := h.webhookSvc.GetUserWebhook(webhookID, userID)
 	if err != nil {
 		h.logger.Printf("Error getting webhook: %v", err)
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
 	}
 
 	wh.Title = title
@@ -201,6 +205,7 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Printf("Error updating webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
