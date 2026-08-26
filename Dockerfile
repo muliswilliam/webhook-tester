@@ -14,7 +14,7 @@ COPY internal/web/templates/ internal/web/templates/
 RUN tailwindcss -i static/css/input.css -o static/css/tailwind.css --minify
 
 # ───── Stage 2: Build Go binary ─────
-FROM golang:1.24-alpine AS base
+FROM golang:1.27-alpine AS base
 
 WORKDIR /app
 
