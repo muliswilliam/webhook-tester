@@ -5,7 +5,16 @@ SWAG_MAIN=cmd/main.go
 APP_NAME=webhook-tester
 DOCKER_COMPOSE=docker-compose
 
-.PHONY: help up down logs restart services docs css
+.PHONY: help up down logs restart services docs css test test-cover
+
+# Run the Go test suite
+test:
+	go test ./...
+
+# Run the Go test suite with a statement coverage summary
+test-cover:
+	go test ./... -coverprofile=coverage.out
+	go tool cover -func=coverage.out | tail -1
 
 docs:
 	@echo "🔄 Generating Swagger docs..."
@@ -64,3 +73,5 @@ help:
 	@echo "  restart          Restart a specific service (requires SERVICE=app or SERVICE=db)"
 	@echo "  services         List available service names"
 	@echo "  css              Rebuild static/css/tailwind.css from templates"
+	@echo "  test             Run the Go test suite"
+	@echo "  test-cover       Run the Go test suite with coverage summary"
