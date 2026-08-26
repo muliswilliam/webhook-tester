@@ -9,6 +9,9 @@ function copyCurl() {
     }
 }
 
+let pendingNavigation = false;
+document.addEventListener("submit", () => { pendingNavigation = true; }, true);
+
 function sseRequestStream(webhookID) {
     return {
         connect() {
@@ -17,7 +20,7 @@ function sseRequestStream(webhookID) {
                 const req = JSON.parse(e.data);
                 const wrapper = document.createElement("a");
                 wrapper.className = "flex flex-row gap-2 p-2 rounded border hover:bg-blue-50 hover:border-blue-200 cursor-pointer"
-                wrapper.href = `/?requests/${req.id}?address=${req.webhook_id}`
+                wrapper.href = `/requests/${req.id}?address=${req.webhook_id}`
                 wrapper.innerHTML = `
                         <div class="text-xs text-gray-600 font-medium">${req.method}</div>
                         <div class="text-blue-600 font-mono text-xs break-all">${req.id}</div>
@@ -25,7 +28,12 @@ function sseRequestStream(webhookID) {
 
                 const container = document.getElementById(`request-log-${webhookID}`);
                 container.insertBefore(wrapper, container.firstChild);
-                location.reload()
+
+                // Skip the reload if we're already navigating (e.g. a Replay/Delete
+                // form submit) so it doesn't race with and override that navigation.
+                if (!pendingNavigation) {
+                    location.reload()
+                }
             };
         }
     }
