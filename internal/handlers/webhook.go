@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/datatypes"
+	"gorm.io/gorm"
 )
 
 type WebhookHandler struct {
@@ -220,7 +220,7 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 
 	if err != nil {
 		switch {
-		case errors.Is(err, sql.ErrNoRows):
+		case errors.Is(err, gorm.ErrRecordNotFound):
 			w.WriteHeader(http.StatusNotFound)
 		default:
 			w.WriteHeader(http.StatusInternalServerError)

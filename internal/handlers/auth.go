@@ -144,6 +144,7 @@ func (h *AuthHandler) LoginPost(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Printf("error creating session: %v", err)
 		http.Error(w, "unable to save session", http.StatusInternalServerError)
+		return
 	}
 
 	if c, err := r.Cookie(sessionIdName); err == nil {
