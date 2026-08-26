@@ -62,6 +62,9 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 
 	// 4) Build the sidebar list: either the user’s own webhooks, or just the one
 	user, _ := h.authSvc.GetCurrentUser(r)
+	if user == nil {
+		user = &models.User{}
+	}
 	var list []models.Webhook
 	if user.ID != 0 {
 		if list, err = h.webhookService.ListWebhooks(user.ID); err != nil {

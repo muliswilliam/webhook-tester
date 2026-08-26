@@ -1,3 +1,456 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --app-bg: #f7f7f5;
+    --app-fg: #202124;
+    --app-strong: #171717;
+    --app-surface: #ffffff;
+    --app-elevated: #fafafa;
+    --app-muted-surface: #f0f0ed;
+    --app-border: #deded9;
+    --app-border-strong: #c7c7c1;
+    --app-muted: #5f6368;
+    --app-secondary: #303134;
+    --brand-orange: #f6821f;
+    --accent-text: #174ea6;
+    --interact: #0b57d0;
+    --interact-hover: #0842a0;
+    --interact-soft: #e8f0fe;
+    --focus: #0b57d0;
+    --danger: #b42318;
+    --danger-soft: #fef3f2;
+  }
+
+  .dark,
+  [data-mode="dark"] {
+    color-scheme: dark;
+    --app-bg: #0e0e0e;
+    --app-fg: #f3f3f3;
+    --app-strong: #ffffff;
+    --app-surface: #171717;
+    --app-elevated: #121212;
+    --app-muted-surface: #202020;
+    --app-border: #2b2b2b;
+    --app-border-strong: #414141;
+    --app-muted: #a9adb3;
+    --app-secondary: #e4e4e4;
+    --accent-text: #8ab4f8;
+    --interact: #0b57d0;
+    --interact-hover: #1a66d9;
+    --interact-soft: #162b4d;
+    --focus: #8ab4f8;
+    --danger: #ff8a80;
+    --danger-soft: #351917;
+  }
+
+  * {
+    border-color: var(--app-border);
+  }
+  html {
+    @apply antialiased;
+    background-color: var(--app-bg);
+  }
+  body {
+    min-width: 320px;
+    font-family:
+      Inter,
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+    background-color: var(--app-bg);
+    color: var(--app-fg);
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    color: var(--app-strong);
+    letter-spacing: -0.025em;
+  }
+  code,
+  pre,
+  .font-mono {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  }
+  button,
+  select,
+  summary,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button,
+  select,
+  summary {
+    cursor: pointer;
+  }
+  [x-cloak] {
+    display: none !important;
+  }
+  ::selection {
+    color: #ffffff;
+    background-color: var(--interact);
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply min-h-screen;
+    background-color: var(--app-bg);
+    color: var(--app-fg);
+  }
+  .topbar {
+    @apply sticky top-0 z-30 flex h-16 items-center justify-between border-b px-4 md:px-6;
+    background-color: color-mix(in srgb, var(--app-bg) 94%, transparent);
+    border-color: var(--app-border);
+  }
+  .skip-link {
+    @apply fixed left-4 top-3 z-50 -translate-y-20 rounded-lg px-4 py-2 text-sm font-semibold transition-transform focus:translate-y-0;
+    background-color: var(--interact);
+    color: #ffffff;
+  }
+  .brand-mark {
+    @apply grid h-9 w-9 shrink-0 place-items-center rounded-lg border;
+    border-color: color-mix(in srgb, var(--brand-orange) 45%, var(--app-border));
+    background-color: var(--brand-orange);
+    color: #171717;
+  }
+  .top-link {
+    @apply inline-flex min-h-11 items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2;
+    color: var(--app-muted);
+    --tw-ring-color: var(--focus);
+  }
+  .top-link:hover {
+    background-color: var(--app-muted-surface);
+    color: var(--app-fg);
+  }
+  .top-link-primary {
+    @apply inline-flex min-h-10 items-center rounded-lg px-4 py-2 text-sm font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
+    background-color: var(--interact);
+    color: #ffffff;
+    --tw-ring-color: var(--focus);
+    --tw-ring-offset-color: var(--app-bg);
+  }
+  .top-link-primary:hover {
+    background-color: var(--interact-hover);
+  }
+
+  .sidebar {
+    @apply fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r transition-[transform,width] duration-200 md:static md:z-20 md:translate-x-0;
+    background-color: var(--app-bg);
+    border-color: var(--app-border);
+  }
+  .sidebar.sidebar-collapsed {
+    @apply md:w-[4.5rem];
+  }
+  .sidebar-card {
+    @apply rounded-lg border p-3 transition-colors duration-150;
+    background-color: color-mix(in srgb, var(--app-surface) 65%, transparent);
+    color: var(--app-secondary);
+  }
+  .sidebar-card:hover {
+    background-color: var(--app-surface);
+    border-color: var(--app-border-strong);
+  }
+  .sidebar-card-active {
+    background-color: var(--interact-soft);
+    border-color: color-mix(in srgb, var(--interact) 40%, var(--app-border));
+  }
+  .sidebar-disclosure {
+    @apply grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-colors;
+    color: var(--app-muted);
+  }
+  .sidebar-disclosure:hover {
+    background-color: var(--app-muted-surface);
+    color: var(--app-fg);
+  }
+  .sidebar-request {
+    @apply flex min-h-11 items-center gap-2 rounded-lg px-2 py-2 transition-colors;
+  }
+  .sidebar-request:hover {
+    background-color: var(--app-muted-surface);
+  }
+  .help-card {
+    @apply rounded-lg p-3 text-xs leading-5;
+    background-color: var(--app-muted-surface);
+    color: var(--app-secondary);
+  }
+
+  .surface {
+    @apply rounded-lg border;
+    background-color: var(--app-surface);
+    border-color: var(--app-border);
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em];
+    color: var(--app-muted);
+  }
+  .text-muted {
+    color: var(--app-muted);
+  }
+  .text-link {
+    color: var(--accent-text);
+  }
+  .text-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .bg-subtle {
+    background-color: var(--app-elevated);
+  }
+
+  .btn {
+    @apply inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    --tw-ring-color: var(--focus);
+    --tw-ring-offset-color: var(--app-bg);
+  }
+  .btn-primary {
+    @apply btn;
+    background-color: var(--interact);
+    color: #ffffff;
+  }
+  .btn-primary:hover {
+    background-color: var(--interact-hover);
+  }
+  .btn-secondary {
+    @apply btn border;
+    background-color: var(--app-muted-surface);
+    border-color: var(--app-border-strong);
+    color: var(--app-secondary);
+  }
+  .btn-secondary:hover {
+    background-color: var(--app-surface);
+    border-color: var(--app-secondary);
+  }
+  .btn-danger {
+    @apply btn border;
+    background-color: transparent;
+    border-color: color-mix(in srgb, var(--danger) 38%, var(--app-border));
+    color: var(--danger);
+  }
+  .btn-danger:hover {
+    background-color: var(--danger-soft);
+    border-color: var(--danger);
+  }
+  .icon-btn {
+    @apply inline-grid h-11 w-11 cursor-pointer place-items-center rounded-lg border transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2;
+    background-color: var(--app-muted-surface);
+    border-color: var(--app-border-strong);
+    color: var(--app-secondary);
+    --tw-ring-color: var(--focus);
+  }
+  .icon-btn:hover {
+    background-color: var(--app-surface);
+    border-color: var(--app-secondary);
+    color: var(--app-fg);
+  }
+
+  .field {
+    @apply min-h-11 w-full rounded-lg border px-3.5 py-2.5 text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2;
+    background-color: var(--app-surface);
+    border-color: var(--app-border-strong);
+    color: var(--app-fg);
+  }
+  .field:focus {
+    border-color: var(--focus);
+    --tw-ring-color: color-mix(in srgb, var(--focus) 22%, transparent);
+  }
+  .field-label {
+    @apply mb-1.5 block text-sm font-medium;
+    color: var(--app-secondary);
+  }
+  .check-row {
+    @apply flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-3 text-sm;
+    border-color: var(--app-border-strong);
+    color: var(--app-secondary);
+  }
+  .check-row input {
+    accent-color: var(--interact);
+  }
+
+  .method-badge {
+    @apply inline-flex rounded-md border px-2 py-1 font-mono text-[11px] font-bold tracking-wide;
+    border-color: var(--app-border-strong);
+    background-color: var(--app-muted-surface);
+    color: var(--app-secondary);
+  }
+  .status-dot {
+    background-color: var(--interact);
+    box-shadow: 0 0 0 3px var(--interact-soft);
+  }
+  .status-badge {
+    border-color: var(--app-border);
+    background-color: var(--app-muted-surface);
+    color: var(--app-secondary);
+  }
+  .temporary-banner {
+    background-color: var(--app-elevated);
+    border-color: var(--app-border);
+  }
+
+  .data-table td {
+    @apply border-t px-4 py-3 text-sm align-top;
+    border-color: var(--app-border);
+    color: var(--app-secondary);
+  }
+  .data-table td:first-child {
+    @apply w-1/3 font-mono text-xs;
+    color: var(--app-muted);
+  }
+  .section-bar {
+    @apply flex min-h-14 items-center justify-between gap-4 px-4 py-3 sm:px-5;
+    color: var(--app-secondary);
+  }
+  .section-bar h3 {
+    @apply text-sm font-semibold;
+  }
+  .request-row {
+    @apply flex min-h-16 w-full items-center justify-between gap-4 px-4 text-left transition-colors sm:px-5;
+    color: var(--app-secondary);
+  }
+  .request-row:hover {
+    background-color: var(--app-muted-surface);
+  }
+  .empty-icon {
+    @apply mx-auto grid h-14 w-14 place-items-center rounded-xl border;
+    background-color: var(--app-muted-surface);
+    border-color: var(--app-border-strong);
+    color: var(--app-muted);
+  }
+  .new-badge {
+    @apply rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    background-color: var(--interact-soft);
+    color: var(--accent-text);
+  }
+
+  .code-surface {
+    background-color: #171717;
+    border-color: #333333;
+    color: #e6e6e6;
+  }
+  .details-summary {
+    @apply flex min-h-16 list-none items-center justify-between gap-4 px-4 py-3 sm:px-5;
+    color: var(--app-secondary);
+  }
+  .details-summary::-webkit-details-marker {
+    display: none;
+  }
+  details[open] > .details-summary .details-chevron {
+    transform: rotate(180deg);
+  }
+
+  .action-menu {
+    @apply absolute right-0 top-12 z-20 w-48 overflow-hidden rounded-lg border p-1 shadow-lg;
+    background-color: var(--app-surface);
+    border-color: var(--app-border-strong);
+  }
+  .action-menu-item {
+    @apply flex min-h-11 w-full items-center rounded-md px-3 text-left text-sm font-medium transition-colors;
+    color: var(--app-secondary);
+  }
+  .action-menu-item:hover {
+    background-color: var(--app-muted-surface);
+  }
+  .action-menu-danger {
+    color: var(--danger);
+  }
+  .action-menu-danger:hover {
+    background-color: var(--danger-soft);
+  }
+
+  .modal-panel {
+    @apply w-full max-w-xl overflow-y-auto rounded-xl border p-6 shadow-2xl shadow-black/20;
+    background-color: var(--app-surface);
+    border-color: var(--app-border-strong);
+  }
+  .theme-picker {
+    @apply flex h-10 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium;
+    background-color: var(--app-surface);
+    border-color: var(--app-border-strong);
+    color: var(--app-muted);
+  }
+  .theme-picker:focus-within {
+    @apply ring-2 ring-offset-2;
+    --tw-ring-color: var(--focus);
+    --tw-ring-offset-color: var(--app-bg);
+  }
+  .theme-select {
+    @apply cursor-pointer appearance-none bg-transparent pr-5 text-xs font-semibold outline-none;
+    color: var(--app-secondary);
+  }
+  .auth-theme {
+    @apply absolute right-4 top-4 z-20;
+  }
+
+  .document-header {
+    @apply sticky top-0 z-20 mx-auto flex h-16 max-w-5xl items-center justify-between border-b px-4 sm:px-6;
+    background-color: color-mix(in srgb, var(--app-bg) 94%, transparent);
+  }
+  .document-wrap {
+    @apply mx-auto max-w-3xl px-5 py-12 sm:px-6 sm:py-16;
+  }
+  .document-footer {
+    @apply mx-auto flex max-w-3xl items-center justify-between border-t px-5 py-8 text-xs sm:px-6;
+    color: var(--app-muted);
+  }
+  .legal-prose {
+    color: var(--app-secondary);
+  }
+  .legal-prose h2 {
+    color: var(--app-strong) !important;
+  }
+  .legal-prose a {
+    color: var(--accent-text) !important;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .legal-prose strong {
+    color: var(--app-strong);
+  }
+  .legal-prose li::marker {
+    color: var(--app-muted);
+  }
+  .notice-success,
+  .notice-error {
+    @apply rounded-lg border p-3 text-sm;
+  }
+  .notice-success {
+    background-color: var(--interact-soft);
+    border-color: color-mix(in srgb, var(--interact) 35%, var(--app-border));
+    color: var(--app-secondary);
+  }
+  .notice-error {
+    background-color: var(--danger-soft);
+    border-color: color-mix(in srgb, var(--danger) 35%, var(--app-border));
+    color: var(--danger);
+  }
+}
+
+@media (max-width: 639px) {
+  .theme-picker {
+    @apply px-2;
+  }
+  .theme-picker > svg {
+    display: none;
+  }
+  .document-header .top-link {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
