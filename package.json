@@ -1,0 +1,22 @@
+{
+  "name": "webhook-tester",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Frontend tooling (Tailwind CSS, formatting) for the webhook-tester Go app",
+  "scripts": {
+    "format": "prettier --write \"internal/web/templates/**/*.html\" \"static/js/**/*.js\" \"static/css/input.css\"",
+    "format:check": "prettier --check \"internal/web/templates/**/*.html\" \"static/js/**/*.js\" \"static/css/input.css\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.1",
+    "prettier": "^3.4.2",
+    "prettier-plugin-go-template": "^0.0.15"
+  },
+  "lint-staged": {
+    "internal/web/templates/**/*.html": "prettier --write",
+    "static/js/**/*.js": "prettier --write",
+    "static/css/input.css": "prettier --write"
+  }
+}
