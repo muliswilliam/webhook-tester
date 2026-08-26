@@ -65,8 +65,9 @@ func (r GormWebhookRepo) GetAllByUser(userID uint) ([]models.Webhook, error) {
 	err := r.DB.Preload("Requests", func(db *gorm.DB) *gorm.DB {
 		return db.Order("received_at DESC").Limit(1000)
 	}).
-		Where("user_id = ?", userID).Find(&webhooks).
-		Order("created_at DESC").Error
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&webhooks).Error
 
 	if err != nil {
 		r.logger.Printf("Error loading user webhooks: %v", err)
@@ -142,7 +143,7 @@ func (r GormWebhookRepo) CleanPublic(d time.Duration) error {
 
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		var webhooks []models.Webhook
-		tx.Where("created_at > ? AND user_id = 0", beforeDate).Find(&webhooks)
+		tx.Where("created_at < ? AND user_id = 0", beforeDate).Find(&webhooks)
 
 		var webhookIDs []string
 		for _, webhook := range webhooks {
@@ -150,8 +151,13 @@ func (r GormWebhookRepo) CleanPublic(d time.Duration) error {
 		}
 
 		// delete requests
-		err := tx.Where("webhook_id IN (?)", webhookIDs).Delete(&models.WebhookRequest{}).Error
-		if err != nil {
+		if err := tx.Where("webhook_id IN (?)", webhookIDs).Delete(&models.WebhookRequest{}).Error; err != nil {
+			r.logger.Printf("Error deleting webhook requests: %v", err)
+			return err
+		}
+
+		// delete webhooks
+		if err := tx.Where("id IN (?)", webhookIDs).Delete(&models.Webhook{}).Error; err != nil {
 			r.logger.Printf("Error deleting webhooks: %v", err)
 			return err
 		}

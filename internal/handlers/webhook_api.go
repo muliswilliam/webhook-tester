@@ -171,11 +171,11 @@ func (h *WebhookAiHandler) UpdateWebhookApi(w http.ResponseWriter, r *http.Reque
 		webhook.ResponseDelay = input.ResponseDelay
 	}
 
-	if webhook.ContentType != &input.ContentType && input.ContentType != "" {
+	if *webhook.ContentType != input.ContentType && input.ContentType != "" {
 		webhook.ContentType = &input.ContentType
 	}
 
-	if webhook.Payload != &input.Payload {
+	if *webhook.Payload != input.Payload && input.Payload != "" {
 		webhook.Payload = &input.Payload
 	}
 
