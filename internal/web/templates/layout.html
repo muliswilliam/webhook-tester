@@ -72,12 +72,12 @@
       </div>
       <nav class="flex items-center gap-1" aria-label="Primary navigation">
         {{ template "theme-control" . }}
-        <a href="/docs" class="top-link hidden lg:block">API docs</a>
+        <a href="/docs" class="top-link hidden lg:inline-flex">API docs</a>
         {{ if .User.ID }}
           <span class="hidden px-2 text-sm text-muted xl:block">{{ .User.FullName }}</span>
           <a href="/logout" class="top-link">Sign out</a>
         {{ else }}
-          <a href="/login" class="top-link hidden sm:block">Sign in</a>
+          <a href="/login" class="top-link hidden sm:inline-flex">Sign in</a>
           <a href="/register" class="top-link-primary hidden md:inline-flex">Create account</a>
         {{ end }}
       </nav>

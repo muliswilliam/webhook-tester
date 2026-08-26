@@ -370,7 +370,7 @@
     border-color: var(--app-border-strong);
   }
   .theme-picker {
-    @apply flex h-10 items-center gap-2 rounded-lg border px-2.5 text-xs font-medium;
+    @apply flex h-10 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium;
     background-color: var(--app-surface);
     border-color: var(--app-border-strong);
     color: var(--app-muted);
