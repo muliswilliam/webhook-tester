@@ -314,11 +314,11 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 
 	// CreateRequest, CountRequests and the broadcast below all run as one
 	// atomic unit per webhook, and in that order, under whMu: otherwise two
-	// requests arriving for the same brand-new webhook could both observe a
-	// count > 1 (stranding the "first request" placeholder-removal check in
-	// StreamWebhookEvents), or their events could reach subscribers out of
-	// insertion order if the broadcast ran after an unguarded ResponseDelay
-	// sleep.
+	// requests arriving for the same brand-new webhook could both observe the
+	// same (wrong) count - e.g. both seeing 2 instead of 1-then-2 - corrupting
+	// the count-dependent patches in StreamWebhookEvents (the counter, mainly),
+	// or their events could reach subscribers out of insertion order if the
+	// broadcast ran after an unguarded ResponseDelay sleep.
 	whMu := requestMuFor(webhookID)
 	whMu.Lock()
 	err = h.webhookSvc.CreateRequest(&wr)

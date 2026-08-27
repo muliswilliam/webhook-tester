@@ -221,7 +221,7 @@
                 data-show="$cardOpen_{{ sig .ID }} && !$railCollapsed"
                 data-init="@get('/webhook-stream/{{ .ID }}{{- if eq .ID $activeID -}}
                   ?active=1
-                {{- end }}')"
+                {{- end }}', {retryMaxCount: Infinity})"
                 class="mt-2 space-y-1 border-t pt-2"
                 id="request-log-{{ .ID }}"
               >

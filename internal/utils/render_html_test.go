@@ -111,6 +111,12 @@ func TestRenderHtmlHomeWebhookStreamDataInitHasNoEmbeddedWhitespace(t *testing.T
 
 	inactiveLiteral := jsStringLiteralAfter(t, body, "@get('", strings.Index(body, activeLiteral))
 	assert.Equal(t, "/webhook-stream/"+inactive.ID, inactiveLiteral)
+
+	// A long-lived dashboard connection must not give up after Datastar's
+	// default retryMaxCount of 10 (~3 minutes of backoff) - it should keep
+	// retrying indefinitely across outages/restarts, like the native
+	// EventSource it replaced.
+	assert.Contains(t, body, "retryMaxCount: Infinity")
 }
 
 // jsStringLiteralAfter returns the contents of the next '...' literal
@@ -120,7 +126,9 @@ func jsStringLiteralAfter(t *testing.T, body, marker string, fromIndex int) stri
 	rel := strings.Index(body[fromIndex:], marker)
 	require.NotEqual(t, -1, rel, "marker %q not found after index %d in:\n%s", marker, fromIndex, body)
 	start := fromIndex + rel + len(marker)
-	end := strings.Index(body[start:], "')")
+	// The literal's closing quote, not "')" - a call can carry trailing
+	// arguments (e.g. an options object) between the quote and the ")".
+	end := strings.IndexByte(body[start:], '\'')
 	require.NotEqual(t, -1, end, "unterminated string literal after %q in:\n%s", marker, body)
 	literal := body[start : start+end]
 	assert.NotContains(t, literal, "\n", "JS string literal must not contain a raw newline")
