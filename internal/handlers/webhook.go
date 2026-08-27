@@ -251,6 +251,12 @@ func requestMuFor(webhookID string) *sync.Mutex {
 // webhookStreams once a webhook is deleted, so a long-running server doesn't
 // accumulate a mutex and a (by then empty) channel slice per deleted webhook
 // forever.
+//
+// Theoretical race: if a request for webhookID is still mid-flight holding
+// the mutex removed here, and a new webhook happened to reuse the same ID
+// afterward, requestMuFor would hand out a fresh mutex that doesn't serialize
+// against the still-in-flight one. This requires nanoid ID reuse, which is
+// astronomically unlikely, so it's accepted rather than designed around.
 func cleanupWebhookState(webhookID string) {
 	requestMusMu.Lock()
 	delete(requestMus, webhookID)
@@ -373,11 +379,6 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 
-	// Computed once for the life of the connection: gorilla/csrf tokens are masked
-	// per call but all validate against the same session cookie, so a single token
-	// can safely be reused for every row patched over this SSE connection.
-	csrfField := csrf.TemplateField(r)
-
 	// Create a buffered channel for this client: a burst of requests would
 	// otherwise drop live updates as soon as one consumer iteration (DB
 	// count + template renders + SSE writes) fell behind an unbuffered send.
@@ -424,6 +425,15 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 				h.logger.Printf("error rendering sidebar request row: %s", err)
 				continue
 			}
+
+			// Recomputed per-event rather than once per connection: gorilla/csrf's
+			// session cookie (which masked tokens validate against) has a default
+			// MaxAge of 12 hours, while this UI advertises anonymous workspaces
+			// persisting up to 2 days. A token computed once at connection-open
+			// could go stale by the time it's baked into a row rendered hours
+			// later, breaking that row's Replay/Delete forms even though a fresh
+			// page load would work fine.
+			csrfField := csrf.TemplateField(r)
 			mainHTML, err := utils.RenderPartialToString("main-request-row", map[string]interface{}{
 				"Request":   wr,
 				"CSRFField": csrfField,

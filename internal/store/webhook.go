@@ -147,6 +147,13 @@ func (r GormWebhookRepo) CountRequests(webhookID string) (int64, error) {
 // that should not persist indefinitely.
 //
 // Any error during the transaction is logged but not returned.
+// TODO: webhooks deleted here leak their entries in the handlers package's
+// requestMus/webhookStreams maps (see handlers.cleanupWebhookState), since
+// this repo-layer function has no access to that handler-package state and
+// currently isn't called from anywhere that does (it's dormant/commented out
+// in cmd/main.go). Wiring this up would need either exposing the deleted IDs
+// to a caller that can invoke cleanupWebhookState, or a callback/interface
+// hook - deferred until CleanPublic is actually re-enabled.
 func (r GormWebhookRepo) CleanPublic(d time.Duration) error {
 	r.logger.Println("Cleaning public webhooks")
 	beforeDate := time.Now().Add(-d).UTC()

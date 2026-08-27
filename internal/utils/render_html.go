@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"sync"
 	"webhook-tester/internal/web/templates"
 )
 
@@ -70,16 +71,32 @@ func RenderHtmlWithoutLayout(w http.ResponseWriter, r *http.Request, tmplName st
 	}
 }
 
+// requestRowTmpl is request_row.html parsed once and reused by every
+// RenderPartialToString call. This function is a hot path - it's invoked
+// 2-3 times per broadcast event, once per SSE subscriber to a webhook - so
+// re-parsing the template from the embedded FS on every call would be far
+// more wasteful here than it is for the once-per-page-load renders in
+// RenderHtml/RenderHtmlWithoutLayout. ExecuteTemplate is safe for concurrent
+// use once parsing is done, so the cached template can be shared across
+// goroutines without locking.
+var (
+	requestRowTmpl     *template.Template
+	requestRowTmplOnce sync.Once
+	requestRowTmplErr  error
+)
+
 // RenderPartialToString renders a single named template (defined in request_row.html)
 // to a string, for use outside a full-page response - e.g. an SSE-pushed DOM patch.
 func RenderPartialToString(tmplName string, data interface{}) (string, error) {
-	tmpl, err := template.New("request_row.html").Funcs(funcMap).ParseFS(templates.Templates, "request_row.html")
-	if err != nil {
-		return "", err
+	requestRowTmplOnce.Do(func() {
+		requestRowTmpl, requestRowTmplErr = template.New("request_row.html").Funcs(funcMap).ParseFS(templates.Templates, "request_row.html")
+	})
+	if requestRowTmplErr != nil {
+		return "", requestRowTmplErr
 	}
 
 	var buf bytes.Buffer
-	if err := tmpl.ExecuteTemplate(&buf, tmplName, data); err != nil {
+	if err := requestRowTmpl.ExecuteTemplate(&buf, tmplName, data); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
