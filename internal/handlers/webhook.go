@@ -147,6 +147,7 @@ func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
+	cleanupWebhookState(webhookID)
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -214,10 +215,13 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 
 // webhookEvent carries a captured request together with the request count
 // computed atomically at insert time, so every SSE subscriber for a webhook
-// sees the same count without re-querying the DB itself.
+// sees the same count without re-querying the DB itself. CountErr is set when
+// the count query failed; consumers still show the row but skip the
+// count-dependent placeholder removal and counter patch.
 type webhookEvent struct {
-	Request models.WebhookRequest
-	Count   int64
+	Request  models.WebhookRequest
+	Count    int64
+	CountErr bool
 }
 
 var webhookStreams = make(map[string][]chan webhookEvent)
@@ -241,6 +245,20 @@ func requestMuFor(webhookID string) *sync.Mutex {
 		requestMus[webhookID] = m
 	}
 	return m
+}
+
+// cleanupWebhookState drops the per-webhook entries in requestMus and
+// webhookStreams once a webhook is deleted, so a long-running server doesn't
+// accumulate a mutex and a (by then empty) channel slice per deleted webhook
+// forever.
+func cleanupWebhookState(webhookID string) {
+	requestMusMu.Lock()
+	delete(requestMus, webhookID)
+	requestMusMu.Unlock()
+
+	mu.Lock()
+	delete(webhookStreams, webhookID)
+	mu.Unlock()
 }
 
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
@@ -288,10 +306,13 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		ReceivedAt: time.Now().UTC(),
 	}
 
-	// CreateRequest and CountRequests must run as one atomic unit per webhook:
-	// otherwise two requests arriving for the same brand-new webhook can both
-	// observe a count > 1, and the "first request" placeholder-removal check
-	// in StreamWebhookEvents never fires for either of them.
+	// CreateRequest, CountRequests and the broadcast below all run as one
+	// atomic unit per webhook, and in that order, under whMu: otherwise two
+	// requests arriving for the same brand-new webhook could both observe a
+	// count > 1 (stranding the "first request" placeholder-removal check in
+	// StreamWebhookEvents), or their events could reach subscribers out of
+	// insertion order if the broadcast ran after an unguarded ResponseDelay
+	// sleep.
 	whMu := requestMuFor(webhookID)
 	whMu.Lock()
 	err = h.webhookSvc.CreateRequest(&wr)
@@ -302,29 +323,28 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 	count, countErr := h.webhookSvc.CountRequests(webhookID)
-	whMu.Unlock()
 	if countErr != nil {
 		h.logger.Printf("error counting webhook requests: %s", countErr)
 	}
+	// The row is broadcast even on a count error - only the count-dependent
+	// placeholder removal and counter patch are skipped downstream - so a
+	// transient DB hiccup doesn't hide a captured request from the live view.
+	event := webhookEvent{Request: wr, Count: count, CountErr: countErr != nil}
+	mu.Lock()
+	for _, ch := range webhookStreams[webhookID] {
+		select {
+		case ch <- event:
+		default: // drop if blocked
+		}
+	}
+	mu.Unlock()
+	whMu.Unlock()
+
 	h.metrics.IncWebhookRequest(webhookID)
 
 	// Delay response
 	if webhook.ResponseDelay > 0 {
 		time.Sleep(time.Duration(webhook.ResponseDelay) * time.Millisecond)
-	}
-
-	// Skip the live update entirely on a count error rather than broadcasting
-	// a wrong "0 captured requests" counter to every connected client.
-	if countErr == nil {
-		event := webhookEvent{Request: wr, Count: count}
-		mu.Lock()
-		for _, ch := range webhookStreams[webhookID] {
-			select {
-			case ch <- event:
-			default: // drop if blocked
-			}
-		}
-		mu.Unlock()
 	}
 
 	// Set custom response headers if defined
@@ -388,6 +408,10 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 		case evt := <-eventChan:
 			wr, count := evt.Request, evt.Count
 
+			if evt.CountErr {
+				h.logger.Printf("skipping count-dependent updates for %s: count was unavailable", wr.ID)
+			}
+
 			sidebarHTML, err := utils.RenderPartialToString("sidebar-request-row", wr)
 			if err != nil {
 				h.logger.Printf("error rendering sidebar request row: %s", err)
@@ -405,7 +429,7 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 			// The "waiting"/"empty" placeholders only exist in the DOM for a
 			// webhook's very first request; skip the (otherwise harmless but
 			// noisy) no-target patch for every later one.
-			if count == 1 {
+			if !evt.CountErr && count == 1 {
 				if err := sse.RemoveElementByID("request-log-waiting-" + wr.WebhookID); err != nil {
 					h.logger.Printf("error removing waiting placeholder: %s", err)
 					return
@@ -428,6 +452,10 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 			); err != nil {
 				h.logger.Printf("error patching main request row: %s", err)
 				return
+			}
+
+			if evt.CountErr {
+				continue
 			}
 
 			counterHTML, err := utils.RenderPartialToString("request-counter", map[string]interface{}{
