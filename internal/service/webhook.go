@@ -59,6 +59,11 @@ func (s *WebhookService) GetWebhookWithRequests(id string) (*models.Webhook, err
 	return s.repo.GetWithRequests(id)
 }
 
+// CountRequests returns the number of requests captured for a webhook.
+func (s *WebhookService) CountRequests(webhookID string) (int64, error) {
+	return s.repo.CountRequests(webhookID)
+}
+
 // CleanPublicWebhooks cleans up old public webhooks.
 func (s *WebhookService) CleanPublicWebhooks(d time.Duration) error {
 	return s.repo.CleanPublic(d)

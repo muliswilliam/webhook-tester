@@ -1,6 +1,6 @@
 {{ define "title" }}Request {{ .Request.ID }}{{ end }}
 {{ define "content" }}
-  <div class="space-y-6" x-data="{ copiedID: false, copiedBody: false }">
+  <div class="space-y-6" data-signals="{copiedId: false, copiedBody: false}">
     <nav aria-label="Breadcrumb">
       <a
         href="/?address={{ .Webhook.ID }}"
@@ -32,8 +32,8 @@
         <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Captured request</h1>
         <button
           class="mt-2 flex max-w-full items-center gap-2 text-left font-mono text-xs text-muted hover:text-[var(--app-fg)]"
-          @click="navigator.clipboard.writeText('{{ .Request.ID }}'); copiedID = true; setTimeout(() => copiedID = false, 1500)"
-          :aria-label="copiedID ? 'Request ID copied' : 'Copy request ID'"
+          data-on:click="navigator.clipboard.writeText('{{ .Request.ID }}'); $copiedId = true; setTimeout(() => $copiedId = false, 1500)"
+          data-attr:aria-label="$copiedId ? 'Request ID copied' : 'Copy request ID'"
         >
           <span class="truncate">{{ .Request.ID }}</span>
           <svg
@@ -47,7 +47,7 @@
             <rect x="9" y="9" width="11" height="11" rx="2" />
             <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
           </svg>
-          <span class="font-sans" x-text="copiedID ? 'Copied' : ''"></span>
+          <span class="font-sans" data-text="$copiedId ? 'Copied' : ''"></span>
         </button>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -73,13 +73,13 @@
           <h2 id="request-body-title" class="mt-1 text-base font-semibold">Request body</h2>
         </div>
         <button
-          @click="navigator.clipboard.writeText($refs.body.innerText); copiedBody = true; setTimeout(() => copiedBody = false, 1500)"
+          data-on:click="navigator.clipboard.writeText($body.innerText); $copiedBody = true; setTimeout(() => $copiedBody = false, 1500)"
           class="text-link text-sm font-medium"
-          x-text="copiedBody ? 'Copied' : 'Copy body'"
+          data-text="$copiedBody ? 'Copied' : 'Copy body'"
         ></button>
       </div>
       <pre
-        x-ref="body"
+        data-ref:body
         class="code-surface min-h-56 overflow-x-auto border-t p-5 text-xs leading-6 sm:text-sm"
       >
 {{ .Request.Body }}</pre>

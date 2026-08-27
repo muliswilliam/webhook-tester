@@ -1,0 +1,120 @@
+{{ define "sidebar-request-row" }}
+  <a href="/requests/{{ .ID }}?address={{ .WebhookID }}" class="sidebar-request">
+    <span class="method-badge">{{ .Method }}</span>
+    <span class="truncate font-mono text-[11px] text-muted">{{ .ID }}</span>
+  </a>
+{{ end }}
+
+{{ define "request-counter" }}
+  <span id="request-count-{{ .WebhookID }}" data-count="{{ .Count }}">
+    {{ .Count }} captured {{ if eq .Count 1 }}request{{ else }}requests{{ end }}
+  </span>
+{{ end }}
+
+{{ define "main-request-row" }}
+  <article
+    class="surface overflow-hidden"
+    data-signals="{open_{{ sig .Request.ID }}: false, copiedBody_{{ sig .Request.ID }}: false}"
+  >
+    <button
+      class="request-row"
+      data-on:click="$open_{{ sigJS .Request.ID }} = !$open_{{ sigJS .Request.ID }}"
+      data-attr:aria-expanded="$open_{{ sig .Request.ID }}.toString()"
+    >
+      <span class="flex min-w-0 items-center gap-3">
+        <span class="method-badge">{{ .Request.Method }}</span>
+        <span class="truncate font-mono text-xs">{{ .Request.ID }}</span>
+      </span>
+      <span class="flex shrink-0 items-center gap-3">
+        <span class="hidden text-xs text-muted sm:block">
+          {{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
+        </span>
+        <svg
+          class="h-4 w-4 text-muted transition-transform"
+          data-class="{'rotate-180': $open_{{ sig .Request.ID }}}"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </span>
+    </button>
+    <div style="display: none" data-show="$open_{{ sig .Request.ID }}" class="border-t">
+      <div class="grid lg:grid-cols-2">
+        <section class="border-b lg:border-b-0 lg:border-r">
+          <div class="section-bar">
+            <h3>Body</h3>
+            <button
+              data-on:click__stop="navigator.clipboard.writeText($body_{{ sigJS .Request.ID }}.innerText); $copiedBody_{{ sigJS .Request.ID }} = true; setTimeout(() => $copiedBody_{{ sigJS .Request.ID }} = false, 1500)"
+              class="text-link text-xs font-medium"
+              data-text="$copiedBody_{{ sig .Request.ID }} ? 'Copied' : 'Copy body'"
+            ></button>
+          </div>
+          <pre
+            data-ref:body_{{ sig .Request.ID }}
+            class="code-surface min-h-40 overflow-x-auto border-t p-5 text-xs leading-6"
+          >
+{{ .Request.Body }}</pre>
+        </section>
+        <section>
+          <div class="section-bar">
+            <h3>Headers</h3>
+            <span class="text-xs text-muted">{{ .Request.Method }}</span>
+          </div>
+          <div class="max-h-72 overflow-auto">
+            <table class="data-table w-full">
+              <tbody>
+                {{ range $key, $val := .Request.Headers }}
+                  <tr>
+                    <td>{{ $key }}</td>
+                    <td class="break-all">{{ $val }}</td>
+                  </tr>
+                {{ end }}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      {{ if .Request.Query }}
+        <section class="border-t">
+          <div class="section-bar"><h3>Query parameters</h3></div>
+          <div class="overflow-x-auto">
+            <table class="data-table w-full">
+              <tbody>
+                {{ range $key, $val := .Request.Query }}
+                  <tr>
+                    <td>{{ $key }}</td>
+                    <td class="break-all">{{ $val }}</td>
+                  </tr>
+                {{ end }}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {{ end }}
+      <div class="flex flex-wrap justify-end gap-2 border-t bg-subtle p-3">
+        <a
+          href="/requests/{{ .Request.ID }}?address={{ .Request.WebhookID }}"
+          class="btn-secondary"
+        >
+          Open details
+        </a>
+        <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+          {{ .CSRFField }}
+          <button class="btn-secondary">Replay request</button>
+        </form>
+        <form
+          method="POST"
+          action="/requests/{{ .Request.ID }}/delete"
+          onsubmit="return confirm('Delete this captured request?')"
+        >
+          {{ .CSRFField }}
+          <button class="btn-danger">Delete</button>
+        </form>
+      </div>
+    </div>
+  </article>
+{{ end }}

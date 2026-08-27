@@ -122,6 +122,16 @@ func (r GormWebhookRepo) GetWithRequests(id string) (*models.Webhook, error) {
 	return &webhook, err
 }
 
+// CountRequests returns the number of requests captured for a webhook.
+func (r GormWebhookRepo) CountRequests(webhookID string) (int64, error) {
+	var count int64
+	err := r.DB.Model(&models.WebhookRequest{}).Where("webhook_id = ?", webhookID).Count(&count).Error
+	if err != nil {
+		r.logger.Printf("failed to count webhook requests: %v", err)
+	}
+	return count, err
+}
+
 // CleanPublic deletes anonymous (public) webhooks and their associated requests
 // that were created before a specified duration threshold.
 //
