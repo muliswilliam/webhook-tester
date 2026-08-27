@@ -166,6 +166,16 @@ func (f *testWebhookRepo) CleanPublic(_ time.Duration) error {
 	return f.cleanPublicErr
 }
 
+func (f *testWebhookRepo) CountRequests(webhookID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w, ok := f.webhooks[webhookID]
+	if !ok {
+		return 0, nil
+	}
+	return int64(len(w.Requests)), nil
+}
+
 // testWebhookRequestRepo is an in-memory implementation of
 // repository.WebhookRequestRepository.
 type testWebhookRequestRepo struct {

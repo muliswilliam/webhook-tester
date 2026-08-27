@@ -90,9 +90,6 @@
   summary {
     cursor: pointer;
   }
-  [x-cloak] {
-    display: none !important;
-  }
   ::selection {
     color: #ffffff;
     background-color: var(--interact);

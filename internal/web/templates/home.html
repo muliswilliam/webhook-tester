@@ -1,7 +1,7 @@
 {{ define "title" }}Webhook workspace{{ end }}
 {{ define "content" }}
   {{ $csrfField := .CSRFField }}
-  <div x-data="{ showEditModal: false, actionsOpen: false }" class="space-y-6">
+  <div data-signals="{showEditModal: false, actionsOpen: false}" class="space-y-6">
     {{ if not .User.ID }}
       <aside
         class="temporary-banner flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
@@ -49,7 +49,7 @@
             </p>
           </div>
           <div class="flex items-center gap-2">
-            <button class="btn-secondary" @click="showEditModal = true">
+            <button class="btn-secondary" data-on:click__stop="$showEditModal = true">
               <svg
                 class="h-4 w-4"
                 viewBox="0 0 24 24"
@@ -62,11 +62,11 @@
               </svg>
               Edit response
             </button>
-            <div class="relative" @click.outside="actionsOpen = false">
+            <div class="relative" data-on:click__outside="$actionsOpen = false">
               <button
                 class="icon-btn"
-                @click="actionsOpen = !actionsOpen"
-                :aria-expanded="actionsOpen.toString()"
+                data-on:click="$actionsOpen = !$actionsOpen"
+                data-attr:aria-expanded="$actionsOpen.toString()"
                 aria-haspopup="menu"
                 aria-label="More endpoint actions"
               >
@@ -76,7 +76,7 @@
                   <circle cx="19" cy="12" r="1.5" />
                 </svg>
               </button>
-              <div x-cloak x-show="actionsOpen" x-transition class="action-menu" role="menu">
+              <div style="display: none" data-show="$actionsOpen" class="action-menu" role="menu">
                 <form
                   method="POST"
                   action="/delete-requests/{{ .Webhook.ID }}"
@@ -102,7 +102,7 @@
           </div>
         </div>
 
-        <div class="surface p-5 sm:p-6" x-data="{ copied: false }">
+        <div class="surface p-5 sm:p-6" data-signals:copied-url="false">
           <div class="mb-4 flex items-center justify-between gap-4">
             <div>
               <p class="eyebrow">Endpoint URL</p>
@@ -114,14 +114,14 @@
           </div>
           <div class="flex flex-col gap-2 sm:flex-row">
             <input
-              x-ref="url"
+              data-ref:url
               readonly
               value="{{ .Domain }}/webhooks/{{ .Webhook.ID }}"
               class="field min-w-0 font-mono text-link"
               aria-label="Webhook endpoint URL"
             />
             <button
-              @click="navigator.clipboard.writeText($refs.url.value); copied = true; setTimeout(() => copied = false, 1500)"
+              data-on:click="navigator.clipboard.writeText($url.value); $copiedUrl = true; setTimeout(() => $copiedUrl = false, 1500)"
               class="btn-primary shrink-0"
             >
               <svg
@@ -135,7 +135,7 @@
                 <rect x="9" y="9" width="11" height="11" rx="2" />
                 <path d="M15 9V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h3" />
               </svg>
-              <span x-text="copied ? 'Copied' : 'Copy URL'"></span>
+              <span data-text="$copiedUrl ? 'Copied' : 'Copy URL'"></span>
             </button>
           </div>
           <p class="mt-3 text-xs leading-5 text-muted">
@@ -161,101 +161,7 @@
       </div>
       <div class="space-y-3" id="request-log-list-{{ .Webhook.ID }}">
         {{ range .Webhook.Requests }}
-          <article class="surface overflow-hidden" x-data="{ open: false, copied: false }">
-            <button class="request-row" @click="open = !open" :aria-expanded="open.toString()">
-              <span class="flex min-w-0 items-center gap-3">
-                <span class="method-badge">{{ .Method }}</span>
-                <span class="truncate font-mono text-xs">{{ .ID }}</span>
-              </span>
-              <span class="flex shrink-0 items-center gap-3">
-                <span class="hidden text-xs text-muted sm:block">
-                  {{ .ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
-                </span>
-                <svg
-                  class="h-4 w-4 text-muted transition-transform"
-                  :class="open ? 'rotate-180' : ''"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  aria-hidden="true"
-                >
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </span>
-            </button>
-            <div x-show="open" x-transition class="border-t">
-              <div class="grid lg:grid-cols-2">
-                <section class="border-b lg:border-b-0 lg:border-r">
-                  <div class="section-bar">
-                    <h3>Body</h3>
-                    <button
-                      @click.stop="navigator.clipboard.writeText($refs.body.innerText); copied = true; setTimeout(() => copied = false, 1500)"
-                      class="text-link text-xs font-medium"
-                      x-text="copied ? 'Copied' : 'Copy body'"
-                    ></button>
-                  </div>
-                  <pre
-                    x-ref="body"
-                    class="code-surface min-h-40 overflow-x-auto border-t p-5 text-xs leading-6"
-                  >
-{{ .Body }}</pre>
-                </section>
-                <section>
-                  <div class="section-bar">
-                    <h3>Headers</h3>
-                    <span class="text-xs text-muted">{{ .Method }}</span>
-                  </div>
-                  <div class="max-h-72 overflow-auto">
-                    <table class="data-table w-full">
-                      <tbody>
-                        {{ range $key, $val := .Headers }}
-                          <tr>
-                            <td>{{ $key }}</td>
-                            <td class="break-all">{{ $val }}</td>
-                          </tr>
-                        {{ end }}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              </div>
-              {{ if .Query }}
-                <section class="border-t">
-                  <div class="section-bar"><h3>Query parameters</h3></div>
-                  <div class="overflow-x-auto">
-                    <table class="data-table w-full">
-                      <tbody>
-                        {{ range $key, $val := .Query }}
-                          <tr>
-                            <td>{{ $key }}</td>
-                            <td class="break-all">{{ $val }}</td>
-                          </tr>
-                        {{ end }}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-              {{ end }}
-              <div class="flex flex-wrap justify-end gap-2 border-t bg-subtle p-3">
-                <a href="/requests/{{ .ID }}?address={{ .WebhookID }}" class="btn-secondary">
-                  Open details
-                </a>
-                <form method="POST" action="/requests/{{ .ID }}/replay">
-                  {{ $csrfField }}
-                  <button class="btn-secondary">Replay request</button>
-                </form>
-                <form
-                  method="POST"
-                  action="/requests/{{ .ID }}/delete"
-                  onsubmit="return confirm('Delete this captured request?')"
-                >
-                  {{ $csrfField }}
-                  <button class="btn-danger">Delete</button>
-                </form>
-              </div>
-            </div>
-          </article>
+          {{ template "main-request-row" (dict "Request" . "CSRFField" $csrfField) }}
         {{ else }}
           <div
             class="surface grid min-h-60 place-items-center p-8 text-center"
@@ -305,17 +211,17 @@
             <path d="m6 9 6 6 6-6" />
           </svg>
         </summary>
-        <div class="code-surface border-t" x-data="{ copied: false }">
+        <div class="code-surface border-t" data-signals:copied-curl="false">
           <div class="section-bar border-b">
             <span class="text-xs text-muted">cURL</span>
             <button
-              @click="navigator.clipboard.writeText($refs.curl.innerText); copied = true; setTimeout(() => copied = false, 1500)"
+              data-on:click="navigator.clipboard.writeText($curl.innerText); $copiedCurl = true; setTimeout(() => $copiedCurl = false, 1500)"
               class="text-link text-xs font-medium"
-              x-text="copied ? 'Copied' : 'Copy command'"
+              data-text="$copiedCurl ? 'Copied' : 'Copy command'"
             ></button>
           </div>
           <pre
-            x-ref="curl"
+            data-ref:curl
             class="overflow-x-auto p-5 text-xs leading-6"
           ><span>curl</span> -X POST \
   <span>{{ .Domain }}/webhooks/{{ .Webhook.ID }}</span> \
@@ -345,40 +251,47 @@
             <path d="m6 9 6 6 6-6" />
           </svg>
         </summary>
-        <div class="flex flex-col gap-2 border-t p-5 sm:flex-row" x-data="{ copied: false }">
+        <div
+          class="flex flex-col gap-2 border-t p-5 sm:flex-row"
+          data-signals:copied-api-key="false"
+        >
           <input
-            x-ref="apikey"
+            data-ref:apikey
             readonly
             value="{{ .User.APIKey }}"
             class="field min-w-0 font-mono"
             aria-label="API key"
           />
           <button
-            @click="navigator.clipboard.writeText($refs.apikey.value); copied = true; setTimeout(() => copied = false, 1500)"
+            data-on:click="navigator.clipboard.writeText($apikey.value); $copiedApiKey = true; setTimeout(() => $copiedApiKey = false, 1500)"
             class="btn-secondary shrink-0"
-            x-text="copied ? 'Copied' : 'Copy key'"
+            data-text="$copiedApiKey ? 'Copied' : 'Copy key'"
           ></button>
         </div>
       </details>
     {{ end }}
 
 
-    <div x-cloak x-show="showEditModal" @keydown.escape.window="showEditModal = false">
+    <div
+      style="display: none"
+      data-show="$showEditModal"
+      data-on:keydown__window="if (evt.key === 'Escape' && $showEditModal) $showEditModal = false"
+    >
       <div
-        x-show="showEditModal"
-        x-transition.opacity
+        style="display: none"
+        data-show="$showEditModal"
         class="fixed inset-0 z-40 bg-black/55"
-        @click="showEditModal = false"
+        data-on:click="$showEditModal = false"
         aria-hidden="true"
       ></div>
       <div
-        x-show="showEditModal"
-        x-transition
+        style="display: none"
+        data-show="$showEditModal"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
         <div
           class="modal-panel max-h-[90vh]"
-          @click.away="showEditModal = false"
+          data-on:click__outside="$showEditModal = false"
           role="dialog"
           aria-modal="true"
           aria-labelledby="edit-webhook-title"
@@ -388,7 +301,11 @@
               <p class="eyebrow">Response settings</p>
               <h2 id="edit-webhook-title" class="mt-2 text-xl font-semibold">Edit webhook</h2>
             </div>
-            <button class="icon-btn" @click="showEditModal = false" aria-label="Close dialog">
+            <button
+              class="icon-btn"
+              data-on:click="$showEditModal = false"
+              aria-label="Close dialog"
+            >
               <svg
                 class="h-5 w-5"
                 viewBox="0 0 24 24"
@@ -467,7 +384,7 @@
               <span>Notify me when a request arrives</span>
             </label>
             <div class="flex justify-end gap-3 pt-2">
-              <button type="button" @click="showEditModal = false" class="btn-secondary">
+              <button type="button" data-on:click="$showEditModal = false" class="btn-secondary">
                 Cancel
               </button>
               <button type="submit" class="btn-primary">Save changes</button>

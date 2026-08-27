@@ -1,38 +1,29 @@
 {{ define "body" }}
   <div
     class="app-shell"
-    data-active-webhook="{{ .Webhook.ID }}"
     data-sidebar-collapsed-default="{{ if .User.ID }}
       0
     {{ else }}
       1
     {{ end }}"
-    x-data="{
-    showModal: false,
-    sidebarOpen: false,
-    desktop: window.matchMedia('(min-width: 768px)').matches,
-    sidebarCollapsed: (localStorage.getItem('webhook-tester-sidebar-collapsed') ?? $el.dataset.sidebarCollapsedDefault.trim()) === '1',
-    get railCollapsed() { return this.sidebarCollapsed && this.desktop },
-    toggleSidebarCollapsed() { this.sidebarCollapsed = !this.sidebarCollapsed; localStorage.setItem('webhook-tester-sidebar-collapsed', this.sidebarCollapsed ? '1' : '0') },
-    openSidebar() { this.sidebarOpen = true; this.$nextTick(() => this.$refs.sidebarCloseBtn.focus()) },
-    closeSidebar() { this.sidebarOpen = false; this.$nextTick(() => this.$refs.sidebarTrigger.focus()) }
-  }"
-    x-init="window.matchMedia('(min-width: 768px)').addEventListener('change', event => { desktop = event.matches; if (desktop) sidebarOpen = false })"
-    @keydown.escape.window="if (sidebarOpen) closeSidebar()"
+    data-signals="{showModal: false, sidebarOpen: false, desktop: window.matchMedia('(min-width: 768px)').matches, sidebarCollapsed: (localStorage.getItem('webhook-tester-sidebar-collapsed') ?? el.dataset.sidebarCollapsedDefault.trim()) === '1'}"
+    data-computed:rail-collapsed="$sidebarCollapsed && $desktop"
+    data-init="window.matchMedia('(min-width: 768px)').addEventListener('change', event => { $desktop = event.matches; if ($desktop) $sidebarOpen = false })"
+    data-on:keydown__window="if (evt.key === 'Escape' && $sidebarOpen) { $sidebarOpen = false; setTimeout(() => $sidebarTrigger.focus()) }"
   >
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <header
       class="topbar"
-      :inert="!desktop && sidebarOpen"
-      :aria-hidden="(!desktop && sidebarOpen).toString()"
+      data-attr:inert="!$desktop && $sidebarOpen"
+      data-attr:aria-hidden="(!$desktop && $sidebarOpen).toString()"
     >
       <div class="flex min-w-0 items-center gap-3">
         <button
-          x-ref="sidebarTrigger"
+          data-ref:sidebar-trigger
           class="icon-btn md:hidden"
-          @click="openSidebar()"
+          data-on:click="$sidebarOpen = true; setTimeout(() => $sidebarCloseBtn.focus())"
           aria-label="Open webhook navigation"
-          :aria-expanded="sidebarOpen.toString()"
+          data-attr:aria-expanded="$sidebarOpen.toString()"
         >
           <svg
             class="h-5 w-5"
@@ -85,26 +76,25 @@
 
     <div class="flex h-[calc(100vh-4rem)] overflow-hidden">
       <div
-        x-cloak
-        x-show="sidebarOpen"
-        x-transition.opacity
+        style="display: none"
+        data-show="$sidebarOpen"
         class="fixed inset-0 z-30 bg-black/55 md:hidden"
-        @click="closeSidebar()"
+        data-on:click="$sidebarOpen = false"
         aria-hidden="true"
       ></div>
       <aside
         class="sidebar"
-        :class="[sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0', railCollapsed ? 'sidebar-collapsed' : '']"
-        :inert="!desktop && !sidebarOpen"
-        :aria-hidden="(!desktop && !sidebarOpen).toString()"
+        data-class="{'translate-x-0': $sidebarOpen, '-translate-x-full md:translate-x-0': !$sidebarOpen, 'sidebar-collapsed': $railCollapsed}"
+        data-attr:inert="!$desktop && !$sidebarOpen"
+        data-attr:aria-hidden="(!$desktop && !$sidebarOpen).toString()"
         aria-label="Webhook navigation"
       >
         <div class="flex h-16 items-center justify-between border-b px-4 md:hidden">
           <span class="text-sm font-semibold">Webhooks</span>
           <button
-            x-ref="sidebarCloseBtn"
+            data-ref:sidebar-close-btn
             class="icon-btn"
-            @click="closeSidebar()"
+            data-on:click="$sidebarOpen = false; setTimeout(() => $sidebarTrigger.focus())"
             aria-label="Close webhook navigation"
           >
             <svg
@@ -121,16 +111,16 @@
         </div>
 
         <div class="hidden items-center justify-between border-b px-3 py-2.5 md:flex">
-          <span class="text-xs font-semibold text-muted" x-show="!railCollapsed">Sidebar</span>
+          <span class="text-xs font-semibold text-muted" data-show="!$railCollapsed">Sidebar</span>
           <button
             class="icon-btn md:ml-auto"
-            @click="toggleSidebarCollapsed()"
-            :aria-label="railCollapsed ? 'Expand webhook sidebar' : 'Collapse webhook sidebar'"
-            :aria-expanded="(!railCollapsed).toString()"
+            data-on:click="$sidebarCollapsed = !$sidebarCollapsed; localStorage.setItem('webhook-tester-sidebar-collapsed', $sidebarCollapsed ? '1' : '0')"
+            data-attr:aria-label="$railCollapsed ? 'Expand webhook sidebar' : 'Collapse webhook sidebar'"
+            data-attr:aria-expanded="(!$railCollapsed).toString()"
           >
             <svg
               class="h-4 w-4 transition-transform"
-              :class="railCollapsed ? 'rotate-180' : ''"
+              data-class="{'rotate-180': $railCollapsed}"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -144,14 +134,18 @@
 
         <div
           class="flex items-center justify-between px-4 pb-3 pt-5"
-          :class="railCollapsed ? 'md:flex-col md:gap-2 md:px-2' : ''"
+          data-class="{'md:flex-col md:gap-2 md:px-2': $railCollapsed}"
         >
-          <div x-show="!railCollapsed">
+          <div data-show="!$railCollapsed">
             <p class="eyebrow">Endpoints</p>
             <p class="mt-1 text-xs text-muted">Live request streams</p>
           </div>
           {{ if .User.ID }}
-            <button @click="showModal = true" class="icon-btn" aria-label="Create webhook">
+            <button
+              data-on:click__stop="$showModal = true"
+              class="icon-btn"
+              aria-label="Create webhook"
+            >
               <svg
                 class="h-5 w-5"
                 viewBox="0 0 24 24"
@@ -170,15 +164,15 @@
         <div class="flex-1 space-y-2 overflow-y-auto px-3 py-2">
           {{ range .Webhooks }}
             <div
-              x-data="{ open: true }"
+              data-signals="{cardOpen_{{ sig .ID }}: true}"
               class="sidebar-card {{ if eq .ID $activeID }}sidebar-card-active{{ end }}"
-              :class="railCollapsed ? 'md:flex md:justify-center md:px-2 md:py-2' : ''"
+              data-class="{'md:flex md:justify-center md:px-2 md:py-2': $railCollapsed}"
             >
               <div class="flex items-center gap-3">
                 <a
                   href="/?address={{ .ID }}"
-                  x-show="railCollapsed"
-                  x-cloak
+                  style="display: none"
+                  data-show="$railCollapsed"
                   class="grid h-9 w-9 shrink-0 place-items-center rounded-lg"
                   title="{{ or .Title .ID }}"
                   aria-label="{{ or .Title .ID }}"
@@ -192,26 +186,26 @@
                 <span
                   class="status-dot inline-flex h-2.5 w-2.5 shrink-0 rounded-full"
                   aria-hidden="true"
-                  x-show="!railCollapsed"
+                  data-show="!$railCollapsed"
                 ></span>
                 <a
                   href="/?address={{ .ID }}"
                   class="min-w-0 flex-1 truncate text-sm font-medium"
-                  x-show="!railCollapsed"
+                  data-show="!$railCollapsed"
                   {{ if eq .ID $activeID }}aria-current="page"{{ end }}
                 >
                   {{ or .Title .ID }}
                 </a>
                 <button
-                  @click="open = !open"
+                  data-on:click="$cardOpen_{{ sigJS .ID }} = !$cardOpen_{{ sigJS .ID }}"
                   class="sidebar-disclosure"
-                  x-show="!railCollapsed"
+                  data-show="!$railCollapsed"
                   aria-label="Toggle request list"
-                  :aria-expanded="open.toString()"
+                  data-attr:aria-expanded="$cardOpen_{{ sig .ID }}.toString()"
                 >
                   <svg
                     class="h-4 w-4 transition-transform"
-                    :class="open ? 'rotate-180' : ''"
+                    data-class="{'rotate-180': $cardOpen_{{ sig .ID }}}"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -223,27 +217,25 @@
                 </button>
               </div>
               <div
-                x-show="open && !railCollapsed"
-                x-transition
-                x-data="sseRequestStream('{{ .ID }}')"
-                x-init="connect()"
+                style="display: none"
+                data-show="$cardOpen_{{ sig .ID }} && !$railCollapsed"
+                data-init="@get('/webhook-stream/{{ .ID }}')"
                 class="mt-2 space-y-1 border-t pt-2"
                 id="request-log-{{ .ID }}"
               >
                 {{ range .Requests }}
-                  <a href="/requests/{{ .ID }}?address={{ .WebhookID }}" class="sidebar-request">
-                    <span class="method-badge">{{ .Method }}</span>
-                    <span class="truncate font-mono text-[11px] text-muted">{{ .ID }}</span>
-                  </a>
+                  {{ template "sidebar-request-row" . }}
                 {{ else }}
-                  <p class="px-2 py-2 text-xs">Waiting for a request...</p>
+                  <p class="px-2 py-2 text-xs" id="request-log-waiting-{{ .ID }}">
+                    Waiting for a request...
+                  </p>
                 {{ end }}
               </div>
             </div>
           {{ end }}
         </div>
 
-        <div class="border-t p-4" x-show="!railCollapsed">
+        <div class="border-t p-4" data-show="!$railCollapsed">
           <div class="help-card">
             <p class="font-medium">Need a hand?</p>
             <div class="mt-2 flex gap-3">
@@ -263,8 +255,8 @@
 
       <div
         class="min-w-0 flex-1 overflow-y-auto"
-        :inert="!desktop && sidebarOpen"
-        :aria-hidden="(!desktop && sidebarOpen).toString()"
+        data-attr:inert="!$desktop && $sidebarOpen"
+        data-attr:aria-hidden="(!$desktop && $sidebarOpen).toString()"
       >
         <main
           id="main-content"
@@ -276,22 +268,26 @@
       </div>
     </div>
 
-    <div x-cloak x-show="showModal" @keydown.escape.window="showModal = false">
+    <div
+      style="display: none"
+      data-show="$showModal"
+      data-on:keydown__window="if (evt.key === 'Escape' && $showModal) $showModal = false"
+    >
       <div
-        x-show="showModal"
-        x-transition.opacity
+        style="display: none"
+        data-show="$showModal"
         class="fixed inset-0 z-40 bg-black/55"
-        @click="showModal = false"
+        data-on:click="$showModal = false"
         aria-hidden="true"
       ></div>
       <div
-        x-show="showModal"
-        x-transition
+        style="display: none"
+        data-show="$showModal"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
         <div
           class="modal-panel max-h-[90vh]"
-          @click.away="showModal = false"
+          data-on:click__outside="$showModal = false"
           role="dialog"
           aria-modal="true"
           aria-labelledby="create-webhook-title"
@@ -301,7 +297,7 @@
               <p class="eyebrow">New endpoint</p>
               <h2 id="create-webhook-title" class="mt-2 text-xl font-semibold">Create webhook</h2>
             </div>
-            <button class="icon-btn" @click="showModal = false" aria-label="Close dialog">
+            <button class="icon-btn" data-on:click="$showModal = false" aria-label="Close dialog">
               <svg
                 class="h-5 w-5"
                 viewBox="0 0 24 24"
@@ -314,7 +310,12 @@
               </svg>
             </button>
           </div>
-          <form method="POST" action="/create-webhook" class="space-y-5">
+          <form
+            method="POST"
+            action="/create-webhook"
+            class="space-y-5"
+            onsubmit="serializeHeaderRows(this)"
+          >
             {{ .CSRFField }}
             <div>
               <label for="create_title" class="field-label">Title</label>
@@ -365,43 +366,67 @@
               <textarea id="create_payload" name="payload" rows="4" class="field font-mono">
 {"message":"ok"}</textarea>
             </div>
-            <div
-              x-data="{ headers: {{ if .Webhook.ResponseHeaders }}
-                {{ .Webhook.ResponseHeaders }}
-              {{ else }}
-                []
-              {{ end }} }"
-              class="space-y-2"
-            >
+            <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <span class="field-label mb-0">Response headers</span>
-                <button
-                  type="button"
-                  @click="headers.push({key: '', value: ''})"
-                  class="text-link text-sm"
-                >
+                <button type="button" onclick="addHeaderRow(this)" class="text-link text-sm">
                   Add header
                 </button>
               </div>
-              <template x-for="(header, index) in headers" :key="index">
-                <div class="flex gap-2">
+              <div class="header-rows space-y-2">
+                {{ range $key, $val := .Webhook.ResponseHeaders }}
+                  <div class="header-row flex gap-2">
+                    <input
+                      type="text"
+                      class="field"
+                      placeholder="Header name"
+                      value="{{ $key }}"
+                      aria-label="Header name"
+                    />
+                    <input
+                      type="text"
+                      class="field"
+                      placeholder="Header value"
+                      value="{{ $val }}"
+                      aria-label="Header value"
+                    />
+                    <button
+                      type="button"
+                      onclick="removeHeaderRow(this)"
+                      class="icon-btn shrink-0"
+                      aria-label="Remove header"
+                    >
+                      <svg
+                        class="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                      >
+                        <path d="M5 12h14" />
+                      </svg>
+                    </button>
+                  </div>
+                {{ end }}
+              </div>
+              <template id="header-row-template">
+                <div class="header-row flex gap-2">
                   <input
                     type="text"
                     class="field"
                     placeholder="Header name"
-                    x-model="header.key"
                     aria-label="Header name"
                   />
                   <input
                     type="text"
                     class="field"
                     placeholder="Header value"
-                    x-model="header.value"
                     aria-label="Header value"
                   />
                   <button
                     type="button"
-                    @click="headers.splice(index, 1)"
+                    onclick="removeHeaderRow(this)"
                     class="icon-btn shrink-0"
                     aria-label="Remove header"
                   >
@@ -418,18 +443,16 @@
                   </button>
                 </div>
               </template>
-              <input
-                type="hidden"
-                name="response_headers"
-                :value="JSON.stringify(headers.filter(h => h.key && h.value))"
-              />
+              <input type="hidden" name="response_headers" />
             </div>
             <label class="check-row">
               <input type="checkbox" id="create_notify" name="notify_on_event" value="true" />
               <span>Notify me when a request arrives</span>
             </label>
             <div class="flex justify-end gap-3 pt-2">
-              <button type="button" @click="showModal = false" class="btn-secondary">Cancel</button>
+              <button type="button" data-on:click="$showModal = false" class="btn-secondary">
+                Cancel
+              </button>
               <button type="submit" class="btn-primary">Create endpoint</button>
             </div>
           </form>

@@ -17,6 +17,8 @@ import (
 	"webhook-tester/internal/utils"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/csrf"
+	"github.com/starfederation/datastar-go/datastar"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -210,7 +212,7 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
 
-var webhookStreams = make(map[string][]chan string)
+var webhookStreams = make(map[string][]chan models.WebhookRequest)
 var mu sync.Mutex
 
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
@@ -271,12 +273,10 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		time.Sleep(time.Duration(webhook.ResponseDelay) * time.Millisecond)
 	}
 
-	jsonData, _ := json.Marshal(wr)
-
 	mu.Lock()
 	for _, ch := range webhookStreams[webhookID] {
 		select {
-		case ch <- string(jsonData):
+		case ch <- wr:
 		default: // drop if blocked
 		}
 	}
@@ -308,28 +308,81 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 
-	// Set headers for SSE
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	// Computed once for the life of the connection: gorilla/csrf tokens are masked
+	// per call but all validate against the same session cookie, so a single token
+	// can safely be reused for every row patched over this SSE connection.
+	csrfField := csrf.TemplateField(r)
 
 	// Create a channel for this client
-	eventChan := make(chan string)
+	eventChan := make(chan models.WebhookRequest)
 	mu.Lock()
 	webhookStreams[webhookID] = append(webhookStreams[webhookID], eventChan)
 	mu.Unlock()
 
-	// Stream new events
-	flusher, _ := w.(http.Flusher)
+	sse := datastar.NewSSE(w, r)
+
 	for {
 		select {
-		case msg := <-eventChan:
-			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
+		case wr := <-eventChan:
+			count, err := h.webhookSvc.CountRequests(wr.WebhookID)
 			if err != nil {
-				h.logger.Printf("error writing data: %s", err)
+				h.logger.Printf("error counting webhook requests: %s", err)
+			}
+
+			sidebarHTML, err := utils.RenderPartialToString("sidebar-request-row", wr)
+			if err != nil {
+				h.logger.Printf("error rendering sidebar request row: %s", err)
+				continue
+			}
+			mainHTML, err := utils.RenderPartialToString("main-request-row", map[string]interface{}{
+				"Request":   wr,
+				"CSRFField": csrfField,
+			})
+			if err != nil {
+				h.logger.Printf("error rendering main request row: %s", err)
+				continue
+			}
+
+			// The "waiting"/"empty" placeholders only exist in the DOM for a
+			// webhook's very first request; skip the (otherwise harmless but
+			// noisy) no-target patch for every later one.
+			if count == 1 {
+				if err := sse.RemoveElementByID("request-log-waiting-" + wr.WebhookID); err != nil {
+					h.logger.Printf("error removing waiting placeholder: %s", err)
+					return
+				}
+				if err := sse.RemoveElementByID("request-log-empty-" + wr.WebhookID); err != nil {
+					h.logger.Printf("error removing empty placeholder: %s", err)
+					return
+				}
+			}
+			if err := sse.PatchElements(sidebarHTML,
+				datastar.WithSelectorID("request-log-"+wr.WebhookID),
+				datastar.WithModePrepend(),
+			); err != nil {
+				h.logger.Printf("error patching sidebar request row: %s", err)
 				return
 			}
-			flusher.Flush()
+			if err := sse.PatchElements(mainHTML,
+				datastar.WithSelectorID("request-log-list-"+wr.WebhookID),
+				datastar.WithModePrepend(),
+			); err != nil {
+				h.logger.Printf("error patching main request row: %s", err)
+				return
+			}
+
+			counterHTML, err := utils.RenderPartialToString("request-counter", map[string]interface{}{
+				"WebhookID": wr.WebhookID,
+				"Count":     count,
+			})
+			if err != nil {
+				h.logger.Printf("error rendering request counter: %s", err)
+				continue
+			}
+			if err := sse.PatchElements(counterHTML); err != nil {
+				h.logger.Printf("error patching request counter: %s", err)
+				return
+			}
 		case <-r.Context().Done():
 			mu.Lock()
 			subs := webhookStreams[webhookID]

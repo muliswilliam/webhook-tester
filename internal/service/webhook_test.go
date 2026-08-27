@@ -140,6 +140,14 @@ func (f *fakeWebhookRepo) CleanPublic(d time.Duration) error {
 	return f.cleanPublicErr
 }
 
+func (f *fakeWebhookRepo) CountRequests(webhookID string) (int64, error) {
+	w, ok := f.webhooks[webhookID]
+	if !ok {
+		return 0, nil
+	}
+	return int64(len(w.Requests)), nil
+}
+
 func TestWebhookService_CreateWebhook(t *testing.T) {
 	repo := newFakeWebhookRepo()
 	svc := NewWebhookService(repo)
