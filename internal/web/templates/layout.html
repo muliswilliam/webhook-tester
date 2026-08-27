@@ -219,9 +219,9 @@
               <div
                 style="display: none"
                 data-show="$cardOpen_{{ sig .ID }} && !$railCollapsed"
-                data-init="@get('/webhook-stream/{{ .ID }}{{ if eq .ID $activeID }}
+                data-init="@get('/webhook-stream/{{ .ID }}{{- if eq .ID $activeID -}}
                   ?active=1
-                {{ end }}')"
+                {{- end }}')"
                 class="mt-2 space-y-1 border-t pt-2"
                 id="request-log-{{ .ID }}"
               >

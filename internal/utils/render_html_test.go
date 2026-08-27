@@ -3,12 +3,14 @@ package utils
 import (
 	"html/template"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"webhook-tester/internal/models"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestWebhook() models.Webhook {
@@ -67,6 +69,63 @@ func TestRenderHtmlHomeHappyPath(t *testing.T) {
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "My webhook")
+}
+
+// The sidebar's data-init="@get('/webhook-stream/{id}?active=1')" call is a
+// single-quoted JS string literal that Datastar compiles via new Function(...).
+// Go's html/template does not trim whitespace around actions by default, so a
+// template edit that reformats the {{ if }}/{{ end }} onto their own lines
+// (e.g. an automated formatter re-wrapping a long attribute) can leak a raw
+// newline into that literal. That's a SyntaxError in JS, so the whole @get()
+// call throws before it runs - the active webhook's SSE connection silently
+// never opens. Assert the rendered literal has no embedded whitespace for
+// both the active and an inactive webhook.
+func TestRenderHtmlHomeWebhookStreamDataInitHasNoEmbeddedWhitespace(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+
+	active := newTestWebhook()
+	inactive := models.Webhook{ID: "wh-2"}
+
+	data := struct {
+		CSRFField       template.HTML
+		User            models.User
+		Webhooks        []models.Webhook
+		Webhook         models.Webhook
+		ResponseHeaders string
+		RequestsCount   uint
+		Domain          string
+		Year            int
+	}{
+		CSRFField: template.HTML(`<input type="hidden">`),
+		Webhooks:  []models.Webhook{active, inactive},
+		Webhook:   active,
+		Domain:    "example.com",
+	}
+
+	RenderHtml(w, r, "home", data)
+	body := w.Body.String()
+
+	activeLiteral := jsStringLiteralAfter(t, body, "@get('", 0)
+	assert.Equal(t, "/webhook-stream/"+active.ID+"?active=1", activeLiteral)
+
+	inactiveLiteral := jsStringLiteralAfter(t, body, "@get('", strings.Index(body, activeLiteral))
+	assert.Equal(t, "/webhook-stream/"+inactive.ID, inactiveLiteral)
+}
+
+// jsStringLiteralAfter returns the contents of the next '...' literal
+// following an occurrence of marker at or after fromIndex in body.
+func jsStringLiteralAfter(t *testing.T, body, marker string, fromIndex int) string {
+	t.Helper()
+	rel := strings.Index(body[fromIndex:], marker)
+	require.NotEqual(t, -1, rel, "marker %q not found after index %d in:\n%s", marker, fromIndex, body)
+	start := fromIndex + rel + len(marker)
+	end := strings.Index(body[start:], "')")
+	require.NotEqual(t, -1, end, "unterminated string literal after %q in:\n%s", marker, body)
+	literal := body[start : start+end]
+	assert.NotContains(t, literal, "\n", "JS string literal must not contain a raw newline")
+	assert.NotContains(t, literal, "\r", "JS string literal must not contain a raw carriage return")
+	return literal
 }
 
 func TestRenderHtmlRequestHappyPath(t *testing.T) {
