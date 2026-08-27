@@ -441,6 +441,24 @@
   }
 }
 
+/* Datastar's data-show toggles the inline display property directly with no
+   transition hook of its own, so the fade in/out is driven entirely by CSS:
+   allow-discrete lets display join the transition and @starting-style supplies
+   the pre-paint opacity for the entrance. */
+[data-show] {
+  transition:
+    opacity 150ms ease,
+    display 150ms allow-discrete;
+}
+[data-show][style*="display: none"] {
+  opacity: 0;
+}
+@starting-style {
+  [data-show] {
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

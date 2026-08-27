@@ -9,7 +9,7 @@
     data-signals="{showModal: false, sidebarOpen: false, desktop: window.matchMedia('(min-width: 768px)').matches, sidebarCollapsed: (localStorage.getItem('webhook-tester-sidebar-collapsed') ?? el.dataset.sidebarCollapsedDefault.trim()) === '1'}"
     data-computed:rail-collapsed="$sidebarCollapsed && $desktop"
     data-init="window.matchMedia('(min-width: 768px)').addEventListener('change', event => { $desktop = event.matches; if ($desktop) $sidebarOpen = false })"
-    data-on:keydown__window="if (evt.key === 'Escape' && $sidebarOpen) { $sidebarOpen = false; setTimeout(() => $sidebarTrigger.focus()) }"
+    data-on:keydown__window="if (evt.key === 'Escape' && $sidebarOpen) { $sidebarOpen = false; requestAnimationFrame(() => $sidebarTrigger.focus()) }"
   >
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <header
@@ -21,7 +21,7 @@
         <button
           data-ref:sidebar-trigger
           class="icon-btn md:hidden"
-          data-on:click="$sidebarOpen = true; setTimeout(() => $sidebarCloseBtn.focus())"
+          data-on:click="$sidebarOpen = true; requestAnimationFrame(() => $sidebarCloseBtn.focus())"
           aria-label="Open webhook navigation"
           data-attr:aria-expanded="$sidebarOpen.toString()"
         >
@@ -94,7 +94,7 @@
           <button
             data-ref:sidebar-close-btn
             class="icon-btn"
-            data-on:click="$sidebarOpen = false; setTimeout(() => $sidebarTrigger.focus())"
+            data-on:click="$sidebarOpen = false; requestAnimationFrame(() => $sidebarTrigger.focus())"
             aria-label="Close webhook navigation"
           >
             <svg
@@ -373,43 +373,7 @@
                   Add header
                 </button>
               </div>
-              <div class="header-rows space-y-2">
-                {{ range $key, $val := .Webhook.ResponseHeaders }}
-                  <div class="header-row flex gap-2">
-                    <input
-                      type="text"
-                      class="field"
-                      placeholder="Header name"
-                      value="{{ $key }}"
-                      aria-label="Header name"
-                    />
-                    <input
-                      type="text"
-                      class="field"
-                      placeholder="Header value"
-                      value="{{ $val }}"
-                      aria-label="Header value"
-                    />
-                    <button
-                      type="button"
-                      onclick="removeHeaderRow(this)"
-                      class="icon-btn shrink-0"
-                      aria-label="Remove header"
-                    >
-                      <svg
-                        class="h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        aria-hidden="true"
-                      >
-                        <path d="M5 12h14" />
-                      </svg>
-                    </button>
-                  </div>
-                {{ end }}
-              </div>
+              <div class="header-rows space-y-2"></div>
               <template id="header-row-template">
                 <div class="header-row flex gap-2">
                   <input

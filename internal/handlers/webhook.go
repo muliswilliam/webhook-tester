@@ -212,8 +212,36 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
 
-var webhookStreams = make(map[string][]chan models.WebhookRequest)
+// webhookEvent carries a captured request together with the request count
+// computed atomically at insert time, so every SSE subscriber for a webhook
+// sees the same count without re-querying the DB itself.
+type webhookEvent struct {
+	Request models.WebhookRequest
+	Count   int64
+}
+
+var webhookStreams = make(map[string][]chan webhookEvent)
 var mu sync.Mutex
+
+// requestMus holds one mutex per webhook ID, so the CreateRequest+CountRequests
+// atomicity below only serializes requests to the *same* webhook instead of
+// forcing every webhook in the app through a single global lock around two DB
+// round-trips.
+var (
+	requestMus   = make(map[string]*sync.Mutex)
+	requestMusMu sync.Mutex
+)
+
+func requestMuFor(webhookID string) *sync.Mutex {
+	requestMusMu.Lock()
+	defer requestMusMu.Unlock()
+	m, ok := requestMus[webhookID]
+	if !ok {
+		m = &sync.Mutex{}
+		requestMus[webhookID] = m
+	}
+	return m
+}
 
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := strings.TrimPrefix(r.URL.Path, "/webhooks/")
@@ -260,11 +288,23 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		ReceivedAt: time.Now().UTC(),
 	}
 
+	// CreateRequest and CountRequests must run as one atomic unit per webhook:
+	// otherwise two requests arriving for the same brand-new webhook can both
+	// observe a count > 1, and the "first request" placeholder-removal check
+	// in StreamWebhookEvents never fires for either of them.
+	whMu := requestMuFor(webhookID)
+	whMu.Lock()
 	err = h.webhookSvc.CreateRequest(&wr)
 	if err != nil {
+		whMu.Unlock()
 		h.logger.Printf("error creating webhook request: %s", err)
 		utils.RenderJSON(w, http.StatusInternalServerError, nil)
 		return
+	}
+	count, countErr := h.webhookSvc.CountRequests(webhookID)
+	whMu.Unlock()
+	if countErr != nil {
+		h.logger.Printf("error counting webhook requests: %s", countErr)
 	}
 	h.metrics.IncWebhookRequest(webhookID)
 
@@ -273,14 +313,19 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		time.Sleep(time.Duration(webhook.ResponseDelay) * time.Millisecond)
 	}
 
-	mu.Lock()
-	for _, ch := range webhookStreams[webhookID] {
-		select {
-		case ch <- wr:
-		default: // drop if blocked
+	// Skip the live update entirely on a count error rather than broadcasting
+	// a wrong "0 captured requests" counter to every connected client.
+	if countErr == nil {
+		event := webhookEvent{Request: wr, Count: count}
+		mu.Lock()
+		for _, ch := range webhookStreams[webhookID] {
+			select {
+			case ch <- event:
+			default: // drop if blocked
+			}
 		}
+		mu.Unlock()
 	}
-	mu.Unlock()
 
 	// Set custom response headers if defined
 	if webhook.ResponseHeaders != nil {
@@ -313,21 +358,35 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 	// can safely be reused for every row patched over this SSE connection.
 	csrfField := csrf.TemplateField(r)
 
-	// Create a channel for this client
-	eventChan := make(chan models.WebhookRequest)
+	// Create a buffered channel for this client: a burst of requests would
+	// otherwise drop live updates as soon as one consumer iteration (DB
+	// count + template renders + SSE writes) fell behind an unbuffered send.
+	eventChan := make(chan webhookEvent, 32)
 	mu.Lock()
 	webhookStreams[webhookID] = append(webhookStreams[webhookID], eventChan)
 	mu.Unlock()
+
+	// Deregister on every exit path (render/patch errors included), not just
+	// the ctx.Done() path, so a broken connection doesn't leak this channel
+	// in webhookStreams forever.
+	defer func() {
+		mu.Lock()
+		subs := webhookStreams[webhookID]
+		for i, sub := range subs {
+			if sub == eventChan {
+				webhookStreams[webhookID] = append(subs[:i], subs[i+1:]...)
+				break
+			}
+		}
+		mu.Unlock()
+	}()
 
 	sse := datastar.NewSSE(w, r)
 
 	for {
 		select {
-		case wr := <-eventChan:
-			count, err := h.webhookSvc.CountRequests(wr.WebhookID)
-			if err != nil {
-				h.logger.Printf("error counting webhook requests: %s", err)
-			}
+		case evt := <-eventChan:
+			wr, count := evt.Request, evt.Count
 
 			sidebarHTML, err := utils.RenderPartialToString("sidebar-request-row", wr)
 			if err != nil {
@@ -384,15 +443,6 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 				return
 			}
 		case <-r.Context().Done():
-			mu.Lock()
-			subs := webhookStreams[webhookID]
-			for i, sub := range subs {
-				if sub == eventChan {
-					webhookStreams[webhookID] = append(subs[:i], subs[i+1:]...)
-					break
-				}
-			}
-			mu.Unlock()
 			return
 		}
 	}

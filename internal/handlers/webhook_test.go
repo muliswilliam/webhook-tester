@@ -441,7 +441,7 @@ func TestWebhookHandler_HandleWebhookRequest_BroadcastsToStream(t *testing.T) {
 	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
 	whRepo.put(&models.Webhook{ID: "wh-stream", ResponseCode: http.StatusOK})
 
-	ch := make(chan models.WebhookRequest, 1)
+	ch := make(chan webhookEvent, 1)
 	mu.Lock()
 	webhookStreams["wh-stream"] = append(webhookStreams["wh-stream"], ch)
 	mu.Unlock()
@@ -457,7 +457,7 @@ func TestWebhookHandler_HandleWebhookRequest_BroadcastsToStream(t *testing.T) {
 
 	select {
 	case msg := <-ch:
-		assert.Equal(t, "wh-stream", msg.WebhookID)
+		assert.Equal(t, "wh-stream", msg.Request.WebhookID)
 	case <-time.After(time.Second):
 		t.Fatal("expected a message to be broadcast to the stream channel")
 	}
@@ -530,7 +530,7 @@ func TestWebhookHandler_StreamWebhookEvents_MessageReceived(t *testing.T) {
 	mu.Lock()
 	ch := webhookStreams["stream1"][0]
 	mu.Unlock()
-	ch <- models.WebhookRequest{ID: "req-hello-event", WebhookID: "stream1", Method: "GET"}
+	ch <- webhookEvent{Request: models.WebhookRequest{ID: "req-hello-event", WebhookID: "stream1", Method: "GET"}, Count: 1}
 
 	require.Eventually(t, func() bool {
 		return rec.bodyContains("req-hello-event")
@@ -583,7 +583,7 @@ func TestWebhookHandler_StreamWebhookEvents_WriteError(t *testing.T) {
 	mu.Lock()
 	ch := webhookStreams["stream3"][0]
 	mu.Unlock()
-	ch <- models.WebhookRequest{ID: "req-hello", WebhookID: "stream3", Method: "GET"}
+	ch <- webhookEvent{Request: models.WebhookRequest{ID: "req-hello", WebhookID: "stream3", Method: "GET"}, Count: 1}
 
 	select {
 	case <-done:

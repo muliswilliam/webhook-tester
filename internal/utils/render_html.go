@@ -71,7 +71,7 @@ func RenderHtmlWithoutLayout(w http.ResponseWriter, r *http.Request, tmplName st
 }
 
 // RenderPartialToString renders a single named template (defined in request_row.html)
-// to a string, for use outside a full-page response — e.g. an SSE-pushed DOM patch.
+// to a string, for use outside a full-page response - e.g. an SSE-pushed DOM patch.
 func RenderPartialToString(tmplName string, data interface{}) (string, error) {
 	tmpl, err := template.New("request_row.html").Funcs(funcMap).ParseFS(templates.Templates, "request_row.html")
 	if err != nil {
