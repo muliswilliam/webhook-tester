@@ -625,3 +625,48 @@ func TestWebhookHandler_StreamWebhookEvents_ClientDisconnect(t *testing.T) {
 	defer mu.Unlock()
 	assert.Len(t, webhookStreams["stream2"], 0)
 }
+
+func TestWebhookHandler_StreamWebhookEvents_PlaceholderRemovedDespiteCountErr(t *testing.T) {
+	h, _, _, _, _, _ := newTestWebhookHandler(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	router := chi.NewRouter()
+	router.Get("/webhook-stream/{id}", h.StreamWebhookEvents)
+
+	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/stream4", nil).WithContext(ctx)
+	rec := newFlushableRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(webhookStreams["stream4"]) == 1
+	}, time.Second, 5*time.Millisecond)
+
+	mu.Lock()
+	ch := webhookStreams["stream4"][0]
+	mu.Unlock()
+
+	// Simulate a CountRequests failure on the webhook's very first request:
+	// the count is unknown, but the waiting/empty placeholders must still be
+	// removed since this is the connection's first event.
+	ch <- webhookEvent{Request: models.WebhookRequest{ID: "req-first", WebhookID: "stream4", Method: "GET"}, CountErr: true}
+
+	require.Eventually(t, func() bool {
+		return rec.bodyContains("request-log-waiting-stream4") && rec.bodyContains("request-log-empty-stream4")
+	}, time.Second, 5*time.Millisecond)
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not return after context cancellation")
+	}
+}

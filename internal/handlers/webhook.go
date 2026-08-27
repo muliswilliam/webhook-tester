@@ -403,6 +403,13 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 
 	sse := datastar.NewSSE(w, r)
 
+	// The "waiting"/"empty" placeholders only exist in the DOM until this
+	// connection's first event, regardless of what count that event reports:
+	// gating on count == 1 instead would permanently skip the removal for
+	// this connection if the count query happened to fail on the webhook's
+	// actual first request.
+	placeholdersCleared := false
+
 	for {
 		select {
 		case evt := <-eventChan:
@@ -426,10 +433,7 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 				continue
 			}
 
-			// The "waiting"/"empty" placeholders only exist in the DOM for a
-			// webhook's very first request; skip the (otherwise harmless but
-			// noisy) no-target patch for every later one.
-			if !evt.CountErr && count == 1 {
+			if !placeholdersCleared {
 				if err := sse.RemoveElementByID("request-log-waiting-" + wr.WebhookID); err != nil {
 					h.logger.Printf("error removing waiting placeholder: %s", err)
 					return
@@ -438,6 +442,7 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 					h.logger.Printf("error removing empty placeholder: %s", err)
 					return
 				}
+				placeholdersCleared = true
 			}
 			if err := sse.PatchElements(sidebarHTML,
 				datastar.WithSelectorID("request-log-"+wr.WebhookID),
