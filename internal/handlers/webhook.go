@@ -379,6 +379,14 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 
+	// Every sidebar card opens its own connection regardless of which webhook
+	// is currently shown in the main panel, but the main-row/counter markup
+	// this handler patches only exists in the DOM for that one active webhook.
+	// The template sets this query param at connect time (a full page load,
+	// since navigating to a different webhook is a plain link, not an SPA
+	// route change), so it stays correct for the connection's lifetime.
+	isActive := r.URL.Query().Get("active") == "1"
+
 	// Create a buffered channel for this client: a burst of requests would
 	// otherwise drop live updates as soon as one consumer iteration (DB
 	// count + template renders + SSE writes) fell behind an unbuffered send.
@@ -426,6 +434,37 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 				continue
 			}
 
+			if !placeholdersCleared {
+				if err := sse.RemoveElementByID("request-log-waiting-" + wr.WebhookID); err != nil {
+					h.logger.Printf("error removing waiting placeholder: %s", err)
+					return
+				}
+				// The empty-state placeholder only exists in the DOM for the
+				// webhook currently shown in the main panel.
+				if isActive {
+					if err := sse.RemoveElementByID("request-log-empty-" + wr.WebhookID); err != nil {
+						h.logger.Printf("error removing empty placeholder: %s", err)
+						return
+					}
+				}
+				placeholdersCleared = true
+			}
+			if err := sse.PatchElements(sidebarHTML,
+				datastar.WithSelectorID("request-log-"+wr.WebhookID),
+				datastar.WithModePrepend(),
+			); err != nil {
+				h.logger.Printf("error patching sidebar request row: %s", err)
+				return
+			}
+
+			// The main-panel row list and counter only exist in the DOM for
+			// the webhook currently shown in the main panel; every other
+			// sidebar card's connection has nothing further to do with this
+			// event.
+			if !isActive {
+				continue
+			}
+
 			// Recomputed per-event rather than once per connection: gorilla/csrf's
 			// session cookie (which masked tokens validate against) has a default
 			// MaxAge of 12 hours, while this UI advertises anonymous workspaces
@@ -437,29 +476,11 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 			mainHTML, err := utils.RenderPartialToString("main-request-row", map[string]interface{}{
 				"Request":   wr,
 				"CSRFField": csrfField,
+				"IsNew":     true,
 			})
 			if err != nil {
 				h.logger.Printf("error rendering main request row: %s", err)
 				continue
-			}
-
-			if !placeholdersCleared {
-				if err := sse.RemoveElementByID("request-log-waiting-" + wr.WebhookID); err != nil {
-					h.logger.Printf("error removing waiting placeholder: %s", err)
-					return
-				}
-				if err := sse.RemoveElementByID("request-log-empty-" + wr.WebhookID); err != nil {
-					h.logger.Printf("error removing empty placeholder: %s", err)
-					return
-				}
-				placeholdersCleared = true
-			}
-			if err := sse.PatchElements(sidebarHTML,
-				datastar.WithSelectorID("request-log-"+wr.WebhookID),
-				datastar.WithModePrepend(),
-			); err != nil {
-				h.logger.Printf("error patching sidebar request row: %s", err)
-				return
 			}
 			if err := sse.PatchElements(mainHTML,
 				datastar.WithSelectorID("request-log-list-"+wr.WebhookID),

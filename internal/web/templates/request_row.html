@@ -29,6 +29,7 @@
         <span class="hidden text-xs text-muted sm:block">
           {{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
         </span>
+        {{ if .IsNew }}<span class="new-badge">New</span>{{ end }}
         <svg
           class="h-4 w-4 text-muted transition-transform"
           data-class="{'rotate-180': $open_{{ sig .Request.ID }}}"

@@ -23,6 +23,7 @@ type fakeWebhookRepo struct {
 	deleteErr          error
 	getWithRequestsErr error
 	cleanPublicErr     error
+	countRequestsErr   error
 
 	getAllCalled        bool
 	getAllByUserCalled  bool
@@ -141,6 +142,9 @@ func (f *fakeWebhookRepo) CleanPublic(d time.Duration) error {
 }
 
 func (f *fakeWebhookRepo) CountRequests(webhookID string) (int64, error) {
+	if f.countRequestsErr != nil {
+		return 0, f.countRequestsErr
+	}
 	w, ok := f.webhooks[webhookID]
 	if !ok {
 		return 0, nil
@@ -284,6 +288,23 @@ func TestWebhookService_GetWebhookWithRequests(t *testing.T) {
 
 	_, err = svc.GetWebhookWithRequests("missing")
 	assert.Error(t, err)
+}
+
+func TestWebhookService_CountRequests(t *testing.T) {
+	repo := newFakeWebhookRepo()
+	svc := NewWebhookService(repo)
+	repo.webhooks["abc"] = &models.Webhook{
+		ID:       "abc",
+		Requests: []models.WebhookRequest{{ID: "r1"}, {ID: "r2"}},
+	}
+
+	count, err := svc.CountRequests("abc")
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+
+	repo.countRequestsErr = assert.AnError
+	_, err = svc.CountRequests("abc")
+	assert.ErrorIs(t, err, assert.AnError)
 }
 
 func TestWebhookService_CleanPublicWebhooks(t *testing.T) {

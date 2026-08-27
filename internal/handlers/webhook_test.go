@@ -626,6 +626,96 @@ func TestWebhookHandler_StreamWebhookEvents_ClientDisconnect(t *testing.T) {
 	assert.Len(t, webhookStreams["stream2"], 0)
 }
 
+func TestWebhookHandler_StreamWebhookEvents_NonActiveSkipsMainPanel(t *testing.T) {
+	h, _, _, _, _, _ := newTestWebhookHandler(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	router := chi.NewRouter()
+	router.Get("/webhook-stream/{id}", h.StreamWebhookEvents)
+
+	// No ?active=1: this simulates a sidebar card for a webhook other than
+	// the one currently shown in the main panel.
+	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/stream5", nil).WithContext(ctx)
+	rec := newFlushableRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(webhookStreams["stream5"]) == 1
+	}, time.Second, 5*time.Millisecond)
+
+	mu.Lock()
+	ch := webhookStreams["stream5"][0]
+	mu.Unlock()
+	ch <- webhookEvent{Request: models.WebhookRequest{ID: "req-non-active", WebhookID: "stream5", Method: "GET"}, Count: 1}
+
+	// The sidebar row (always relevant) should still land.
+	require.Eventually(t, func() bool {
+		return rec.bodyContains("req-non-active")
+	}, time.Second, 5*time.Millisecond)
+
+	// The main-panel row/counter (only relevant for the active webhook)
+	// must not be rendered for this connection.
+	assert.False(t, rec.bodyContains("Replay request"))
+	assert.False(t, rec.bodyContains("request-log-list-stream5"))
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not return after context cancellation")
+	}
+}
+
+func TestWebhookHandler_StreamWebhookEvents_ActivePatchesMainPanel(t *testing.T) {
+	h, _, _, _, _, _ := newTestWebhookHandler(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	router := chi.NewRouter()
+	router.Get("/webhook-stream/{id}", h.StreamWebhookEvents)
+
+	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/stream6?active=1", nil).WithContext(ctx)
+	rec := newFlushableRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		router.ServeHTTP(rec, req)
+		close(done)
+	}()
+
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(webhookStreams["stream6"]) == 1
+	}, time.Second, 5*time.Millisecond)
+
+	mu.Lock()
+	ch := webhookStreams["stream6"][0]
+	mu.Unlock()
+	ch <- webhookEvent{Request: models.WebhookRequest{ID: "req-active", WebhookID: "stream6", Method: "GET"}, Count: 1}
+
+	require.Eventually(t, func() bool {
+		return rec.bodyContains("Replay request") && rec.bodyContains("new-badge")
+	}, time.Second, 5*time.Millisecond)
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not return after context cancellation")
+	}
+}
+
 func TestWebhookHandler_StreamWebhookEvents_PlaceholderRemovedDespiteCountErr(t *testing.T) {
 	h, _, _, _, _, _ := newTestWebhookHandler(t)
 
@@ -635,7 +725,7 @@ func TestWebhookHandler_StreamWebhookEvents_PlaceholderRemovedDespiteCountErr(t 
 	router := chi.NewRouter()
 	router.Get("/webhook-stream/{id}", h.StreamWebhookEvents)
 
-	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/stream4", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/stream4?active=1", nil).WithContext(ctx)
 	rec := newFlushableRecorder()
 
 	done := make(chan struct{})
