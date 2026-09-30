@@ -9,8 +9,8 @@ type WebhookRequestRepository interface {
 	GetByID(id string) (*models.WebhookRequest, error)
 	// ListByWebhook returns all requests for a given webhook
 	ListByWebhook(webhookID string) ([]models.WebhookRequest, error)
-	// DeleteByID removes one request
+	// DeleteByID removes one request and its deliveries
 	DeleteByID(id string) error
-	// DeleteByWebhook removes all requests for a webhook
+	// DeleteByWebhook removes all requests for a webhook and their deliveries
 	DeleteByWebhook(webhookID string) error
 }

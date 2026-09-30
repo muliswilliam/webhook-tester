@@ -12,7 +12,7 @@ import (
 )
 
 // TestAutoMigrate verifies that AutoMigrate creates working tables for all
-// three models, and that it is safe to call more than once (idempotent).
+// models, and that it is safe to call more than once (idempotent).
 //
 // Note: Connect() is intentionally NOT tested here - it requires a live
 // Postgres connection and calls log.Fatal when required env vars are
@@ -25,6 +25,7 @@ func TestAutoMigrate(t *testing.T) {
 
 	require.True(t, gdb.Migrator().HasTable(&models.Webhook{}))
 	require.True(t, gdb.Migrator().HasTable(&models.WebhookRequest{}))
+	require.True(t, gdb.Migrator().HasTable(&models.Delivery{}))
 	require.True(t, gdb.Migrator().HasTable(&models.User{}))
 
 	// Webhook CRUD works against the migrated schema.
@@ -40,6 +41,13 @@ func TestAutoMigrate(t *testing.T) {
 	var gotReq models.WebhookRequest
 	require.NoError(t, gdb.First(&gotReq, "id = ?", "req-1").Error)
 	assert.Equal(t, "wh-1", gotReq.WebhookID)
+
+	// Delivery CRUD works against the migrated schema.
+	del := &models.Delivery{ID: "del-1", RequestID: "req-1", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto}
+	require.NoError(t, gdb.Create(del).Error)
+	var gotDel models.Delivery
+	require.NoError(t, gdb.First(&gotDel, "id = ?", "del-1").Error)
+	assert.Equal(t, "req-1", gotDel.RequestID)
 
 	// User CRUD works against the migrated schema.
 	u := &models.User{Email: "jane@example.com"}

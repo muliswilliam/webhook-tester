@@ -21,7 +21,7 @@ type WebhookRepository interface {
 	Update(webhook *models.Webhook) error
 	// InsertRequest Inserts request for a webhook
 	InsertRequest(wr *models.WebhookRequest) error
-	// Delete a webhook and its requests, ensuring ownership if userID > 0
+	// Delete a webhook with its requests and deliveries, ensuring ownership if userID > 0
 	Delete(id string, userID uint) error
 	// GetWithRequests Get a webhook with its requests, ordered newest first
 	GetWithRequests(id string) (*models.Webhook, error)
