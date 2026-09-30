@@ -164,6 +164,17 @@ func (f *testWebhookRepo) GetWithRequests(id string) (*models.Webhook, error) {
 	return w, nil
 }
 
+func (f *testWebhookRepo) AssignOwner(id string, userID uint) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w, ok := f.webhooks[id]
+	if !ok || w.UserID != 0 {
+		return gorm.ErrRecordNotFound
+	}
+	w.UserID = int(userID)
+	return nil
+}
+
 func (f *testWebhookRepo) CleanPublic(_ time.Duration) ([]string, error) {
 	return nil, f.cleanPublicErr
 }

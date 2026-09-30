@@ -35,6 +35,26 @@ func (s *WebhookService) GetUserWebhook(id string, userID uint) (*models.Webhook
 	return s.repo.GetByUser(id, userID)
 }
 
+// GetUserWebhookWithRequests retrieves a webhook userID owns, with its
+// requests loaded newest first; gorm.ErrRecordNotFound otherwise.
+func (s *WebhookService) GetUserWebhookWithRequests(id string, userID uint) (*models.Webhook, error) {
+	wh, err := s.repo.GetWithRequests(id)
+	if err != nil {
+		return nil, err
+	}
+	if uint(wh.UserID) != userID {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return wh, nil
+}
+
+// ClaimGuestWebhook moves a guest's public webhook, with its requests, into
+// userID's account. It returns gorm.ErrRecordNotFound if id isn't a public
+// webhook (e.g. it expired, or was already claimed).
+func (s *WebhookService) ClaimGuestWebhook(id string, userID uint) error {
+	return s.repo.AssignOwner(id, userID)
+}
+
 // GetAccessibleWebhook retrieves a webhook that userID may view: any public
 // webhook, or one userID owns. Otherwise it returns gorm.ErrRecordNotFound,
 // so callers can't tell an inaccessible webhook from a missing one.
@@ -115,11 +135,6 @@ func (s *WebhookService) DeleteWebhook(id string, userID uint) error {
 	}
 	s.broker.closeWebhook(id)
 	return nil
-}
-
-// GetWebhookWithRequests fetches a webhook along with its requests.
-func (s *WebhookService) GetWebhookWithRequests(id string) (*models.Webhook, error) {
-	return s.repo.GetWithRequests(id)
 }
 
 // CountRequests returns the number of requests captured for a webhook.

@@ -2,8 +2,7 @@ package handlers
 
 import (
 	"net/http"
-	"time"
-	"webhook-tester/internal/utils"
+	"webhook-tester/internal/web/view"
 )
 
 type LegalHandler struct{}
@@ -13,19 +12,9 @@ func NewLegalHandler() *LegalHandler {
 }
 
 func (h *LegalHandler) PrivacyPolicy(w http.ResponseWriter, r *http.Request) {
-	data := struct {
-		Year int
-	}{
-		Year: time.Now().Year(),
-	}
-	utils.RenderHtmlWithoutLayout(w, r, "policy", data)
+	view.RenderHTMLWithoutLayout(w, r, "policy", nil)
 }
 
 func (h *LegalHandler) TermsAndConditions(w http.ResponseWriter, r *http.Request) {
-	data := struct {
-		Year int
-	}{
-		Year: time.Now().Year(),
-	}
-	utils.RenderHtmlWithoutLayout(w, r, "terms", data)
+	view.RenderHTMLWithoutLayout(w, r, "terms", nil)
 }

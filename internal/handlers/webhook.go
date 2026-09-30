@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
+	"webhook-tester/internal/web/view"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
@@ -53,66 +55,45 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = r.ParseForm()
-	if err != nil {
-		h.logger.Printf("error parsing form: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	wh := models.Webhook{ID: utils.GenerateID(), UserID: int(userID)}
+	if err := applyWebhookForm(r, &wh); err != nil {
+		utils.SetFlashError(w, "Couldn't create the endpoint: "+err.Error())
+		http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 		return
 	}
 
-	title := r.FormValue("title")
-	contentType := r.FormValue("content_type")
-	responseCode, _ := strconv.Atoi(r.FormValue("response_code"))
-	if responseCode == 0 {
-		responseCode = http.StatusOK
-	}
-	responseDelay, _ := strconv.Atoi(r.FormValue("response_delay")) // defaults to 0
-	payload := r.FormValue("payload")
-	notify := r.FormValue("notify_on_event") == "true"
-
-	headersStr := r.FormValue("response_headers")
-	var headers datatypes.JSONMap
-	if headersStr != "" {
-		err := json.Unmarshal([]byte(headersStr), &headers)
-		if err != nil {
-			log.Printf("error parsing json %s", err)
-		}
-	}
-
-	webhookID := utils.GenerateID()
-	wh := models.Webhook{
-		ID:              webhookID,
-		UserID:          int(userID),
-		Title:           title,
-		ContentType:     &contentType,
-		ResponseCode:    responseCode,
-		ResponseDelay:   uint(responseDelay),
-		Payload:         &payload,
-		ResponseHeaders: headers,
-		NotifyOnEvent:   notify,
-	}
-
-	err = h.webhookSvc.CreateWebhook(&wh)
-	if err != nil {
+	if err := h.webhookSvc.CreateWebhook(&wh); err != nil {
 		h.logger.Printf("Error creating webhook: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
 	h.metrics.IncWebhooksCreated()
 
-	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
+	http.Redirect(w, r, webhookPageURL(wh.ID), http.StatusSeeOther)
+}
+
+// managedWebhookID returns the {id} URL param of a request that manages a
+// webhook, along with the caller's user ID: 0 for a guest managing their own
+// public webhook. It answers 400 and returns ok=false when the ID is missing.
+func (h *WebhookHandler) managedWebhookID(w http.ResponseWriter, r *http.Request) (webhookID string, userID uint, ok bool) {
+	userID, _ = h.authSvc.Authorize(r) // 0 for guests
+	webhookID = chi.URLParam(r, "id")
+	if webhookID == "" {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return "", 0, false
+	}
+	return webhookID, userID, true
+}
+
+// webhookPageURL is the workspace page showing the webhook.
+func webhookPageURL(webhookID string) string {
+	return "/?address=" + url.QueryEscape(webhookID)
 }
 
 func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.authSvc.Authorize(r)
-	if err != nil {
-		userID = 0 // anonymous/guest managing one of their own public webhooks
-	}
-
-	webhookID := chi.URLParam(r, "id")
-	if webhookID == "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+	webhookID, userID, ok := h.managedWebhookID(w, r)
+	if !ok {
 		return
 	}
 
@@ -127,18 +108,13 @@ func (h *WebhookHandler) DeleteRequests(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
+	utils.SetFlashSuccess(w, "All requests cleared.")
+	http.Redirect(w, r, webhookPageURL(webhookID), http.StatusSeeOther)
 }
 
 func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.authSvc.Authorize(r)
-	if err != nil {
-		userID = 0 // anonymous/guest managing one of their own public webhooks
-	}
-
-	webhookID := chi.URLParam(r, "id")
-	if webhookID == "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+	webhookID, userID, ok := h.managedWebhookID(w, r)
+	if !ok {
 		return
 	}
 
@@ -148,46 +124,16 @@ func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	utils.SetFlashSuccess(w, "Endpoint deleted.")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
-	userID, err := h.authSvc.Authorize(r)
-	if err != nil {
-		userID = 0 // anonymous/guest managing one of their own public webhooks
-	}
-
-	webhookID := chi.URLParam(r, "id")
-	if webhookID == "" {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+	webhookID, userID, ok := h.managedWebhookID(w, r)
+	if !ok {
 		return
 	}
 
-	err = r.ParseForm()
-	if err != nil {
-		h.logger.Printf("error parsing form: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	title := r.FormValue("title")
-	contentType := r.FormValue("content_type")
-	responseCode, _ := strconv.Atoi(r.FormValue("response_code"))
-	if responseCode == 0 {
-		responseCode = http.StatusOK
-	}
-	responseDelay, _ := strconv.Atoi(r.FormValue("response_delay")) // defaults to 0
-	payload := r.FormValue("payload")
-	notify := r.FormValue("notify_on_event") == "true"
-
-	headersStr := r.FormValue("response_headers")
-	var headers datatypes.JSONMap
-	if headersStr != "" {
-		err := json.Unmarshal([]byte(headersStr), &headers)
-		if err != nil {
-			log.Printf("error parsing json %s", err)
-		}
-	}
 	wh, err := h.webhookSvc.GetUserWebhook(webhookID, userID)
 	if err != nil {
 		h.logger.Printf("Error getting webhook: %v", err)
@@ -195,32 +141,90 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wh.Title = title
-	wh.ContentType = &contentType
-	wh.ResponseCode = responseCode
-	wh.ResponseDelay = uint(responseDelay)
-	wh.NotifyOnEvent = notify
-	wh.Payload = &payload
-	wh.ResponseHeaders = headers
+	if err := applyWebhookForm(r, wh); err != nil {
+		utils.SetFlashError(w, "Changes not saved: "+err.Error())
+		http.Redirect(w, r, webhookPageURL(webhookID), http.StatusSeeOther)
+		return
+	}
 
-	err = h.webhookSvc.UpdateWebhook(wh)
-	if err != nil {
+	if err := h.webhookSvc.UpdateWebhook(wh); err != nil {
 		h.logger.Printf("Error updating webhook: %v", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
+	utils.SetFlashSuccess(w, "Response settings saved.")
+	http.Redirect(w, r, webhookPageURL(webhookID), http.StatusSeeOther)
 }
 
+// applyWebhookForm sets wh's title and response settings from the submitted
+// create/edit form. The result goes through the same Normalize and Validate
+// as the API; invalid input is rejected without modifying wh.
+func applyWebhookForm(r *http.Request, wh *models.Webhook) error {
+	if err := r.ParseForm(); err != nil {
+		return errors.New("the form couldn't be read")
+	}
+
+	next := *wh
+	next.Title = r.FormValue("title")
+	next.ResponseCode = 0 // Normalize applies the default when left blank
+	if v := r.FormValue("response_code"); v != "" {
+		code, err := strconv.Atoi(v)
+		if err != nil {
+			return errors.New("response code must be a number")
+		}
+		next.ResponseCode = code
+	}
+	next.ResponseDelay = 0
+	if v := r.FormValue("response_delay"); v != "" {
+		delay, err := strconv.ParseUint(v, 10, 32)
+		if err != nil {
+			return fmt.Errorf("response delay must be a whole number between 0 and %d ms", models.MaxResponseDelay)
+		}
+		next.ResponseDelay = uint(delay)
+	}
+	next.ResponseHeaders = nil
+	if v := r.FormValue("response_headers"); v != "" {
+		if err := json.Unmarshal([]byte(v), &next.ResponseHeaders); err != nil {
+			return errors.New("response headers must be a JSON object")
+		}
+	}
+	contentType := r.FormValue("content_type")
+	payload := r.FormValue("payload")
+	next.ContentType = &contentType
+	next.Payload = &payload
+	next.NotifyOnEvent = r.FormValue("notify_on_event") == "true"
+
+	next.Normalize()
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	*wh = next
+	return nil
+}
+
+// backURL is the same-site page the request came from, or "/".
+func backURL(r *http.Request) string {
+	ref, err := url.Parse(r.Referer())
+	if err != nil || ref.Host != r.Host || ref.Path == "" {
+		return "/"
+	}
+	return ref.RequestURI()
+}
+
+// HandleWebhookRequest captures a request sent to /webhooks/{id}, or to any
+// subpath of it, and answers with the webhook's configured response.
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
-	webhookID := strings.TrimPrefix(r.URL.Path, "/webhooks/")
-	h.logger.Printf("Handling webhook request for %s", webhookID)
+	webhookID := chi.URLParam(r, "id")
+	var path string
+	if sub := chi.URLParam(r, "*"); sub != "" || strings.HasSuffix(r.URL.Path, "/") {
+		path = "/" + sub
+	}
 	webhook, err := h.webhookSvc.GetWebhook(webhookID)
 
 	if err != nil {
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
-			w.WriteHeader(http.StatusNotFound)
+			http.Error(w, "webhook not found", http.StatusNotFound)
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
 		}
@@ -232,7 +236,7 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			log.Printf("error closing body: %s", err)
+			h.logger.Printf("error closing body: %s", err)
 		}
 	}(r.Body)
 
@@ -251,6 +255,7 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		ID:        utils.GenerateID(),
 		WebhookID: webhookID,
 		Method:    r.Method,
+		Path:      path,
 		Headers:   headers,
 		Query:     query,
 		Body:      string(body),
@@ -279,11 +284,17 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	if webhook.ContentType != nil {
 		w.Header().Set("Content-Type", *webhook.ContentType)
 	} else {
-		// Default to application json if content type is not specified
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", models.DefaultContentType)
 	}
 
-	w.WriteHeader(webhook.ResponseCode)
+	// Validation keeps bad codes out, but WriteHeader panics on one, so
+	// guard against rows saved before it existed.
+	code := webhook.ResponseCode
+	if models.ValidateResponseCode(code) != nil {
+		h.logger.Printf("webhook %s has invalid response code %d", webhookID, code)
+		code = http.StatusInternalServerError
+	}
+	w.WriteHeader(code)
 	if webhook.Payload != nil {
 		if _, err := w.Write([]byte(*webhook.Payload)); err != nil {
 			h.logger.Printf("error writing payload: %s", err)
@@ -434,7 +445,7 @@ func (s *requestStream) send(requests []models.WebhookRequest, count *int64) err
 }
 
 func (s *requestStream) patch(tmpl string, data any, opts ...datastar.PatchElementOption) error {
-	html, err := utils.RenderPartialToString(tmpl, data)
+	html, err := view.RenderRequestPartial(tmpl, data)
 	if err != nil {
 		return fmt.Errorf("rendering %s: %w", tmpl, err)
 	}

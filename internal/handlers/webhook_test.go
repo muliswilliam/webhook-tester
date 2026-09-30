@@ -19,6 +19,7 @@ import (
 
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
+	"webhook-tester/internal/utils"
 )
 
 func newTestWebhookHandler(t *testing.T) (*WebhookHandler, *testWebhookRepo, *testWebhookRequestRepo, *testUserRepo, *testMetricsRecorder, *service.AuthService) {
@@ -50,7 +51,7 @@ func TestWebhookHandler_Create_Unauthorized(t *testing.T) {
 }
 
 func TestWebhookHandler_Create_ParseFormError(t *testing.T) {
-	h, _, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
 	user := &models.User{Email: "a@b.com"}
 	userRepo.addUser(user)
 	cookie := sessionCookieFor(t, authSvc, user)
@@ -61,7 +62,9 @@ func TestWebhookHandler_Create_ParseFormError(t *testing.T) {
 
 	h.Create(rec, req)
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, utils.FlashError, flashFrom(t, rec).Kind)
+	assert.Empty(t, whRepo.webhooks)
 }
 
 func TestWebhookHandler_Create_Success(t *testing.T) {
@@ -95,17 +98,13 @@ func TestWebhookHandler_Create_Success(t *testing.T) {
 	}
 }
 
-func TestWebhookHandler_Create_DefaultResponseCode_InvalidHeaders(t *testing.T) {
+func TestWebhookHandler_Create_DefaultResponseCode(t *testing.T) {
 	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
 	user := &models.User{Email: "a@b.com"}
 	userRepo.addUser(user)
 	cookie := sessionCookieFor(t, authSvc, user)
 
-	form := url.Values{
-		"title":            {"hook2"},
-		"response_headers": {"not-json"},
-	}
-	req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader("title=hook2"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(cookie)
 	rec := httptest.NewRecorder()
@@ -116,6 +115,69 @@ func TestWebhookHandler_Create_DefaultResponseCode_InvalidHeaders(t *testing.T) 
 	require.Len(t, whRepo.webhooks, 1)
 	for _, w := range whRepo.webhooks {
 		assert.Equal(t, http.StatusOK, w.ResponseCode) // defaulted since response_code missing
+	}
+}
+
+func TestWebhookHandler_Create_RejectsInvalidInput(t *testing.T) {
+	cases := map[string]url.Values{
+		"missing title":       {"title": {" "}},
+		"code too high":       {"title": {"t"}, "response_code": {"1000"}},
+		"code too low":        {"title": {"t"}, "response_code": {"99"}},
+		"code not a number":   {"title": {"t"}, "response_code": {"abc"}},
+		"negative delay":      {"title": {"t"}, "response_delay": {"-5"}},
+		"delay too long":      {"title": {"t"}, "response_delay": {"30001"}},
+		"headers not JSON":    {"title": {"t"}, "response_headers": {"not-json"}},
+		"bad header name":     {"title": {"t"}, "response_headers": {`{"Bad Name":"1"}`}},
+		"non-string header":   {"title": {"t"}, "response_headers": {`{"X-A":1}`}},
+		"server-owned header": {"title": {"t"}, "response_headers": {`{"Content-Length":"1"}`}},
+	}
+	for name, form := range cases {
+		t.Run(name, func(t *testing.T) {
+			h, whRepo, _, userRepo, metricsRec, authSvc := newTestWebhookHandler(t)
+			user := &models.User{Email: "a@b.com"}
+			userRepo.addUser(user)
+
+			req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Referer", "http://example.com/?address=current")
+			req.Host = "example.com"
+			req.AddCookie(sessionCookieFor(t, authSvc, user))
+			rec := httptest.NewRecorder()
+
+			h.Create(rec, req)
+
+			require.Equal(t, http.StatusSeeOther, rec.Code)
+			assert.Equal(t, "/?address=current", rec.Header().Get("Location"), "back to the page the form was on")
+			flash := flashFrom(t, rec)
+			require.NotNil(t, flash)
+			assert.Equal(t, utils.FlashError, flash.Kind)
+			assert.Empty(t, whRepo.webhooks)
+			assert.Equal(t, 0, metricsRec.webhooksCreated)
+		})
+	}
+}
+
+func TestWebhookPageURL(t *testing.T) {
+	assert.Equal(t, "/?address=abc_-1", webhookPageURL("abc_-1"))
+	assert.Equal(t, "/?address=a%26b%3Dc+d", webhookPageURL("a&b=c d"), "the id is query-escaped")
+}
+
+func TestBackURL(t *testing.T) {
+	cases := map[string]string{
+		"":                                   "/",
+		"http://example.com/?address=abc":    "/?address=abc",
+		"http://example.com/requests/r1?x=1": "/requests/r1?x=1",
+		"http://evil.example/?address=abc":   "/",
+		"not a url with spaces and %zz":      "/",
+		"http://example.com":                 "/",
+	}
+	for referer, want := range cases {
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
+		req.Host = "example.com"
+		if referer != "" {
+			req.Header.Set("Referer", referer)
+		}
+		assert.Equal(t, want, backURL(req), referer)
 	}
 }
 
@@ -135,6 +197,17 @@ func TestWebhookHandler_Create_ServiceError(t *testing.T) {
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Equal(t, 0, metricsRec.webhooksCreated)
+}
+
+// serveWebhook dispatches req through the production webhook routes, which
+// set the {id} and subpath URL params HandleWebhookRequest reads.
+func serveWebhook(h *WebhookHandler, w http.ResponseWriter, req *http.Request) {
+	r := chi.NewRouter()
+	r.Route("/webhooks", func(r chi.Router) {
+		r.HandleFunc("/{id}", h.HandleWebhookRequest)
+		r.HandleFunc("/{id}/*", h.HandleWebhookRequest)
+	})
+	r.ServeHTTP(w, req)
 }
 
 func routerWithParam(pattern string, method string, handlerFn http.HandlerFunc) chi.Router {
@@ -275,27 +348,43 @@ func TestWebhookHandler_UpdateWebhook_Success(t *testing.T) {
 
 	assert.Equal(t, http.StatusSeeOther, rec.Code)
 	assert.Equal(t, "/?address=wh1", rec.Header().Get("Location"))
+	assert.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
 	w := whRepo.webhooks["wh1"]
 	require.NotNil(t, w)
 	assert.Equal(t, "updated", w.Title)
+	assert.Equal(t, "1", w.ResponseHeaders["X-A"])
 	assert.Equal(t, 201, w.ResponseCode)
 	assert.Equal(t, uint(5), w.ResponseDelay)
 	assert.Equal(t, "new-payload", *w.Payload)
 	assert.True(t, w.NotifyOnEvent)
 }
 
-func TestWebhookHandler_UpdateWebhook_InvalidHeadersJSON(t *testing.T) {
-	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
-	whRepo.put(&models.Webhook{ID: "wh1"})
+func TestWebhookHandler_UpdateWebhook_RejectsInvalidInput(t *testing.T) {
+	cases := map[string]url.Values{
+		"headers not JSON": {"title": {"t"}, "response_headers": {"not-json"}},
+		"code too high":    {"title": {"t"}, "response_code": {"5000"}},
+		"negative delay":   {"title": {"t"}, "response_delay": {"-1"}},
+	}
+	for name, form := range cases {
+		t.Run(name, func(t *testing.T) {
+			h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+			whRepo.put(&models.Webhook{ID: "wh1", Title: "old", ResponseCode: 200, ResponseHeaders: datatypes.JSONMap{"X-Keep": "1"}})
 
-	router := routerWithParam("/update-webhook/{id}", http.MethodPost, h.UpdateWebhook)
-	form := url.Values{"title": {"t"}, "response_headers": {"not-json"}}
-	req := httptest.NewRequest(http.MethodPost, "/update-webhook/wh1", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+			router := routerWithParam("/update-webhook/{id}", http.MethodPost, h.UpdateWebhook)
+			req := httptest.NewRequest(http.MethodPost, "/update-webhook/wh1", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusSeeOther, rec.Code)
+			assert.Equal(t, http.StatusSeeOther, rec.Code)
+			assert.Equal(t, "/?address=wh1", rec.Header().Get("Location"))
+			assert.Equal(t, utils.FlashError, flashFrom(t, rec).Kind)
+			w := whRepo.webhooks["wh1"]
+			assert.Equal(t, "old", w.Title, "a rejected update changes nothing")
+			assert.Equal(t, 200, w.ResponseCode)
+			assert.Equal(t, "1", w.ResponseHeaders["X-Keep"])
+		})
+	}
 }
 
 func TestWebhookHandler_UpdateWebhook_ParseFormError(t *testing.T) {
@@ -308,7 +397,8 @@ func TestWebhookHandler_UpdateWebhook_ParseFormError(t *testing.T) {
 
 	h.UpdateWebhook(rec, req)
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, utils.FlashError, flashFrom(t, rec).Kind)
 }
 
 func TestWebhookHandler_UpdateWebhook_EmptyID(t *testing.T) {
@@ -352,7 +442,7 @@ func TestWebhookHandler_HandleWebhookRequest_NotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/webhooks/missing", nil)
 	rec := httptest.NewRecorder()
 
-	h.HandleWebhookRequest(rec, req)
+	serveWebhook(h, rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
@@ -364,7 +454,7 @@ func TestWebhookHandler_HandleWebhookRequest_ServiceError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/webhooks/wh1", nil)
 	rec := httptest.NewRecorder()
 
-	h.HandleWebhookRequest(rec, req)
+	serveWebhook(h, rec, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
@@ -378,7 +468,7 @@ func TestWebhookHandler_HandleWebhookRequest_Success_DefaultContentType(t *testi
 	req.Header.Set("X-Custom", "yes")
 	rec := httptest.NewRecorder()
 
-	h.HandleWebhookRequest(rec, req)
+	serveWebhook(h, rec, req)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -402,12 +492,38 @@ func TestWebhookHandler_HandleWebhookRequest_CustomContentTypeAndHeaders(t *test
 	req := httptest.NewRequest(http.MethodGet, "/webhooks/wh1", nil)
 	rec := httptest.NewRecorder()
 
-	h.HandleWebhookRequest(rec, req)
+	serveWebhook(h, rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "text/plain", rec.Header().Get("Content-Type"))
 	assert.Equal(t, "abc", rec.Header().Get("X-Custom-Resp"))
 	assert.Equal(t, "plain-body", rec.Body.String())
+}
+
+func TestWebhookHandler_HandleWebhookRequest_RecordsSubpath(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1", ResponseCode: http.StatusOK})
+
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/wh1/orders/42?x=1", nil)
+	rec := httptest.NewRecorder()
+	serveWebhook(h, rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, whRepo.insertedRequests, 1)
+	assert.Equal(t, "/orders/42", whRepo.insertedRequests[0].Path)
+	assert.Equal(t, "1", whRepo.insertedRequests[0].Query["x"])
+}
+
+func TestWebhookHandler_HandleWebhookRequest_InvalidStoredResponseCode(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	// Saved before validation existed; WriteHeader would panic on it.
+	whRepo.put(&models.Webhook{ID: "wh1", ResponseCode: 1000})
+
+	req := httptest.NewRequest(http.MethodGet, "/webhooks/wh1", nil)
+	rec := httptest.NewRecorder()
+	serveWebhook(h, rec, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
 func TestWebhookHandler_HandleWebhookRequest_CreateRequestError(t *testing.T) {
@@ -418,7 +534,7 @@ func TestWebhookHandler_HandleWebhookRequest_CreateRequestError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/webhooks/wh1", nil)
 	rec := httptest.NewRecorder()
 
-	h.HandleWebhookRequest(rec, req)
+	serveWebhook(h, rec, req)
 
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 	assert.Equal(t, 0, len(metricsRec.webhookRequests))
@@ -434,7 +550,7 @@ func TestWebhookHandler_HandleWebhookRequest_PayloadWriteError(t *testing.T) {
 
 	// Should not panic even though the payload write fails; the handler just
 	// logs the error.
-	h.HandleWebhookRequest(w, req)
+	serveWebhook(h, w, req)
 }
 
 func TestWebhookHandler_HandleWebhookRequest_BroadcastsToStream(t *testing.T) {
@@ -446,7 +562,7 @@ func TestWebhookHandler_HandleWebhookRequest_BroadcastsToStream(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/webhooks/wh-stream", nil)
 	rec := httptest.NewRecorder()
-	h.HandleWebhookRequest(rec, req)
+	serveWebhook(h, rec, req)
 
 	select {
 	case evt := <-sub.Events:

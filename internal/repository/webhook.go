@@ -31,4 +31,6 @@ type WebhookRepository interface {
 	GetRequestsAfter(webhookID string, after models.RequestCursor) ([]models.WebhookRequest, error)
 	// CleanPublic Clean up public webhooks older than duration d, returning the deleted IDs
 	CleanPublic(d time.Duration) ([]string, error)
+	// AssignOwner gives a public (guest) webhook to userID; gorm.ErrRecordNotFound if no such public webhook exists
+	AssignOwner(id string, userID uint) error
 }

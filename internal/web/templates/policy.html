@@ -3,7 +3,7 @@
   <div class="app-shell min-h-screen">
     <header class="document-header">
       <a href="/" class="flex items-center gap-3">
-        <span class="brand-mark">+</span>
+        {{ template "brand-mark" }}
         <span class="text-sm font-semibold">Webhook Tester</span>
       </a>
       <div class="flex items-center gap-2">
@@ -14,7 +14,7 @@
     <main class="document-wrap">
       <h1 class="mb-6 text-3xl font-bold">Privacy Policy</h1>
 
-      <p class="mb-8 text-sm text-muted">Effective Date: {{ .Year }}</p>
+      <p class="mb-8 text-sm text-muted">Effective date: September 30, 2026</p>
 
       <div class="legal-prose space-y-8 text-sm leading-6">
         <section>
@@ -63,7 +63,8 @@
           <p>
             Public (unauthenticated) webhook data is
             <strong>automatically deleted</strong>
-            after a short retention period (e.g., 24–48 hours).
+            48 hours after the webhook is created, unless you create an account or sign in to keep
+            it.
             <br />
             Authenticated users’ data may be retained until deleted by the user or the account is
             removed.

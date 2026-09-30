@@ -4,7 +4,7 @@
     <div class="auth-theme">{{ template "theme-control" . }}</div>
     <section class="hidden border-r p-12 lg:flex lg:flex-col lg:justify-between">
       <a href="/" class="flex items-center gap-3">
-        <span class="brand-mark">+</span>
+        {{ template "brand-mark" }}
         <span class="font-semibold">Webhook Tester</span>
       </a>
       <div class="max-w-lg">
@@ -21,7 +21,7 @@
     <section class="flex min-h-screen items-center justify-center p-5 sm:p-8">
       <div class="w-full max-w-md">
         <a href="/" class="mb-10 flex items-center gap-3 lg:hidden">
-          <span class="brand-mark">+</span>
+          {{ template "brand-mark" }}
           <span class="font-semibold">Webhook Tester</span>
         </a>
         <p class="eyebrow">Free account</p>
@@ -29,13 +29,8 @@
         <p class="mt-2 text-sm text-muted">
           Keep endpoints and request history beyond this session.
         </p>
-        {{ if .Error }}
-          <div
-            class="mt-6 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300"
-          >
-            {{ .Error }}
-          </div>
-        {{ end }}
+        {{ with flash }}<div class="mt-6">{{ template "flash-notice" }}</div>{{ end }}
+        {{ if .Error }}<div class="notice-error mt-6" role="alert">{{ .Error }}</div>{{ end }}
         <form method="POST" action="/register" class="mt-8 space-y-5">
           {{ .CSRFField }}
           <div>

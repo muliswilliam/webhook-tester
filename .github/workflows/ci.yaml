@@ -25,5 +25,8 @@ jobs:
       - name: 🔍 Run vet
         run: go vet ./...
 
+      - name: 🧹 Run golangci-lint
+        run: make lint
+
       - name: 🧪 Run tests
         run: go test -race ./...

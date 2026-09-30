@@ -1,11 +1,11 @@
 package handlers
 
 import (
-	"encoding/json"
 	"html/template"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
+	"webhook-tester/internal/web/view"
 
 	"github.com/gorilla/csrf"
 	"log"
@@ -37,22 +37,21 @@ func NewHomeHandler(
 }
 
 type HomePageData struct {
-	CSRFField       template.HTML
-	User            models.User
-	Webhooks        []models.Webhook
-	Webhook         models.Webhook
-	ResponseHeaders string
-	ContentType     string
-	RequestRows     []requestRowView
-	RequestCounter  requestCounterView
-	Domain          string
-	Year            int
+	CSRFField      template.HTML
+	User           models.User
+	Webhooks       []models.Webhook
+	Webhook        models.Webhook
+	ContentType    string
+	RequestRows    []requestRowView
+	RequestCounter requestCounterView
+	Domain         string
+	Year           int
 }
 
 var sessionIdName = "_webhook_tester_guest_session_id"
 
 func createDefaultWebhook(svc *service.WebhookService, l *log.Logger) (string, error) {
-	contentType := "application/json"
+	contentType := models.DefaultContentType
 	payload := `{"message":"ok"}`
 	defaultWh := models.Webhook{
 		ID:           utils.GenerateID(),
@@ -113,7 +112,7 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 	if webhookID != "" && userID == 0 {
 		wrr, err := h.webhookSvc.GetAccessibleWebhookWithRequests(webhookID, userID)
 		if err != nil {
-			log.Printf("failed to get webhook: %v", err)
+			h.Logger.Printf("failed to get webhook: %v", err)
 			// Only a dead workspace cookie is cleared; a bad ?address= link
 			// must not cost the guest their own workspace.
 			if cookie != nil && cookie.Value == webhookID {
@@ -133,22 +132,12 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 	if address != "" {
 		aw, err := h.webhookSvc.GetAccessibleWebhookWithRequests(address, userID)
 		if err != nil {
-			log.Printf("failed to get webhook: %v", err)
+			h.Logger.Printf("failed to get webhook: %v", err)
 		} else {
 			activeWebhook = *aw
 		}
 	} else if len(webhooks) > 0 {
 		activeWebhook = webhooks[0]
-	}
-
-	var headersJSON = ""
-	if activeWebhook.ResponseHeaders != nil {
-		b, err := json.Marshal(activeWebhook.ResponseHeaders)
-		if err != nil {
-			log.Printf("error marshalling response headers: %v", err)
-		} else {
-			headersJSON = string(b)
-		}
 	}
 
 	user, _ := h.authSvc.GetCurrentUser(r)
@@ -167,19 +156,18 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		rows[i] = requestRowView{Request: wr, CSRFField: csrfField}
 	}
 
-	// RenderHtml the home page
+	// RenderHTML the home page
 	data := HomePageData{
-		CSRFField:       csrfField,
-		User:            *user,
-		Webhooks:        webhooks,
-		Webhook:         activeWebhook,
-		ResponseHeaders: headersJSON,
-		ContentType:     contentType,
-		RequestRows:     rows,
-		RequestCounter:  requestCounterView{WebhookID: activeWebhook.ID, Count: int64(len(activeWebhook.Requests))},
-		Domain:          os.Getenv("DOMAIN"),
-		Year:            time.Now().Year(),
+		CSRFField:      csrfField,
+		User:           *user,
+		Webhooks:       webhooks,
+		Webhook:        activeWebhook,
+		ContentType:    contentType,
+		RequestRows:    rows,
+		RequestCounter: requestCounterView{WebhookID: activeWebhook.ID, Count: int64(len(activeWebhook.Requests))},
+		Domain:         os.Getenv("DOMAIN"),
+		Year:           time.Now().Year(),
 	}
 
-	utils.RenderHtml(w, r, "home", data)
+	view.RenderHTML(w, r, "home", data)
 }

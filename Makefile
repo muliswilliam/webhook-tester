@@ -5,11 +5,17 @@ SWAG_MAIN=cmd/main.go
 APP_NAME=webhook-tester
 DOCKER_COMPOSE=docker-compose
 
-.PHONY: help up down logs restart services docs css test test-cover
+.PHONY: help up down logs restart services docs css test test-cover lint
 
 # Run the Go test suite
 test:
 	go test ./...
+
+# Run golangci-lint. `go run` builds it with the project's Go toolchain, so it
+# never lags behind go.mod the way a separately installed binary can.
+GOLANGCI_LINT_VERSION=v2.14.0
+lint:
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION) run ./...
 
 # Run the Go test suite with a statement coverage summary
 test-cover:

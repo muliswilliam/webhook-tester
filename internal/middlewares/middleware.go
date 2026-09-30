@@ -5,8 +5,10 @@ import (
 	"context"
 	"net/http"
 
+	"webhook-tester/internal/dtos"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
+	"webhook-tester/internal/utils"
 )
 
 type ctxKeyUser struct{}
@@ -16,13 +18,13 @@ func RequireAPIKey(auth *service.AuthService) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			apiKey := r.Header.Get("X-API-Key")
 			if apiKey == "" {
-				http.Error(w, "API key missing", http.StatusUnauthorized)
+				utils.RenderJSON(w, http.StatusUnauthorized, dtos.ErrorResponse{Error: "API key missing"})
 				return
 			}
 
 			user, err := auth.ValidateAPIKey(apiKey)
 			if err != nil {
-				http.Error(w, "Invalid API key", http.StatusUnauthorized)
+				utils.RenderJSON(w, http.StatusUnauthorized, dtos.ErrorResponse{Error: "invalid API key"})
 				return
 			}
 

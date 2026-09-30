@@ -1,8 +1,7 @@
 package server
 
 import (
-	"fmt"
-	"github.com/MarceloPetrucio/go-scalar-api-reference"
+	"context"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -12,19 +11,24 @@ import (
 	"webhook-tester/internal/routers"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/store"
+	"webhook-tester/internal/web/view"
 
 	"github.com/slok/go-http-metrics/middleware/std"
 	"github.com/wader/gormstore/v2"
 
 	"gorm.io/gorm"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"time"
 	"webhook-tester/config"
-	_ "webhook-tester/docs"
+	"webhook-tester/docs"
 	"webhook-tester/internal/db"
+	"webhook-tester/internal/mailer"
 	appMetrics "webhook-tester/internal/metrics"
+	"webhook-tester/internal/web/templates"
 )
 
 type Server struct {
@@ -33,6 +37,11 @@ type Server struct {
 	SessionStore *gormstore.Store
 	Logger       *log.Logger
 	Srv          *http.Server
+	// MetricsSrv serves Prometheus metrics on a separate, internal-only
+	// address, so they aren't exposed on the public port.
+	MetricsSrv *http.Server
+	// WebhookSvc is set by MountHandlers.
+	WebhookSvc *service.WebhookService
 }
 
 func (srv *Server) MountHandlers() {
@@ -44,12 +53,14 @@ func (srv *Server) MountHandlers() {
 	webhookSvc := service.NewWebhookService(repo)
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
 	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
+	srv.WebhookSvc = webhookSvc
 	metricsRec := appMetrics.PrometheusRecorder{}
+	view.SetLogger(srv.Logger)
 	// Basic CORS
 	// for more ideas, see: https://developer.github.com/v3/#cross-origin-resource-sharing
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: false,
@@ -60,6 +71,7 @@ func (srv *Server) MountHandlers() {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Heartbeat("/health"))
+	r.NotFound(view.RenderNotFound)
 
 	mdlw := metricsMiddleware.New(metricsMiddleware.Config{
 		Recorder: metrics.NewRecorder(metrics.Config{}),
@@ -72,29 +84,26 @@ func (srv *Server) MountHandlers() {
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
-	r.Mount("/", routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, &metricsRec, srv.Logger))
+	r.Mount("/", routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, mailer.FromEnv(srv.Logger), &metricsRec, srv.Logger))
 
 	r.Mount("/api", routers.NewApiRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))
 	r.Mount("/webhooks", routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, srv.Logger, &metricsRec))
 
-	// metrics
-	r.Handle("/metrics", promhttp.Handler())
+	if srv.MetricsSrv != nil {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", promhttp.Handler())
+		srv.MetricsSrv.Handler = metricsMux
+	}
 
 	// API documentation
 	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
-		htmlContent, err := scalar.ApiReferenceHTML(&scalar.Options{
-			SpecURL: "./docs/swagger.json",
-			CustomOptions: scalar.CustomOptions{
-				PageTitle: "Simple API",
-			},
-			DarkMode: true,
-		})
-
-		if err != nil {
-			fmt.Printf("%v", err)
+		http.ServeFileFS(w, r, templates.Templates, "docs.html")
+	})
+	r.Get("/docs/openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := io.WriteString(w, docs.SwaggerInfo.ReadDoc()); err != nil {
+			srv.Logger.Printf("error writing OpenAPI document: %v", err)
 		}
-
-		fmt.Fprintln(w, htmlContent)
 	})
 }
 
@@ -104,16 +113,27 @@ func NewServer() *Server {
 	db.AutoMigrate(conn)
 
 	r := chi.NewRouter()
+	// Cancelled when shutdown starts, so long-lived requests (the SSE
+	// streams) end instead of holding up graceful shutdown.
+	baseCtx, cancelRequests := context.WithCancel(context.Background())
 	srv := http.Server{
 		Addr:        ":3000",
 		Handler:     r,
 		IdleTimeout: time.Minute,
+		BaseContext: func(net.Listener) context.Context { return baseCtx },
+	}
+	srv.RegisterOnShutdown(cancelRequests)
+
+	metricsAddr := os.Getenv("METRICS_ADDR")
+	if metricsAddr == "" {
+		metricsAddr = ":9091"
 	}
 
 	return &Server{
-		Router: r,
-		DB:     conn,
-		Logger: log.New(os.Stdout, "[server] ", log.LstdFlags),
-		Srv:    &srv,
+		Router:     r,
+		DB:         conn,
+		Logger:     log.New(os.Stdout, "[server] ", log.LstdFlags),
+		Srv:        &srv,
+		MetricsSrv: &http.Server{Addr: metricsAddr, ReadHeaderTimeout: 10 * time.Second},
 	}
 }

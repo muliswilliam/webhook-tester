@@ -39,21 +39,10 @@
         <a
           href="/"
           class="flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus)]"
+          aria-label="Webhook Tester home"
         >
-          <span class="brand-mark">
-            <svg
-              class="h-5 w-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              aria-hidden="true"
-            >
-              <path d="M8 12h8M12 8v8" />
-              <circle cx="12" cy="12" r="9" />
-            </svg>
-          </span>
-          <span class="min-w-0">
+          {{ template "brand-mark" }}
+          <span class="hidden min-w-0 min-[420px]:block">
             <span class="block truncate text-sm font-semibold tracking-tight">Webhook Tester</span>
             <span class="hidden text-[10px] uppercase tracking-[0.16em] text-muted sm:block">
               Request workspace
@@ -263,6 +252,7 @@
           tabindex="-1"
           class="mx-auto w-full max-w-7xl p-4 pb-10 sm:p-6 lg:p-8"
         >
+          {{ with flash }}<div class="mb-6">{{ template "flash-notice" }}</div>{{ end }}
           {{ block "content" . }}{{ end }}
         </main>
       </div>
@@ -322,6 +312,8 @@
                 name="response_code"
                 class="field"
                 value="200"
+                min="{{ minResponseCode }}"
+                max="{{ maxResponseCode }}"
                 required
               />
             </div>
@@ -341,6 +333,8 @@
               name="response_delay"
               class="field"
               value="0"
+              min="0"
+              max="{{ maxResponseDelay }}"
             />
           </div>
           <div>
@@ -348,50 +342,7 @@
             <textarea id="create_payload" name="payload" rows="4" class="field font-mono">
 {"message":"ok"}</textarea>
           </div>
-          <div class="space-y-2">
-            <div class="flex items-center justify-between">
-              <span class="field-label mb-0">Response headers</span>
-              <button type="button" onclick="addHeaderRow(this)" class="text-link text-sm">
-                Add header
-              </button>
-            </div>
-            <div class="header-rows space-y-2"></div>
-            <template id="header-row-template">
-              <div class="header-row flex gap-2">
-                <input
-                  type="text"
-                  class="field"
-                  placeholder="Header name"
-                  aria-label="Header name"
-                  oninput="this.setCustomValidity('')"
-                />
-                <input
-                  type="text"
-                  class="field"
-                  placeholder="Header value"
-                  aria-label="Header value"
-                />
-                <button
-                  type="button"
-                  onclick="removeHeaderRow(this)"
-                  class="icon-btn shrink-0"
-                  aria-label="Remove header"
-                >
-                  <svg
-                    class="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    aria-hidden="true"
-                  >
-                    <path d="M5 12h14" />
-                  </svg>
-                </button>
-              </div>
-            </template>
-            <input type="hidden" name="response_headers" />
-          </div>
+          {{ template "header-editor" }}
           <label class="check-row">
             <input type="checkbox" id="create_notify" name="notify_on_event" value="true" />
             <span>Notify me when a request arrives</span>
@@ -405,6 +356,84 @@
         </form>
       </div>
     </dialog>
+
+    <dialog
+      id="confirm-dialog"
+      class="modal modal-sm"
+      aria-labelledby="confirm-dialog-title"
+      aria-describedby="confirm-dialog-message"
+      onclick="event.target === this && this.close()"
+    >
+      <div class="modal-panel">
+        <h2 id="confirm-dialog-title" class="text-lg font-semibold"></h2>
+        <p id="confirm-dialog-message" class="mt-2 text-sm leading-6 text-muted"></p>
+        <form method="dialog" class="mt-6 flex justify-end gap-3">
+          <button value="cancel" class="btn-secondary" autofocus>Cancel</button>
+          <button value="confirm" id="confirm-dialog-confirm" class="btn-danger-solid"></button>
+        </form>
+      </div>
+    </dialog>
+
+    <template id="header-row-template">{{ template "header-row" }}</template>
+  </div>
+{{ end }}
+
+{{/* Key/value editor for a webhook's response headers, prefilled from the
+  headers map passed in (nil for none). serializeHeaderRows turns the rows into
+  the hidden response_headers field when the form submits.
+*/}}
+{{ define "header-editor" }}
+  <div class="space-y-2" data-header-editor>
+    <div class="flex items-center justify-between">
+      <span class="field-label mb-0">Response headers</span>
+      <button type="button" onclick="addHeaderRow(this)" class="text-link text-sm">
+        Add header
+      </button>
+    </div>
+    <div class="header-rows space-y-2">
+      {{ range $name, $value := . }}
+        {{ template "header-row" (headerRow $name $value) }}
+      {{ end }}
+    </div>
+    <input type="hidden" name="response_headers" />
+  </div>
+{{ end }}
+
+{{/* One header editor row; expects a headerRow, or nil for a blank row. */}}
+{{ define "header-row" }}
+  <div class="header-row flex gap-2">
+    <input
+      type="text"
+      class="field"
+      placeholder="Header name"
+      aria-label="Header name"
+      value="{{ if . }}{{ .Name }}{{ end }}"
+      oninput="this.setCustomValidity('')"
+    />
+    <input
+      type="text"
+      class="field"
+      placeholder="Header value"
+      aria-label="Header value"
+      value="{{ if . }}{{ .Value }}{{ end }}"
+    />
+    <button
+      type="button"
+      onclick="removeHeaderRow(this)"
+      class="icon-btn shrink-0"
+      aria-label="Remove header"
+    >
+      <svg
+        class="h-4 w-4"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        aria-hidden="true"
+      >
+        <path d="M5 12h14" />
+      </svg>
+    </button>
   </div>
 {{ end }}
 

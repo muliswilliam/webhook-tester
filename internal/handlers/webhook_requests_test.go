@@ -13,6 +13,7 @@ import (
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
+	"webhook-tester/internal/utils"
 )
 
 func newTestWebhookRequestHandler(t *testing.T) (*WebhookRequestHandler, *testWebhookRequestRepo, *testWebhookRepo, *testUserRepo, *service.AuthService) {
@@ -183,39 +184,31 @@ func TestWebhookRequestHandler_GetRequest_LoggedInUser_ListError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
-func TestWebhookRequestHandler_DeleteRequest_WithReferer(t *testing.T) {
-	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
-	whRepo.put(&models.Webhook{ID: "wh1"})
-	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1"})
+func TestWebhookRequestHandler_DeleteRequest_RedirectsToWebhook(t *testing.T) {
+	for _, referer := range []string{"", "http://example.com/?address=wh1", "http://example.com/requests/r1?address=wh1"} {
+		t.Run(referer, func(t *testing.T) {
+			h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+			whRepo.put(&models.Webhook{ID: "wh1"})
+			reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1"})
 
-	router := chi.NewRouter()
-	router.Post("/requests/{id}/delete", h.DeleteRequest)
+			router := chi.NewRouter()
+			router.Post("/requests/{id}/delete", h.DeleteRequest)
 
-	req := httptest.NewRequest(http.MethodPost, "/requests/r1/delete", nil)
-	req.Header.Set("Referer", "/?address=wh1")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+			req := httptest.NewRequest(http.MethodPost, "/requests/r1/delete", nil)
+			if referer != "" {
+				req.Header.Set("Referer", referer)
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusFound, rec.Code)
-	assert.Equal(t, "/?address=wh1", rec.Header().Get("Location"))
-	_, ok := reqRepo.requests["r1"]
-	assert.False(t, ok)
-}
-
-func TestWebhookRequestHandler_DeleteRequest_NoReferer(t *testing.T) {
-	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
-	whRepo.put(&models.Webhook{ID: "wh1"})
-	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1"})
-
-	router := chi.NewRouter()
-	router.Post("/requests/{id}/delete", h.DeleteRequest)
-
-	req := httptest.NewRequest(http.MethodPost, "/requests/r1/delete", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusFound, rec.Code)
-	assert.Equal(t, "/", rec.Header().Get("Location"))
+			// Never back to the deleted request's own page, which would 404.
+			require.Equal(t, http.StatusSeeOther, rec.Code)
+			assert.Equal(t, "/?address=wh1", rec.Header().Get("Location"))
+			assert.Equal(t, &utils.Flash{Kind: utils.FlashSuccess, Message: "Request deleted."}, flashFrom(t, rec))
+			_, ok := reqRepo.requests["r1"]
+			assert.False(t, ok)
+		})
+	}
 }
 
 func TestWebhookRequestHandler_DeleteRequest_ServiceError(t *testing.T) {
@@ -279,7 +272,8 @@ func TestWebhookRequestHandler_ReplayRequest_NetworkError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusBadGateway, rec.Code)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, utils.FlashError, flashFrom(t, rec).Kind)
 }
 
 func TestWebhookRequestHandler_ReplayRequest_InvalidDomain(t *testing.T) {
@@ -303,11 +297,13 @@ func TestWebhookRequestHandler_ReplayRequest_Success(t *testing.T) {
 	whRepo.put(&models.Webhook{ID: "wh1"})
 
 	var gotPath, gotQuery, gotHeader string
+	var gotHeaders http.Header
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.RawQuery
 		gotHeader = r.Header.Get("X-Original")
-		w.WriteHeader(http.StatusOK)
+		gotHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusCreated)
 	}))
 	defer target.Close()
 	t.Setenv("DOMAIN", target.URL)
@@ -316,6 +312,7 @@ func TestWebhookRequestHandler_ReplayRequest_Success(t *testing.T) {
 		ID:        "r1",
 		WebhookID: "wh1",
 		Method:    http.MethodGet,
+		Path:      "/orders/42",
 		Query:     datatypes.JSONMap{"foo": "bar"},
 		Headers:   datatypes.JSONMap{"X-Original": "yes"},
 		Body:      "",
@@ -325,12 +322,17 @@ func TestWebhookRequestHandler_ReplayRequest_Success(t *testing.T) {
 	router.Post("/requests/{id}/replay", h.ReplayRequest)
 
 	req := httptest.NewRequest(http.MethodPost, "/requests/r1/replay", nil)
+	req.Host = "example.com"
+	req.Header.Set("Referer", "http://example.com/?address=wh1")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
+	// Back to the page the replay started from, with a confirmation.
 	require.Equal(t, http.StatusSeeOther, rec.Code)
-	assert.Equal(t, "/requests/r1?address=wh1", rec.Header().Get("Location"))
-	assert.Equal(t, "/webhooks/wh1", gotPath)
+	assert.Equal(t, "/?address=wh1", rec.Header().Get("Location"))
+	assert.Equal(t, &utils.Flash{Kind: utils.FlashSuccess, Message: "Request replayed. The endpoint answered 201 Created."}, flashFrom(t, rec))
+	assert.Equal(t, "/webhooks/wh1/orders/42", gotPath)
 	assert.Equal(t, "foo=bar", gotQuery)
 	assert.Equal(t, "yes", gotHeader)
+	assert.NotContains(t, gotHeaders, "Accept-Encoding", "the replay adds no headers of its own")
 }

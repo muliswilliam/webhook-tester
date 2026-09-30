@@ -168,7 +168,12 @@ func (r GormWebhookRepo) CleanPublic(d time.Duration) ([]string, error) {
 	var webhookIDs []string
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		var webhooks []models.Webhook
-		tx.Where("created_at < ? AND user_id = 0", beforeDate).Find(&webhooks)
+		if err := tx.Where("created_at < ? AND user_id = 0", beforeDate).Find(&webhooks).Error; err != nil {
+			return err
+		}
+		if len(webhooks) == 0 {
+			return nil
+		}
 
 		for _, webhook := range webhooks {
 			webhookIDs = append(webhookIDs, webhook.ID)
@@ -195,4 +200,17 @@ func (r GormWebhookRepo) CleanPublic(d time.Duration) ([]string, error) {
 	}
 
 	return webhookIDs, nil
+}
+
+// AssignOwner gives the public webhook id to userID.
+func (r GormWebhookRepo) AssignOwner(id string, userID uint) error {
+	res := r.DB.Model(&models.Webhook{}).Where("id = ? AND user_id = 0", id).Update("user_id", userID)
+	if res.Error != nil {
+		r.logger.Printf("failed to assign webhook %s to user %d: %v", id, userID, res.Error)
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

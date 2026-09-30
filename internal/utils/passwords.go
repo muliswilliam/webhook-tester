@@ -23,21 +23,27 @@ func CheckPasswordHash(password, hash string) bool {
 	return err == nil
 }
 
+// PasswordError explains why a password breaks the PasswordRules. Its text
+// is a complete sentence, shown to the user as is.
+type PasswordError string
+
+func (e PasswordError) Error() string { return string(e) }
+
 func ValidatePassword(pw string, rules PasswordRules) error {
 	if len(pw) < rules.MinLength {
-		return fmt.Errorf("Password must be at least %d characters", rules.MinLength)
+		return PasswordError(fmt.Sprintf("Password must be at least %d characters", rules.MinLength))
 	}
 
 	if rules.RequireUppercase && !regexp.MustCompile("[A-Z]").MatchString(pw) {
-		return fmt.Errorf("Password must contain at least one uppercase letter")
+		return PasswordError("Password must contain at least one uppercase letter")
 	}
 
 	if rules.RequireLowercase && !regexp.MustCompile("[a-z]").MatchString(pw) {
-		return fmt.Errorf("Password must contain at least one lowercase letter")
+		return PasswordError("Password must contain at least one lowercase letter")
 	}
 
 	if rules.RequireNumber && !regexp.MustCompile("[0-9]").MatchString(pw) {
-		return fmt.Errorf("Password must contain at least one number")
+		return PasswordError("Password must contain at least one number")
 	}
 
 	return nil
