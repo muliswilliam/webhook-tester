@@ -35,7 +35,7 @@ func Connect() *gorm.DB {
 }
 
 func AutoMigrate(db *gorm.DB) {
-	err := db.AutoMigrate(&models.Webhook{}, &models.WebhookRequest{}, &models.User{})
+	err := db.AutoMigrate(&models.Webhook{}, &models.WebhookRequest{}, &models.Delivery{}, &models.User{})
 	if err != nil {
 		log.Fatalf("failed to auto-migrate: %v", err)
 	}

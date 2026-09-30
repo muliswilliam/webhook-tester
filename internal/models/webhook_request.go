@@ -16,4 +16,8 @@ type WebhookRequest struct {
 	Query      datatypes.JSONMap `json:"query"`
 	Body       string            `json:"body"`
 	ReceivedAt time.Time         `json:"received_at"`
+
+	// Deliveries are the attempts to relay this request to a forward
+	// target. They aren't part of the API.
+	Deliveries []Delivery `gorm:"foreignKey:RequestID" json:"-"`
 } // @name WebhookRequest

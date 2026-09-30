@@ -108,7 +108,11 @@ func (r GormWebhookRepo) Delete(id string, userID uint) error {
 			return err
 		}
 
-		// Delete webhook requests
+		// Delete the requests' deliveries, then the requests
+		if err := deleteDeliveriesByWebhooks(tx, id); err != nil {
+			r.logger.Printf("failed to delete webhook deliveries: %v", err)
+			return err
+		}
 		if err := tx.Delete(&models.WebhookRequest{}, "webhook_id = ?", id).Error; err != nil {
 			r.logger.Printf("failed to delete webhook requests: %v", err)
 			return err
@@ -159,7 +163,8 @@ func (r GormWebhookRepo) GetRequestsAfter(webhookID string, after models.Request
 }
 
 // CleanPublic deletes anonymous (public) webhooks, i.e. those with user_id = 0,
-// created more than d ago, together with their requests, in one transaction.
+// created more than d ago, together with their requests and deliveries, in
+// one transaction.
 // It returns the IDs of the deleted webhooks.
 func (r GormWebhookRepo) CleanPublic(d time.Duration) ([]string, error) {
 	r.logger.Println("Cleaning public webhooks")
@@ -179,7 +184,11 @@ func (r GormWebhookRepo) CleanPublic(d time.Duration) ([]string, error) {
 			webhookIDs = append(webhookIDs, webhook.ID)
 		}
 
-		// delete requests
+		// delete the requests' deliveries, then the requests
+		if err := deleteDeliveriesByWebhooks(tx, webhookIDs...); err != nil {
+			r.logger.Printf("Error deleting webhook deliveries: %v", err)
+			return err
+		}
 		if err := tx.Where("webhook_id IN (?)", webhookIDs).Delete(&models.WebhookRequest{}).Error; err != nil {
 			r.logger.Printf("Error deleting webhook requests: %v", err)
 			return err
