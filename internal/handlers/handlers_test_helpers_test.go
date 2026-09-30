@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -25,16 +26,17 @@ type testWebhookRepo struct {
 
 	webhooks map[string]*models.Webhook
 
-	getErr             error
-	getByUserErr       error
-	getAllErr          error
-	getAllByUserErr    error
-	insertErr          error
-	updateErr          error
-	insertRequestErr   error
-	deleteErr          error
-	getWithRequestsErr error
-	cleanPublicErr     error
+	getErr              error
+	getByUserErr        error
+	getAllErr           error
+	getAllByUserErr     error
+	insertErr           error
+	updateErr           error
+	insertRequestErr    error
+	deleteErr           error
+	getWithRequestsErr  error
+	cleanPublicErr      error
+	getRequestsAfterErr error
 
 	insertedRequests []*models.WebhookRequest
 }
@@ -162,8 +164,36 @@ func (f *testWebhookRepo) GetWithRequests(id string) (*models.Webhook, error) {
 	return w, nil
 }
 
-func (f *testWebhookRepo) CleanPublic(_ time.Duration) error {
-	return f.cleanPublicErr
+func (f *testWebhookRepo) CleanPublic(_ time.Duration) ([]string, error) {
+	return nil, f.cleanPublicErr
+}
+
+func (f *testWebhookRepo) GetRequestsAfter(webhookID string, after models.RequestCursor) ([]models.WebhookRequest, error) {
+	if f.getRequestsAfterErr != nil {
+		return nil, f.getRequestsAfterErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []models.WebhookRequest
+	if w, ok := f.webhooks[webhookID]; ok {
+		for _, wr := range w.Requests {
+			if after.Before(models.CursorAt(wr)) {
+				out = append(out, wr)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return models.CursorAt(out[i]).Before(models.CursorAt(out[j])) })
+	return out, nil
+}
+
+func (f *testWebhookRepo) CountRequests(webhookID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	w, ok := f.webhooks[webhookID]
+	if !ok {
+		return 0, nil
+	}
+	return int64(len(w.Requests)), nil
 }
 
 // testWebhookRequestRepo is an in-memory implementation of

@@ -25,6 +25,10 @@ type WebhookRepository interface {
 	Delete(id string, userID uint) error
 	// GetWithRequests Get a webhook with its requests, ordered newest first
 	GetWithRequests(id string) (*models.Webhook, error)
-	// CleanPublic Clean up public webhooks older than duration d
-	CleanPublic(d time.Duration) error
+	// CountRequests Count the number of requests captured for a webhook
+	CountRequests(webhookID string) (int64, error)
+	// GetRequestsAfter Get a webhook's requests positioned after the cursor, oldest first
+	GetRequestsAfter(webhookID string, after models.RequestCursor) ([]models.WebhookRequest, error)
+	// CleanPublic Clean up public webhooks older than duration d, returning the deleted IDs
+	CleanPublic(d time.Duration) ([]string, error)
 }

@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
@@ -17,6 +17,8 @@ import (
 	"webhook-tester/internal/utils"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/csrf"
+	"github.com/starfederation/datastar-go/datastar"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
@@ -210,9 +212,6 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
 
-var webhookStreams = make(map[string][]chan string)
-var mu sync.Mutex
-
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := strings.TrimPrefix(r.URL.Path, "/webhooks/")
 	h.logger.Printf("Handling webhook request for %s", webhookID)
@@ -249,38 +248,25 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	}
 
 	wr := models.WebhookRequest{
-		ID:         utils.GenerateID(),
-		WebhookID:  webhookID,
-		Method:     r.Method,
-		Headers:    headers,
-		Query:      query,
-		Body:       string(body),
-		ReceivedAt: time.Now().UTC(),
+		ID:        utils.GenerateID(),
+		WebhookID: webhookID,
+		Method:    r.Method,
+		Headers:   headers,
+		Query:     query,
+		Body:      string(body),
 	}
-
-	err = h.webhookSvc.CreateRequest(&wr)
-	if err != nil {
+	if err := h.webhookSvc.RecordRequest(&wr); err != nil {
 		h.logger.Printf("error creating webhook request: %s", err)
 		utils.RenderJSON(w, http.StatusInternalServerError, nil)
 		return
 	}
+
 	h.metrics.IncWebhookRequest(webhookID)
 
 	// Delay response
 	if webhook.ResponseDelay > 0 {
 		time.Sleep(time.Duration(webhook.ResponseDelay) * time.Millisecond)
 	}
-
-	jsonData, _ := json.Marshal(wr)
-
-	mu.Lock()
-	for _, ch := range webhookStreams[webhookID] {
-		select {
-		case ch <- string(jsonData):
-		default: // drop if blocked
-		}
-	}
-	mu.Unlock()
 
 	// Set custom response headers if defined
 	if webhook.ResponseHeaders != nil {
@@ -305,42 +291,155 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	}
 }
 
+// StreamWebhookEvents streams a webhook's captured requests as Datastar
+// element patches. A connection first replays the requests after its cursor -
+// the Last-Event-ID of a reconnect, else the ?since= cursor the page was
+// rendered with - and then streams new ones live, so reconnects never lose
+// requests. The ?active flag marks the connection of the webhook shown in the
+// main panel, which also patches the main request list and counter.
+//
+// The client retries whenever the stream ends; a 204 tells it to stop.
 func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
+	userID, _ := h.authSvc.Authorize(r) // 0 for guests
 
-	// Set headers for SSE
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
+	if _, err := h.webhookSvc.GetAccessibleWebhook(webhookID, userID); err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
-	// Create a channel for this client
-	eventChan := make(chan string)
-	mu.Lock()
-	webhookStreams[webhookID] = append(webhookStreams[webhookID], eventChan)
-	mu.Unlock()
+	rawCursor := r.Header.Get("Last-Event-ID")
+	if rawCursor == "" {
+		rawCursor = r.URL.Query().Get("since")
+	}
+	cursor, err := models.ParseRequestCursor(rawCursor)
+	if err != nil {
+		h.logger.Printf("rejecting stream for %s: %s", webhookID, err)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
-	// Stream new events
-	flusher, _ := w.(http.Flusher)
-	for {
-		select {
-		case msg := <-eventChan:
-			_, err := fmt.Fprintf(w, "data: %s\n\n", msg)
-			if err != nil {
-				h.logger.Printf("error writing data: %s", err)
-				return
-			}
-			flusher.Flush()
-		case <-r.Context().Done():
-			mu.Lock()
-			subs := webhookStreams[webhookID]
-			for i, sub := range subs {
-				if sub == eventChan {
-					webhookStreams[webhookID] = append(subs[:i], subs[i+1:]...)
-					break
-				}
-			}
-			mu.Unlock()
+	// Subscribe before querying the backlog so nothing captured in between
+	// is missed; live events already replayed are skipped.
+	sub := h.webhookSvc.Subscribe(webhookID)
+	defer sub.Close()
+
+	missed, err := h.webhookSvc.GetRequestsAfter(webhookID, cursor)
+	if err != nil {
+		h.logger.Printf("error loading missed requests for %s: %s", webhookID, err)
+		return
+	}
+
+	stream := &requestStream{
+		sse:       datastar.NewSSE(w, r),
+		webhookID: webhookID,
+		mainPanel: r.URL.Query().Has("active"),
+		csrfField: csrf.TemplateField(r),
+		replayed:  make(map[string]bool, len(missed)),
+	}
+
+	for _, wr := range missed {
+		stream.replayed[wr.ID] = true
+	}
+	if len(missed) > 0 {
+		var count *int64
+		if n, err := h.webhookSvc.CountRequests(webhookID); err == nil {
+			count = &n
+		}
+		if err := stream.send(missed, count); err != nil {
+			h.logger.Printf("error streaming missed requests for %s: %s", webhookID, err)
 			return
 		}
 	}
+
+	for {
+		select {
+		case evt, ok := <-sub.Events:
+			if !ok {
+				// Evicted for falling behind, or the webhook was deleted.
+				// Either way the client reconnects and resumes from its cursor.
+				h.logger.Printf("stream for %s closed by broker", webhookID)
+				return
+			}
+			if stream.replayed[evt.Request.ID] {
+				continue
+			}
+			if err := stream.send([]models.WebhookRequest{evt.Request}, evt.Count); err != nil {
+				h.logger.Printf("error streaming request %s: %s", evt.Request.ID, err)
+				return
+			}
+		case <-r.Context().Done():
+			return
+		}
+	}
+}
+
+// requestRowView is the data for the "main-request-row" template.
+type requestRowView struct {
+	Request   models.WebhookRequest
+	CSRFField template.HTML
+	IsNew     bool
+}
+
+// requestCounterView is the data for the "request-counter" template.
+type requestCounterView struct {
+	WebhookID string
+	Count     int64
+}
+
+// requestStream renders captured requests into one SSE connection.
+type requestStream struct {
+	sse       *datastar.ServerSentEventGenerator
+	webhookID string
+	mainPanel bool
+	csrfField template.HTML
+	replayed  map[string]bool // IDs of requests sent from the backlog
+}
+
+// send prepends each request, oldest first, and then patches the counter if
+// count is known. Each request's last patch carries the request's cursor as
+// the SSE event ID, which the client echoes back as Last-Event-ID on
+// reconnect.
+func (s *requestStream) send(requests []models.WebhookRequest, count *int64) error {
+	for _, wr := range requests {
+		id := datastar.WithPatchElementsEventID(models.CursorAt(wr).String())
+
+		sidebarOpts := []datastar.PatchElementOption{
+			datastar.WithSelectorID("request-log-" + s.webhookID),
+			datastar.WithModePrepend(),
+		}
+		if !s.mainPanel {
+			sidebarOpts = append(sidebarOpts, id)
+		}
+		if err := s.patch("sidebar-request-row", wr, sidebarOpts...); err != nil {
+			return err
+		}
+
+		if s.mainPanel {
+			row := requestRowView{Request: wr, CSRFField: s.csrfField, IsNew: true}
+			if err := s.patch("main-request-row", row,
+				datastar.WithSelectorID("request-log-list-"+s.webhookID),
+				datastar.WithModePrepend(),
+				id,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	if s.mainPanel && count != nil {
+		return s.patch("request-counter", requestCounterView{WebhookID: s.webhookID, Count: *count})
+	}
+	return nil
+}
+
+func (s *requestStream) patch(tmpl string, data any, opts ...datastar.PatchElementOption) error {
+	html, err := utils.RenderPartialToString(tmpl, data)
+	if err != nil {
+		return fmt.Errorf("rendering %s: %w", tmpl, err)
+	}
+	if err := s.sse.PatchElements(html, opts...); err != nil {
+		return fmt.Errorf("patching %s: %w", tmpl, err)
+	}
+	return nil
 }

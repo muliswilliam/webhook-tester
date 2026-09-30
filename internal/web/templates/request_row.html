@@ -1,0 +1,171 @@
+{{ define "sidebar-request-row" }}
+  <a href="/requests/{{ .ID }}?address={{ .WebhookID }}" class="sidebar-request">
+    <span class="method-badge">{{ .Method }}</span>
+    <span class="truncate font-mono text-[11px] text-muted">{{ .ID }}</span>
+  </a>
+{{ end }}
+
+{{ define "request-counter" }}
+  <span id="request-count-{{ .WebhookID }}" data-count="{{ .Count }}">
+    {{ .Count }} captured {{ if eq .Count 1 }}request{{ else }}requests{{ end }}
+  </span>
+{{ end }}
+
+{{ define "main-request-row" }}
+  <article
+    class="surface overflow-hidden"
+    data-signals="{open_{{ signalKey .Request.ID }}: false, copiedBody_{{ signalKey .Request.ID }}: false, rawBody_{{ signalKey .Request.ID }}: false}"
+  >
+    <button
+      class="request-row"
+      data-on:click="$open_{{ signalKeyJS .Request.ID }} = !$open_{{ signalKeyJS .Request.ID }}"
+      data-attr:aria-expanded="$open_{{ signalKey .Request.ID }}.toString()"
+    >
+      <span class="flex min-w-0 items-center gap-3">
+        <span class="method-badge">{{ .Request.Method }}</span>
+        <span class="truncate font-mono text-xs">{{ .Request.ID }}</span>
+      </span>
+      <span class="flex shrink-0 items-center gap-3">
+        <span class="hidden text-xs text-muted sm:block">
+          {{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
+        </span>
+        {{ if .IsNew }}<span class="new-badge">New</span>{{ end }}
+        <svg
+          class="h-4 w-4 text-muted transition-transform"
+          data-class="{'rotate-180': $open_{{ signalKey .Request.ID }}}"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </span>
+    </button>
+    <div style="display: none" data-show="$open_{{ signalKey .Request.ID }}" class="border-t">
+      <div class="grid lg:grid-cols-2">
+        <section class="min-w-0 border-b lg:border-b-0 lg:border-r">
+          <div class="section-bar">
+            <h3>Body</h3>
+            {{ template "request-body-actions" .Request }}
+          </div>
+          {{ template "request-body" .Request }}
+        </section>
+        <section>
+          <div class="section-bar">
+            <h3>Headers</h3>
+            <span class="text-xs text-muted">{{ .Request.Method }}</span>
+          </div>
+          <div class="max-h-72 overflow-auto">
+            <table class="data-table w-full">
+              <tbody>
+                {{ range $key, $val := .Request.Headers }}
+                  <tr>
+                    <td>{{ $key }}</td>
+                    <td class="break-all">{{ $val }}</td>
+                  </tr>
+                {{ end }}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      {{ if .Request.Query }}
+        <section class="border-t">
+          <div class="section-bar"><h3>Query parameters</h3></div>
+          <div class="overflow-x-auto">
+            <table class="data-table w-full">
+              <tbody>
+                {{ range $key, $val := .Request.Query }}
+                  <tr>
+                    <td>{{ $key }}</td>
+                    <td class="break-all">{{ $val }}</td>
+                  </tr>
+                {{ end }}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      {{ end }}
+      <div class="flex flex-wrap justify-end gap-2 border-t bg-subtle p-3">
+        <a
+          href="/requests/{{ .Request.ID }}?address={{ .Request.WebhookID }}"
+          class="btn-secondary"
+        >
+          Open details
+        </a>
+        <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+          {{ .CSRFField }}
+          <button class="btn-secondary">Replay request</button>
+        </form>
+        <form
+          method="POST"
+          action="/requests/{{ .Request.ID }}/delete"
+          onsubmit="return confirm('Delete this captured request?')"
+        >
+          {{ .CSRFField }}
+          <button class="btn-danger">Delete</button>
+        </form>
+      </div>
+    </div>
+  </article>
+{{ end }}
+
+{{/* Expects the rawBody_<key> and copiedBody_<key> signals of the request to be declared. */}}
+{{ define "request-body-actions" }}
+  <div class="flex items-center gap-3">
+    {{ if prettyJSON .Body }}
+      <div class="segmented" role="group" aria-label="Body format">
+        <button
+          type="button"
+          class="segmented-option"
+          data-on:click="$rawBody_{{ signalKeyJS .ID }} = false"
+          data-attr:aria-pressed="(!$rawBody_{{ signalKey .ID }}).toString()"
+        >
+          Formatted
+        </button>
+        <button
+          type="button"
+          class="segmented-option"
+          data-on:click="$rawBody_{{ signalKeyJS .ID }} = true"
+          data-attr:aria-pressed="$rawBody_{{ signalKey .ID }}.toString()"
+        >
+          Raw
+        </button>
+      </div>
+      <button
+        type="button"
+        data-on:click="copyWithFeedback(($rawBody_{{ signalKeyJS .ID }} ? $bodyRaw_{{ signalKeyJS .ID }} : $bodyFormatted_{{ signalKeyJS .ID }}).textContent, copied => $copiedBody_{{ signalKeyJS .ID }} = copied)"
+        class="text-link text-xs font-medium"
+        data-text="$copiedBody_{{ signalKey .ID }} ? 'Copied' : 'Copy body'"
+      ></button>
+    {{ else }}
+      <button
+        type="button"
+        data-on:click="copyWithFeedback($bodyRaw_{{ signalKeyJS .ID }}.textContent, copied => $copiedBody_{{ signalKeyJS .ID }} = copied)"
+        class="text-link text-xs font-medium"
+        data-text="$copiedBody_{{ signalKey .ID }} ? 'Copied' : 'Copy body'"
+      ></button>
+    {{ end }}
+  </div>
+{{ end }}
+
+{{/* Formatted JSON by default, when the body is JSON; the raw body otherwise. */}}
+{{ define "request-body" }}
+  {{ $formatted := prettyJSON .Body }}
+  {{ if $formatted }}
+    <pre
+      data-ref:body-formatted_{{ signalKey .ID }}
+      data-show="!$rawBody_{{ signalKey .ID }}"
+      class="request-body code-surface"
+    >
+{{ $formatted }}</pre>
+  {{ end }}
+  <pre
+    data-ref:body-raw_{{ signalKey .ID }}
+    {{ if $formatted }}style="display: none" data-show="$rawBody_{{ signalKey .ID }}"{{ end }}
+    class="request-body code-surface"
+  >
+{{ .Body }}</pre>
+{{ end }}

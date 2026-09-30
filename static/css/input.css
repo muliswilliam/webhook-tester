@@ -90,9 +90,6 @@
   summary {
     cursor: pointer;
   }
-  [x-cloak] {
-    display: none !important;
-  }
   ::selection {
     color: #ffffff;
     background-color: var(--interact);
@@ -122,7 +119,7 @@
     color: #171717;
   }
   .top-link {
-    @apply inline-flex min-h-11 items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2;
+    @apply inline-flex min-h-11 items-center whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2;
     color: var(--app-muted);
     --tw-ring-color: var(--focus);
   }
@@ -364,10 +361,40 @@
     background-color: var(--danger-soft);
   }
 
+  .modal {
+    @apply m-auto w-[calc(100%-2rem)] max-w-xl overflow-visible border-0 bg-transparent p-0;
+    color: inherit;
+  }
+  .modal::backdrop {
+    background-color: rgb(0 0 0 / 0.55);
+  }
   .modal-panel {
-    @apply w-full max-w-xl overflow-y-auto rounded-xl border p-6 shadow-2xl shadow-black/20;
+    @apply max-h-[90vh] w-full overflow-y-auto rounded-xl border p-6 shadow-2xl shadow-black/20;
     background-color: var(--app-surface);
     border-color: var(--app-border-strong);
+  }
+
+  .request-body {
+    @apply block min-h-40 overflow-x-auto border-t p-5 text-xs leading-6;
+  }
+  .request-detail-body .request-body {
+    @apply min-h-56 sm:text-sm;
+  }
+  .segmented {
+    @apply inline-flex rounded-lg border p-0.5;
+    border-color: var(--app-border-strong);
+  }
+  .segmented-option {
+    @apply rounded-md px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2;
+    color: var(--app-muted);
+    --tw-ring-color: var(--focus);
+  }
+  .segmented-option:hover {
+    color: var(--app-secondary);
+  }
+  .segmented-option[aria-pressed="true"] {
+    background-color: var(--app-muted-surface);
+    color: var(--app-strong);
   }
   .theme-picker {
     @apply flex h-10 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium;
@@ -442,6 +469,51 @@
   .document-header .top-link {
     display: none;
   }
+}
+
+/* Datastar's data-show toggles the inline display property directly with no
+   transition hook of its own, so the fade in/out is driven entirely by CSS:
+   allow-discrete lets display join the transition and @starting-style supplies
+   the pre-paint opacity for the entrance. */
+[data-show] {
+  transition:
+    opacity 150ms ease,
+    display 150ms allow-discrete;
+}
+[data-show][style*="display: none"] {
+  opacity: 0;
+}
+@starting-style {
+  [data-show] {
+    opacity: 0;
+  }
+}
+
+/* Native dialogs fade the same way, with overlay keeping them in the top
+   layer until the exit transition finishes. */
+.modal,
+.modal::backdrop {
+  opacity: 0;
+  transition:
+    opacity 150ms ease,
+    overlay 150ms allow-discrete,
+    display 150ms allow-discrete;
+}
+.modal[open],
+.modal[open]::backdrop {
+  opacity: 1;
+}
+@starting-style {
+  .modal[open],
+  .modal[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+/* A request log's placeholder only shows while the log has no requests, so
+   live rows streamed into the log hide it without any extra patch. */
+.request-log:has(> :not(.request-placeholder)) > .request-placeholder {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

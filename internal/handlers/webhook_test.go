@@ -441,35 +441,29 @@ func TestWebhookHandler_HandleWebhookRequest_BroadcastsToStream(t *testing.T) {
 	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
 	whRepo.put(&models.Webhook{ID: "wh-stream", ResponseCode: http.StatusOK})
 
-	ch := make(chan string, 1)
-	mu.Lock()
-	webhookStreams["wh-stream"] = append(webhookStreams["wh-stream"], ch)
-	mu.Unlock()
-	defer func() {
-		mu.Lock()
-		delete(webhookStreams, "wh-stream")
-		mu.Unlock()
-	}()
+	sub := h.webhookSvc.Subscribe("wh-stream")
+	defer sub.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/webhooks/wh-stream", nil)
 	rec := httptest.NewRecorder()
 	h.HandleWebhookRequest(rec, req)
 
 	select {
-	case msg := <-ch:
-		assert.Contains(t, msg, "wh-stream")
+	case evt := <-sub.Events:
+		assert.Equal(t, "wh-stream", evt.Request.WebhookID)
+		assert.False(t, evt.Request.ReceivedAt.IsZero())
 	case <-time.After(time.Second):
-		t.Fatal("expected a message to be broadcast to the stream channel")
+		t.Fatal("expected the captured request to be published")
 	}
 }
 
 // flushableRecorder wraps httptest.ResponseRecorder to satisfy http.Flusher,
-// since StreamWebhookEvents calls Flush() unconditionally. It also guards
-// Write/body access with a mutex, since the handler writes from its own
-// goroutine while the test concurrently polls the body.
+// since StreamWebhookEvents flushes. It guards all access with a mutex, since
+// the handler writes from its own goroutine while the test polls.
 type flushableRecorder struct {
-	mu  sync.Mutex
-	rec *httptest.ResponseRecorder
+	mu      sync.Mutex
+	rec     *httptest.ResponseRecorder
+	flushed bool
 }
 
 func newFlushableRecorder() *flushableRecorder {
@@ -494,78 +488,223 @@ func (f *flushableRecorder) WriteHeader(statusCode int) {
 	f.rec.WriteHeader(statusCode)
 }
 
-func (f *flushableRecorder) Flush() {}
-
-func (f *flushableRecorder) bodyContains(s string) bool {
+func (f *flushableRecorder) Flush() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return strings.Contains(f.rec.Body.String(), s)
+	f.flushed = true
 }
 
-func TestWebhookHandler_StreamWebhookEvents_MessageReceived(t *testing.T) {
-	h, _, _, _, _, _ := newTestWebhookHandler(t)
+func (f *flushableRecorder) body() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.rec.Body.String()
+}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// streamRun is a StreamWebhookEvents request served in the background.
+type streamRun struct {
+	rec    *flushableRecorder
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+// startStream serves req on StreamWebhookEvents in the background and waits
+// until the stream has subscribed and flushed its headers.
+func startStream(t *testing.T, h *WebhookHandler, req *http.Request) *streamRun {
+	t.Helper()
+	ctx, cancel := context.WithCancel(req.Context())
+	t.Cleanup(cancel)
 
 	router := chi.NewRouter()
 	router.Get("/webhook-stream/{id}", h.StreamWebhookEvents)
 
-	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/stream1", nil).WithContext(ctx)
-	rec := newFlushableRecorder()
-
-	done := make(chan struct{})
+	run := &streamRun{rec: newFlushableRecorder(), cancel: cancel, done: make(chan struct{})}
 	go func() {
-		router.ServeHTTP(rec, req)
-		close(done)
+		router.ServeHTTP(run.rec, req.WithContext(ctx))
+		close(run.done)
 	}()
-
-	// Wait until the handler has registered its channel.
 	require.Eventually(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(webhookStreams["stream1"]) == 1
-	}, time.Second, 5*time.Millisecond)
+		run.rec.mu.Lock()
+		defer run.rec.mu.Unlock()
+		return run.rec.flushed
+	}, time.Second, 5*time.Millisecond, "stream never started")
+	return run
+}
 
-	mu.Lock()
-	ch := webhookStreams["stream1"][0]
-	mu.Unlock()
-	ch <- "hello-event"
-
+func (s *streamRun) waitFor(t *testing.T, substrings ...string) {
+	t.Helper()
 	require.Eventually(t, func() bool {
-		return rec.bodyContains("hello-event")
-	}, time.Second, 5*time.Millisecond)
+		body := s.rec.body()
+		for _, sub := range substrings {
+			if !strings.Contains(body, sub) {
+				return false
+			}
+		}
+		return true
+	}, time.Second, 5*time.Millisecond, "stream body missing %q:\n%s", substrings, s.rec.body())
+}
 
-	cancel()
+func (s *streamRun) requireEnded(t *testing.T) {
+	t.Helper()
 	select {
-	case <-done:
+	case <-s.done:
 	case <-time.After(time.Second):
-		t.Fatal("handler did not return after context cancellation")
+		t.Fatal("stream handler did not return")
+	}
+}
+
+func recordRequest(t *testing.T, h *WebhookHandler, webhookID, id string) models.WebhookRequest {
+	t.Helper()
+	wr := models.WebhookRequest{ID: id, WebhookID: webhookID, Method: "POST", Body: `{"a":1}`}
+	require.NoError(t, h.webhookSvc.RecordRequest(&wr))
+	return wr
+}
+
+func TestWebhookHandler_StreamWebhookEvents_ActivePatchesMainPanel(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil))
+	wr := recordRequest(t, h, "wh", "req-active")
+
+	run.waitFor(t,
+		"selector #request-log-wh", "selector #request-log-list-wh", "Replay request", "new-badge",
+		"1 captured request", "id: "+models.CursorAt(wr).String())
+
+	run.cancel()
+	run.requireEnded(t)
+}
+
+func TestWebhookHandler_StreamWebhookEvents_NonActiveSkipsMainPanel(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh", nil))
+	wr := recordRequest(t, h, "wh", "req-non-active")
+
+	// The sidebar row carries the event ID when it is the only patch.
+	run.waitFor(t, "req-non-active", "id: "+models.CursorAt(wr).String())
+	body := run.rec.body()
+	assert.NotContains(t, body, "Replay request")
+	assert.NotContains(t, body, "request-log-list-wh")
+	assert.NotContains(t, body, "captured request")
+}
+
+func TestWebhookHandler_StreamWebhookEvents_ReplaysMissedRequests(t *testing.T) {
+	t0 := time.Now().UTC().Truncate(time.Microsecond)
+	seen := models.WebhookRequest{ID: "req-seen", WebhookID: "wh", ReceivedAt: t0}
+	missed := models.WebhookRequest{ID: "req-missed", WebhookID: "wh", ReceivedAt: t0.Add(time.Second)}
+
+	for name, setCursor := range map[string]func(r *http.Request){
+		"since query": func(r *http.Request) {
+			r.URL.RawQuery = "active&since=" + url.QueryEscape(models.CursorAt(seen).String())
+		},
+		// A reconnect's Last-Event-ID wins over the page's stale ?since=.
+		"last event id": func(r *http.Request) {
+			r.URL.RawQuery = "active&since="
+			r.Header.Set("Last-Event-ID", models.CursorAt(seen).String())
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+			whRepo.put(&models.Webhook{ID: "wh", Requests: []models.WebhookRequest{seen, missed}})
+
+			req := httptest.NewRequest(http.MethodGet, "/webhook-stream/wh", nil)
+			setCursor(req)
+			run := startStream(t, h, req)
+
+			run.waitFor(t, "req-missed", "2 captured requests", "id: "+models.CursorAt(missed).String())
+			assert.NotContains(t, run.rec.body(), "req-seen")
+
+			// Live streaming continues after the replay.
+			recordRequest(t, h, "wh", "req-live")
+			run.waitFor(t, "req-live", "3 captured requests")
+		})
+	}
+}
+
+func TestWebhookHandler_StreamWebhookEvents_ReplayErrorEndsStream(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+	whRepo.getRequestsAfterErr = errors.New("db down")
+
+	rec := httptest.NewRecorder()
+	req := withURLParam(httptest.NewRequest(http.MethodGet, "/webhook-stream/wh", nil), "id", "wh")
+	h.StreamWebhookEvents(rec, req)
+
+	// No 204: the client should retry.
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Body.String())
+}
+
+// Streams the client must not retry end with 204 No Content.
+func TestWebhookHandler_StreamWebhookEvents_NoContent(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	owner := &models.User{Email: "owner@example.com"}
+	userRepo.addUser(owner)
+	whRepo.put(&models.Webhook{ID: "public"})
+	whRepo.put(&models.Webhook{ID: "owned", UserID: int(owner.ID)})
+
+	for name, req := range map[string]*http.Request{
+		"missing webhook":        httptest.NewRequest(http.MethodGet, "/webhook-stream/missing", nil),
+		"someone else's webhook": httptest.NewRequest(http.MethodGet, "/webhook-stream/owned", nil),
+		"malformed since cursor": httptest.NewRequest(http.MethodGet, "/webhook-stream/public?since=nope", nil),
+		"malformed last event id": func() *http.Request {
+			r := httptest.NewRequest(http.MethodGet, "/webhook-stream/public", nil)
+			r.Header.Set("Last-Event-ID", "12:")
+			return r
+		}(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			router := chi.NewRouter()
+			router.Get("/webhook-stream/{id}", h.StreamWebhookEvents)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			assert.Equal(t, http.StatusNoContent, rec.Code)
+		})
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-	assert.Len(t, webhookStreams["stream1"], 0)
+	t.Run("owner may stream", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/webhook-stream/owned", nil)
+		req.AddCookie(sessionCookieFor(t, authSvc, owner))
+		run := startStream(t, h, req)
+		recordRequest(t, h, "owned", "req-owned")
+		run.waitFor(t, "req-owned")
+	})
+}
+
+func TestWebhookHandler_StreamWebhookEvents_EndsWhenWebhookDeleted(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh", nil))
+	require.NoError(t, h.webhookSvc.DeleteWebhook("wh", 0))
+	run.requireEnded(t)
 }
 
 // brokenWriter implements http.ResponseWriter and http.Flusher, but always
 // fails on Write - used to exercise StreamWebhookEvents' write-error branch.
 type brokenWriter struct {
-	header http.Header
+	mu      sync.Mutex
+	header  http.Header
+	flushed bool
 }
 
 func (b *brokenWriter) Header() http.Header        { return b.header }
 func (b *brokenWriter) Write([]byte) (int, error)  { return 0, errWriteFailed }
 func (b *brokenWriter) WriteHeader(statusCode int) {}
-func (b *brokenWriter) Flush()                     {}
+func (b *brokenWriter) Flush() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.flushed = true
+}
 
 var errWriteFailed = errors.New("write failed")
 
 func TestWebhookHandler_StreamWebhookEvents_WriteError(t *testing.T) {
-	h, _, _, _, _, _ := newTestWebhookHandler(t)
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
 
-	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/stream3", nil)
-	req = withURLParam(req, "id", "stream3")
+	req := withURLParam(httptest.NewRequest(http.MethodGet, "/webhook-stream/wh", nil), "id", "wh")
 	w := &brokenWriter{header: http.Header{}}
 
 	done := make(chan struct{})
@@ -573,17 +712,13 @@ func TestWebhookHandler_StreamWebhookEvents_WriteError(t *testing.T) {
 		h.StreamWebhookEvents(w, req)
 		close(done)
 	}()
-
 	require.Eventually(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(webhookStreams["stream3"]) == 1
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.flushed
 	}, time.Second, 5*time.Millisecond)
 
-	mu.Lock()
-	ch := webhookStreams["stream3"][0]
-	mu.Unlock()
-	ch <- "hello"
+	recordRequest(t, h, "wh", "req-hello")
 
 	select {
 	case <-done:
@@ -593,35 +728,10 @@ func TestWebhookHandler_StreamWebhookEvents_WriteError(t *testing.T) {
 }
 
 func TestWebhookHandler_StreamWebhookEvents_ClientDisconnect(t *testing.T) {
-	h, _, _, _, _, _ := newTestWebhookHandler(t)
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/stream2", nil).WithContext(ctx)
-	req = withURLParam(req, "id", "stream2")
-	rec := httptest.NewRecorder()
-
-	done := make(chan struct{})
-	go func() {
-		h.StreamWebhookEvents(rec, req)
-		close(done)
-	}()
-
-	require.Eventually(t, func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return len(webhookStreams["stream2"]) == 1
-	}, time.Second, 5*time.Millisecond)
-
-	cancel()
-
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("handler did not return after context cancellation")
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	assert.Len(t, webhookStreams["stream2"], 0)
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh", nil))
+	run.cancel()
+	run.requireEnded(t)
 }

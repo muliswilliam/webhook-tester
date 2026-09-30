@@ -60,10 +60,20 @@ func (r GormWebhookRepo) GetAll() ([]models.Webhook, error) {
 	return webhooks, err
 }
 
+// requestsPerWebhookLimit caps how many of each webhook's newest requests
+// GetAllByUser loads.
+const requestsPerWebhookLimit = 1000
+
 func (r GormWebhookRepo) GetAllByUser(userID uint) ([]models.Webhook, error) {
 	var webhooks []models.Webhook
+	userWebhookIDs := r.DB.Model(&models.Webhook{}).Select("id").Where("user_id = ?", userID)
+	ranked := r.DB.Model(&models.WebhookRequest{}).
+		Select("id, ROW_NUMBER() OVER (PARTITION BY webhook_id ORDER BY received_at DESC, id DESC) AS rn").
+		Where("webhook_id IN (?)", userWebhookIDs)
+	newestIDs := r.DB.Table("(?) AS ranked", ranked).Select("id").Where("rn <= ?", requestsPerWebhookLimit)
+
 	err := r.DB.Preload("Requests", func(db *gorm.DB) *gorm.DB {
-		return db.Order("received_at DESC").Limit(1000)
+		return db.Where("id IN (?)", newestIDs).Order("received_at DESC")
 	}).
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
@@ -122,30 +132,44 @@ func (r GormWebhookRepo) GetWithRequests(id string) (*models.Webhook, error) {
 	return &webhook, err
 }
 
-// CleanPublic deletes anonymous (public) webhooks and their associated requests
-// that were created before a specified duration threshold.
-//
-// A webhook is considered public if it has no associated user (i.e., user_id = 0).
-// This function queries for all such webhooks created earlier than the current time minus `d`,
-// then deletes both the webhooks and their related webhook requests within a single transaction.
-//
-// Parameters:
-//   - db: a *gorm.DB database connection.
-//   - d: a time.Duration representing the age threshold (e.g., 72*time.Hour).
-//
-// This function is useful for cleaning up stale, guest-generated webhooks
-// that should not persist indefinitely.
-//
-// Any error during the transaction is logged but not returned.
-func (r GormWebhookRepo) CleanPublic(d time.Duration) error {
+// CountRequests returns the number of requests captured for a webhook.
+func (r GormWebhookRepo) CountRequests(webhookID string) (int64, error) {
+	var count int64
+	err := r.DB.Model(&models.WebhookRequest{}).Where("webhook_id = ?", webhookID).Count(&count).Error
+	if err != nil {
+		r.logger.Printf("failed to count webhook requests: %v", err)
+	}
+	return count, err
+}
+
+// GetRequestsAfter returns webhookID's requests positioned after the cursor,
+// oldest first.
+func (r GormWebhookRepo) GetRequestsAfter(webhookID string, after models.RequestCursor) ([]models.WebhookRequest, error) {
+	var requests []models.WebhookRequest
+	q := r.DB.Where("webhook_id = ?", webhookID)
+	if !after.IsZero() {
+		q = r.DB.Where("webhook_id = ? AND (received_at > ? OR (received_at = ? AND id > ?))",
+			webhookID, after.ReceivedAt, after.ReceivedAt, after.ID)
+	}
+	err := q.Order("received_at ASC, id ASC").Find(&requests).Error
+	if err != nil {
+		r.logger.Printf("failed to get webhook requests after cursor: %v", err)
+	}
+	return requests, err
+}
+
+// CleanPublic deletes anonymous (public) webhooks, i.e. those with user_id = 0,
+// created more than d ago, together with their requests, in one transaction.
+// It returns the IDs of the deleted webhooks.
+func (r GormWebhookRepo) CleanPublic(d time.Duration) ([]string, error) {
 	r.logger.Println("Cleaning public webhooks")
 	beforeDate := time.Now().Add(-d).UTC()
 
+	var webhookIDs []string
 	err := r.DB.Transaction(func(tx *gorm.DB) error {
 		var webhooks []models.Webhook
 		tx.Where("created_at < ? AND user_id = 0", beforeDate).Find(&webhooks)
 
-		var webhookIDs []string
 		for _, webhook := range webhooks {
 			webhookIDs = append(webhookIDs, webhook.ID)
 		}
@@ -167,7 +191,8 @@ func (r GormWebhookRepo) CleanPublic(d time.Duration) error {
 
 	if err != nil {
 		r.logger.Printf("error cleaning public webhooks: %v", err)
+		return nil, err
 	}
 
-	return err
+	return webhookIDs, nil
 }

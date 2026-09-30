@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -124,6 +125,39 @@ func TestGormWebhookRepo_GetAllByUser(t *testing.T) {
 	require.Len(t, webhooks, 2)
 	assert.Equal(t, "wh-2", webhooks[0].ID)
 	assert.Equal(t, "wh-1", webhooks[1].ID)
+}
+
+// The request cap applies per webhook: one busy webhook must not crowd out
+// another's requests, and each keeps its newest ones.
+func TestGormWebhookRepo_GetAllByUser_CapsRequestsPerWebhook(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGormWebookRepo(db, testLogger())
+
+	require.NoError(t, repo.Insert(&models.Webhook{ID: "busy", UserID: 5}))
+	require.NoError(t, repo.Insert(&models.Webhook{ID: "quiet", UserID: 5}))
+
+	base := time.Now().UTC()
+	busy := make([]models.WebhookRequest, requestsPerWebhookLimit+5)
+	for i := range busy {
+		busy[i] = models.WebhookRequest{
+			ID:         fmt.Sprintf("busy-%05d", i),
+			WebhookID:  "busy",
+			ReceivedAt: base.Add(time.Duration(i) * time.Second),
+		}
+	}
+	require.NoError(t, db.CreateInBatches(busy, 200).Error)
+	require.NoError(t, repo.InsertRequest(&models.WebhookRequest{ID: "quiet-1", WebhookID: "quiet", ReceivedAt: base.Add(-time.Hour)}))
+
+	webhooks, err := repo.GetAllByUser(5)
+	require.NoError(t, err)
+	byID := map[string]models.Webhook{}
+	for _, wh := range webhooks {
+		byID[wh.ID] = wh
+	}
+
+	require.Len(t, byID["busy"].Requests, requestsPerWebhookLimit)
+	assert.Equal(t, busy[len(busy)-1].ID, byID["busy"].Requests[0].ID, "newest first")
+	require.Len(t, byID["quiet"].Requests, 1)
 }
 
 func TestGormWebhookRepo_GetAllByUser_NoResults(t *testing.T) {
@@ -264,7 +298,9 @@ func TestGormWebhookRepo_CleanPublic(t *testing.T) {
 	require.NoError(t, repo.InsertRequest(&models.WebhookRequest{ID: "req-new", WebhookID: "new-public", Method: "GET"}))
 
 	// Threshold duration of 1 hour -> beforeDate = now - 1h.
-	require.NoError(t, repo.CleanPublic(time.Hour))
+	deleted, err := repo.CleanPublic(time.Hour)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"old-public"}, deleted)
 
 	var remaining []models.Webhook
 	require.NoError(t, db.Find(&remaining).Error)
@@ -285,10 +321,48 @@ func TestGormWebhookRepo_CleanPublic(t *testing.T) {
 	assert.Equal(t, int64(1), reqNewCount, "request for the kept public webhook should remain")
 }
 
+func TestGormWebhookRepo_GetRequestsAfter(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGormWebookRepo(db, testLogger())
+
+	base := time.Now().UTC().Truncate(time.Microsecond)
+	reqs := []*models.WebhookRequest{
+		{ID: "b", WebhookID: "wh", ReceivedAt: base},
+		{ID: "a", WebhookID: "wh", ReceivedAt: base.Add(time.Second)},
+		// Same timestamp as "a": ordered after it by ID.
+		{ID: "c", WebhookID: "wh", ReceivedAt: base.Add(time.Second)},
+		{ID: "other", WebhookID: "other-wh", ReceivedAt: base.Add(time.Hour)},
+	}
+	for _, wr := range reqs {
+		require.NoError(t, repo.InsertRequest(wr))
+	}
+	idsOf := func(rs []models.WebhookRequest) []string {
+		var ids []string
+		for _, r := range rs {
+			ids = append(ids, r.ID)
+		}
+		return ids
+	}
+
+	all, err := repo.GetRequestsAfter("wh", models.RequestCursor{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"b", "a", "c"}, idsOf(all), "zero cursor returns everything, oldest first")
+
+	after, err := repo.GetRequestsAfter("wh", models.CursorAt(*reqs[1]))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"c"}, idsOf(after))
+
+	none, err := repo.GetRequestsAfter("wh", models.CursorAt(*reqs[2]))
+	require.NoError(t, err)
+	assert.Empty(t, none)
+}
+
 func TestGormWebhookRepo_CleanPublic_NoMatches(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewGormWebookRepo(db, testLogger())
 
 	// No public webhooks exist at all - should be a no-op, no error.
-	require.NoError(t, repo.CleanPublic(24*time.Hour))
+	deleted, err := repo.CleanPublic(24 * time.Hour)
+	require.NoError(t, err)
+	assert.Empty(t, deleted)
 }

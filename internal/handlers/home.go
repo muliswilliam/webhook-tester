@@ -42,7 +42,9 @@ type HomePageData struct {
 	Webhooks        []models.Webhook
 	Webhook         models.Webhook
 	ResponseHeaders string
-	RequestsCount   uint
+	ContentType     string
+	RequestRows     []requestRowView
+	RequestCounter  requestCounterView
 	Domain          string
 	Year            int
 }
@@ -109,11 +111,15 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if webhookID != "" && userID == 0 {
-		wrr, err := h.webhookSvc.GetWebhookWithRequests(webhookID)
+		wrr, err := h.webhookSvc.GetAccessibleWebhookWithRequests(webhookID, userID)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
-			cookie.MaxAge = -1
-			http.SetCookie(w, cookie)
+			// Only a dead workspace cookie is cleared; a bad ?address= link
+			// must not cost the guest their own workspace.
+			if cookie != nil && cookie.Value == webhookID {
+				cookie.MaxAge = -1
+				http.SetCookie(w, cookie)
+			}
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
@@ -125,7 +131,7 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if address != "" {
-		aw, err := h.webhookSvc.GetWebhookWithRequests(address)
+		aw, err := h.webhookSvc.GetAccessibleWebhookWithRequests(address, userID)
 		if err != nil {
 			log.Printf("failed to get webhook: %v", err)
 		} else {
@@ -150,14 +156,27 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		user = &models.User{}
 	}
 
+	var contentType string
+	if activeWebhook.ContentType != nil {
+		contentType = *activeWebhook.ContentType
+	}
+
+	csrfField := csrf.TemplateField(r)
+	rows := make([]requestRowView, len(activeWebhook.Requests))
+	for i, wr := range activeWebhook.Requests {
+		rows[i] = requestRowView{Request: wr, CSRFField: csrfField}
+	}
+
 	// RenderHtml the home page
 	data := HomePageData{
-		CSRFField:       csrf.TemplateField(r),
+		CSRFField:       csrfField,
 		User:            *user,
 		Webhooks:        webhooks,
 		Webhook:         activeWebhook,
 		ResponseHeaders: headersJSON,
-		RequestsCount:   uint(len(activeWebhook.Requests)),
+		ContentType:     contentType,
+		RequestRows:     rows,
+		RequestCounter:  requestCounterView{WebhookID: activeWebhook.ID, Count: int64(len(activeWebhook.Requests))},
 		Domain:          os.Getenv("DOMAIN"),
 		Year:            time.Now().Year(),
 	}

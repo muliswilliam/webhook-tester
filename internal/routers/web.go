@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 	"webhook-tester/internal/handlers"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
@@ -38,8 +39,13 @@ func NewWebRouter(
 		trustedOrigins = append(trustedOrigins, parsedDomain.Host)
 	}
 
+	// Forms carry tokens masked from the CSRF cookie that was current when
+	// their page loaded, so the cookie must outlive any page a user may keep
+	// open - notably guest workspaces, which last two days. gorilla/csrf's
+	// 12h default would break the forms of every older tab.
 	csrfMiddleware := csrf.Protect(
 		csrfKey,
+		csrf.MaxAge(int((30 * 24 * time.Hour).Seconds())),
 		csrf.Secure(isHTTPS),
 		csrf.Path("/"),
 		csrf.TrustedOrigins(trustedOrigins),

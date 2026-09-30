@@ -30,7 +30,7 @@ func newTestWebhookRequestHandler(t *testing.T) (*WebhookRequestHandler, *testWe
 	return h, reqRepo, whRepo, userRepo, authSvc
 }
 
-func TestWebhookRequestHandler_GetRequest_WebhookLoadError(t *testing.T) {
+func TestWebhookRequestHandler_GetRequest_WebhookNotFound(t *testing.T) {
 	h, _, _, _, _ := newTestWebhookRequestHandler(t)
 
 	router := chi.NewRouter()
@@ -40,7 +40,77 @@ func TestWebhookRequestHandler_GetRequest_WebhookLoadError(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestWebhookRequestHandler_GetRequest_WebhookLoadError(t *testing.T) {
+	h, _, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.getWithRequestsErr = assert.AnError
+
+	router := chi.NewRouter()
+	router.Get("/requests/{id}", h.GetRequest)
+
+	req := httptest.NewRequest(http.MethodGet, "/requests/r1?address=wh1", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+}
+
+// Someone else's webhook - or a request filed under a different webhook than
+// the one named in ?address= - reads as not found.
+func TestWebhookRequestHandler_GetRequest_Inaccessible(t *testing.T) {
+	h, reqRepo, whRepo, userRepo, authSvc := newTestWebhookRequestHandler(t)
+	owner := &models.User{Email: "owner@x.com"}
+	other := &models.User{Email: "other@x.com"}
+	userRepo.addUser(owner)
+	userRepo.addUser(other)
+	whRepo.put(&models.Webhook{ID: "owned", UserID: int(owner.ID)})
+	whRepo.put(&models.Webhook{ID: "public"})
+	reqRepo.put(&models.WebhookRequest{ID: "r-owned", WebhookID: "owned"})
+
+	router := chi.NewRouter()
+	router.Get("/requests/{id}", h.GetRequest)
+
+	for name, tc := range map[string]struct {
+		path   string
+		cookie *http.Cookie
+	}{
+		"guest":              {path: "/requests/r-owned?address=owned"},
+		"another user":       {path: "/requests/r-owned?address=owned", cookie: sessionCookieFor(t, authSvc, other)},
+		"mismatched address": {path: "/requests/r-owned?address=public"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			if tc.cookie != nil {
+				req.AddCookie(tc.cookie)
+			}
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			assert.Equal(t, http.StatusNotFound, rec.Code)
+		})
+	}
+}
+
+// Deleting or replaying a request requires access to its webhook.
+func TestWebhookRequestHandler_MutationsRequireAccess(t *testing.T) {
+	h, reqRepo, whRepo, userRepo, _ := newTestWebhookRequestHandler(t)
+	owner := &models.User{Email: "owner@x.com"}
+	userRepo.addUser(owner)
+	whRepo.put(&models.Webhook{ID: "owned", UserID: int(owner.ID)})
+	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "owned", Method: http.MethodGet})
+
+	router := chi.NewRouter()
+	router.Post("/requests/{id}/delete", h.DeleteRequest)
+	router.Post("/requests/{id}/replay", h.ReplayRequest)
+
+	for _, path := range []string{"/requests/r1/delete", "/requests/r1/replay"} {
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+		assert.Equal(t, http.StatusNotFound, rec.Code, path)
+	}
+	_, stillThere := reqRepo.requests["r1"]
+	assert.True(t, stillThere)
 }
 
 func TestWebhookRequestHandler_GetRequest_RequestNotFound(t *testing.T) {
@@ -114,7 +184,8 @@ func TestWebhookRequestHandler_GetRequest_LoggedInUser_ListError(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_DeleteRequest_WithReferer(t *testing.T) {
-	h, reqRepo, _, _, _ := newTestWebhookRequestHandler(t)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1"})
 	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1"})
 
 	router := chi.NewRouter()
@@ -132,7 +203,8 @@ func TestWebhookRequestHandler_DeleteRequest_WithReferer(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_DeleteRequest_NoReferer(t *testing.T) {
-	h, reqRepo, _, _, _ := newTestWebhookRequestHandler(t)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1"})
 	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1"})
 
 	router := chi.NewRouter()
@@ -147,7 +219,9 @@ func TestWebhookRequestHandler_DeleteRequest_NoReferer(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_DeleteRequest_ServiceError(t *testing.T) {
-	h, reqRepo, _, _, _ := newTestWebhookRequestHandler(t)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1"})
+	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1"})
 	reqRepo.deleteByIDErr = assert.AnError
 
 	router := chi.NewRouter()
@@ -174,7 +248,8 @@ func TestWebhookRequestHandler_ReplayRequest_NotFound(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_ReplayRequest_InvalidMethod(t *testing.T) {
-	h, reqRepo, _, _, _ := newTestWebhookRequestHandler(t)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1"})
 	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: "BAD METHOD", Body: ""})
 	t.Setenv("DOMAIN", "http://example.com")
 
@@ -189,7 +264,8 @@ func TestWebhookRequestHandler_ReplayRequest_InvalidMethod(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_ReplayRequest_NetworkError(t *testing.T) {
-	h, reqRepo, _, _, _ := newTestWebhookRequestHandler(t)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1"})
 	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: http.MethodGet})
 
 	closedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
@@ -207,7 +283,8 @@ func TestWebhookRequestHandler_ReplayRequest_NetworkError(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_ReplayRequest_InvalidDomain(t *testing.T) {
-	h, reqRepo, _, _, _ := newTestWebhookRequestHandler(t)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1"})
 	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: http.MethodGet})
 	t.Setenv("DOMAIN", "://bad")
 
@@ -222,7 +299,8 @@ func TestWebhookRequestHandler_ReplayRequest_InvalidDomain(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_ReplayRequest_Success(t *testing.T) {
-	h, reqRepo, _, _, _ := newTestWebhookRequestHandler(t)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1"})
 
 	var gotPath, gotQuery, gotHeader string
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

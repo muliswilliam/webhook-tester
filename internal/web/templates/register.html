@@ -64,7 +64,7 @@
               placeholder="you@example.com"
             />
           </div>
-          <div x-data="{ show: false }" class="relative">
+          <div data-signals:show="false" class="relative">
             <label for="password" class="field-label">Password</label>
             <input
               name="password"
@@ -75,16 +75,16 @@
               required
               class="field pr-14"
               placeholder="Create a password"
-              :type="show ? 'text' : 'password'"
+              data-attr:type="$show ? 'text' : 'password'"
             />
             <button
               type="button"
-              @click="show = !show"
+              data-on:click="$show = !$show"
               class="absolute right-0 top-7 grid h-11 w-12 place-items-center text-muted"
-              :aria-label="show ? 'Hide password' : 'Show password'"
+              data-attr:aria-label="$show ? 'Hide password' : 'Show password'"
             >
               <img
-                :src="show ? '/static/icons/eye-off-outline.svg' : '/static/icons/eye-outline.svg'"
+                data-attr:src="$show ? '/static/icons/eye-off-outline.svg' : '/static/icons/eye-outline.svg'"
                 alt=""
                 class="h-5 w-5 opacity-60 dark:invert"
               />
