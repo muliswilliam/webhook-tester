@@ -164,7 +164,7 @@
         <div class="flex-1 space-y-2 overflow-y-auto px-3 py-2">
           {{ range .Webhooks }}
             <div
-              data-signals="{cardOpen_{{ sig .ID }}: true}"
+              data-signals="{cardOpen_{{ signalKey .ID }}: true}"
               class="sidebar-card {{ if eq .ID $activeID }}sidebar-card-active{{ end }}"
               data-class="{'md:flex md:justify-center md:px-2 md:py-2': $railCollapsed}"
             >
@@ -197,15 +197,15 @@
                   {{ or .Title .ID }}
                 </a>
                 <button
-                  data-on:click="$cardOpen_{{ sigJS .ID }} = !$cardOpen_{{ sigJS .ID }}"
+                  data-on:click="$cardOpen_{{ signalKeyJS .ID }} = !$cardOpen_{{ signalKeyJS .ID }}"
                   class="sidebar-disclosure"
                   data-show="!$railCollapsed"
                   aria-label="Toggle request list"
-                  data-attr:aria-expanded="$cardOpen_{{ sig .ID }}.toString()"
+                  data-attr:aria-expanded="$cardOpen_{{ signalKey .ID }}.toString()"
                 >
                   <svg
                     class="h-4 w-4 transition-transform"
-                    data-class="{'rotate-180': $cardOpen_{{ sig .ID }}}"
+                    data-class="{'rotate-180': $cardOpen_{{ signalKey .ID }}}"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -218,19 +218,17 @@
               </div>
               <div
                 style="display: none"
-                data-show="$cardOpen_{{ sig .ID }} && !$railCollapsed"
-                data-init="@get('/webhook-stream/{{ .ID }}{{- if eq .ID $activeID -}}
-                  ?active=1
-                {{- end }}', {retryMaxCount: Infinity})"
-                class="mt-2 space-y-1 border-t pt-2"
+                data-show="$cardOpen_{{ signalKey .ID }} && !$railCollapsed"
+                data-init="@get('/webhook-stream/{{ .ID }}?since={{ streamCursor .Requests }}{{- if eq .ID $activeID -}}
+                  &active
+                {{- end -}}', {retry: 'always', retryMaxCount: Infinity, openWhenHidden: true, filterSignals: {include: /^$/}})"
+                class="request-log mt-2 space-y-1 border-t pt-2"
                 id="request-log-{{ .ID }}"
               >
                 {{ range .Requests }}
                   {{ template "sidebar-request-row" . }}
                 {{ else }}
-                  <p class="px-2 py-2 text-xs" id="request-log-waiting-{{ .ID }}">
-                    Waiting for a request...
-                  </p>
+                  <p class="request-placeholder px-2 py-2 text-xs">Waiting for a request...</p>
                 {{ end }}
               </div>
             </div>
@@ -270,160 +268,154 @@
       </div>
     </div>
 
-    <div
-      style="display: none"
-      data-show="$showModal"
-      data-on:keydown__window="if (evt.key === 'Escape' && $showModal) $showModal = false"
+    <dialog
+      class="modal"
+      aria-labelledby="create-webhook-title"
+      data-effect="$showModal ? el.open || el.showModal() : el.close()"
+      data-on:close="$showModal = false"
+      data-on:click="evt.target === el && ($showModal = false)"
     >
-      <div
-        style="display: none"
-        data-show="$showModal"
-        class="fixed inset-0 z-40 bg-black/55"
-        data-on:click="$showModal = false"
-        aria-hidden="true"
-      ></div>
-      <div
-        style="display: none"
-        data-show="$showModal"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
-      >
-        <div
-          class="modal-panel max-h-[90vh]"
-          data-on:click__outside="$showModal = false"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="create-webhook-title"
-        >
-          <div class="mb-6 flex items-start justify-between">
-            <div>
-              <p class="eyebrow">New endpoint</p>
-              <h2 id="create-webhook-title" class="mt-2 text-xl font-semibold">Create webhook</h2>
-            </div>
-            <button class="icon-btn" data-on:click="$showModal = false" aria-label="Close dialog">
-              <svg
-                class="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <path d="m6 6 12 12M18 6 6 18" />
-              </svg>
-            </button>
+      <div class="modal-panel">
+        <div class="mb-6 flex items-start justify-between">
+          <div>
+            <p class="eyebrow">New endpoint</p>
+            <h2 id="create-webhook-title" class="mt-2 text-xl font-semibold">Create webhook</h2>
           </div>
-          <form
-            method="POST"
-            action="/create-webhook"
-            class="space-y-5"
-            onsubmit="serializeHeaderRows(this)"
-          >
-            {{ .CSRFField }}
+          <button class="icon-btn" data-on:click="$showModal = false" aria-label="Close dialog">
+            <svg
+              class="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        <form
+          method="POST"
+          action="/create-webhook"
+          class="space-y-5"
+          onsubmit="return serializeHeaderRows(this)"
+        >
+          {{ .CSRFField }}
+          <div>
+            <label for="create_title" class="field-label">Title</label>
+            <input
+              id="create_title"
+              type="text"
+              name="title"
+              class="field"
+              placeholder="Payment events"
+              required
+            />
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2">
             <div>
-              <label for="create_title" class="field-label">Title</label>
+              <label for="create_response_code" class="field-label">Response code</label>
               <input
-                id="create_title"
-                type="text"
-                name="title"
+                id="create_response_code"
+                type="number"
+                inputmode="numeric"
+                name="response_code"
                 class="field"
-                placeholder="Payment events"
+                value="200"
                 required
               />
             </div>
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label for="create_response_code" class="field-label">Response code</label>
-                <input
-                  id="create_response_code"
-                  type="number"
-                  inputmode="numeric"
-                  name="response_code"
-                  class="field"
-                  value="200"
-                  required
-                />
-              </div>
-              <div>
-                <label for="create_content_type" class="field-label">Content type</label>
-                <select id="create_content_type" name="content_type" class="field">
-                  <option value="application/json">application/json</option>
-                  <option value="text/plain">text/plain</option>
-                  <option value="text/html">text/html</option>
-                </select>
-              </div>
-            </div>
             <div>
-              <label for="create_response_delay" class="field-label">Response delay (ms)</label>
-              <input
-                id="create_response_delay"
-                type="number"
-                inputmode="numeric"
-                name="response_delay"
-                class="field"
-                value="0"
-              />
+              <label for="create_content_type" class="field-label">Content type</label>
+              <select id="create_content_type" name="content_type" class="field">
+                {{ template "content-type-options" "application/json" }}
+              </select>
             </div>
-            <div>
-              <label for="create_payload" class="field-label">Response payload</label>
-              <textarea id="create_payload" name="payload" rows="4" class="field font-mono">
+          </div>
+          <div>
+            <label for="create_response_delay" class="field-label">Response delay (ms)</label>
+            <input
+              id="create_response_delay"
+              type="number"
+              inputmode="numeric"
+              name="response_delay"
+              class="field"
+              value="0"
+            />
+          </div>
+          <div>
+            <label for="create_payload" class="field-label">Response payload</label>
+            <textarea id="create_payload" name="payload" rows="4" class="field font-mono">
 {"message":"ok"}</textarea>
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="field-label mb-0">Response headers</span>
+              <button type="button" onclick="addHeaderRow(this)" class="text-link text-sm">
+                Add header
+              </button>
             </div>
-            <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="field-label mb-0">Response headers</span>
-                <button type="button" onclick="addHeaderRow(this)" class="text-link text-sm">
-                  Add header
+            <div class="header-rows space-y-2"></div>
+            <template id="header-row-template">
+              <div class="header-row flex gap-2">
+                <input
+                  type="text"
+                  class="field"
+                  placeholder="Header name"
+                  aria-label="Header name"
+                  oninput="this.setCustomValidity('')"
+                />
+                <input
+                  type="text"
+                  class="field"
+                  placeholder="Header value"
+                  aria-label="Header value"
+                />
+                <button
+                  type="button"
+                  onclick="removeHeaderRow(this)"
+                  class="icon-btn shrink-0"
+                  aria-label="Remove header"
+                >
+                  <svg
+                    class="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                  >
+                    <path d="M5 12h14" />
+                  </svg>
                 </button>
               </div>
-              <div class="header-rows space-y-2"></div>
-              <template id="header-row-template">
-                <div class="header-row flex gap-2">
-                  <input
-                    type="text"
-                    class="field"
-                    placeholder="Header name"
-                    aria-label="Header name"
-                  />
-                  <input
-                    type="text"
-                    class="field"
-                    placeholder="Header value"
-                    aria-label="Header value"
-                  />
-                  <button
-                    type="button"
-                    onclick="removeHeaderRow(this)"
-                    class="icon-btn shrink-0"
-                    aria-label="Remove header"
-                  >
-                    <svg
-                      class="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      aria-hidden="true"
-                    >
-                      <path d="M5 12h14" />
-                    </svg>
-                  </button>
-                </div>
-              </template>
-              <input type="hidden" name="response_headers" />
-            </div>
-            <label class="check-row">
-              <input type="checkbox" id="create_notify" name="notify_on_event" value="true" />
-              <span>Notify me when a request arrives</span>
-            </label>
-            <div class="flex justify-end gap-3 pt-2">
-              <button type="button" data-on:click="$showModal = false" class="btn-secondary">
-                Cancel
-              </button>
-              <button type="submit" class="btn-primary">Create endpoint</button>
-            </div>
-          </form>
-        </div>
+            </template>
+            <input type="hidden" name="response_headers" />
+          </div>
+          <label class="check-row">
+            <input type="checkbox" id="create_notify" name="notify_on_event" value="true" />
+            <span>Notify me when a request arrives</span>
+          </label>
+          <div class="flex justify-end gap-3 pt-2">
+            <button type="button" data-on:click="$showModal = false" class="btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" class="btn-primary">Create endpoint</button>
+          </div>
+        </form>
       </div>
-    </div>
+    </dialog>
   </div>
+{{ end }}
+
+{{/* Options for a content type select, with the given value selected. */}}
+{{ define "content-type-options" }}
+  <option value="application/json" {{ if eq . "application/json" }}selected{{ end }}>
+    application/json
+  </option>
+  <option value="text/plain" {{ if eq . "text/plain" }}selected{{ end }}>text/plain</option>
+  <option value="text/html" {{ if eq . "text/html" }}selected{{ end }}>text/html</option>
+  {{ if and . (ne . "application/json") (ne . "text/plain") (ne . "text/html") }}
+    <option value="{{ . }}" selected>{{ . }}</option>
+  {{ end }}
 {{ end }}

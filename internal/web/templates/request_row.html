@@ -14,12 +14,12 @@
 {{ define "main-request-row" }}
   <article
     class="surface overflow-hidden"
-    data-signals="{open_{{ sig .Request.ID }}: false, copiedBody_{{ sig .Request.ID }}: false}"
+    data-signals="{open_{{ signalKey .Request.ID }}: false, copiedBody_{{ signalKey .Request.ID }}: false, rawBody_{{ signalKey .Request.ID }}: false}"
   >
     <button
       class="request-row"
-      data-on:click="$open_{{ sigJS .Request.ID }} = !$open_{{ sigJS .Request.ID }}"
-      data-attr:aria-expanded="$open_{{ sig .Request.ID }}.toString()"
+      data-on:click="$open_{{ signalKeyJS .Request.ID }} = !$open_{{ signalKeyJS .Request.ID }}"
+      data-attr:aria-expanded="$open_{{ signalKey .Request.ID }}.toString()"
     >
       <span class="flex min-w-0 items-center gap-3">
         <span class="method-badge">{{ .Request.Method }}</span>
@@ -32,7 +32,7 @@
         {{ if .IsNew }}<span class="new-badge">New</span>{{ end }}
         <svg
           class="h-4 w-4 text-muted transition-transform"
-          data-class="{'rotate-180': $open_{{ sig .Request.ID }}}"
+          data-class="{'rotate-180': $open_{{ signalKey .Request.ID }}}"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -43,22 +43,14 @@
         </svg>
       </span>
     </button>
-    <div style="display: none" data-show="$open_{{ sig .Request.ID }}" class="border-t">
+    <div style="display: none" data-show="$open_{{ signalKey .Request.ID }}" class="border-t">
       <div class="grid lg:grid-cols-2">
-        <section class="border-b lg:border-b-0 lg:border-r">
+        <section class="min-w-0 border-b lg:border-b-0 lg:border-r">
           <div class="section-bar">
             <h3>Body</h3>
-            <button
-              data-on:click__stop="navigator.clipboard.writeText($body_{{ sigJS .Request.ID }}.innerText); $copiedBody_{{ sigJS .Request.ID }} = true; setTimeout(() => $copiedBody_{{ sigJS .Request.ID }} = false, 1500)"
-              class="text-link text-xs font-medium"
-              data-text="$copiedBody_{{ sig .Request.ID }} ? 'Copied' : 'Copy body'"
-            ></button>
+            {{ template "request-body-actions" .Request }}
           </div>
-          <pre
-            data-ref:body_{{ sig .Request.ID }}
-            class="code-surface min-h-40 overflow-x-auto border-t p-5 text-xs leading-6"
-          >
-{{ .Request.Body }}</pre>
+          {{ template "request-body" .Request }}
         </section>
         <section>
           <div class="section-bar">
@@ -118,4 +110,62 @@
       </div>
     </div>
   </article>
+{{ end }}
+
+{{/* Expects the rawBody_<key> and copiedBody_<key> signals of the request to be declared. */}}
+{{ define "request-body-actions" }}
+  <div class="flex items-center gap-3">
+    {{ if prettyJSON .Body }}
+      <div class="segmented" role="group" aria-label="Body format">
+        <button
+          type="button"
+          class="segmented-option"
+          data-on:click="$rawBody_{{ signalKeyJS .ID }} = false"
+          data-attr:aria-pressed="(!$rawBody_{{ signalKey .ID }}).toString()"
+        >
+          Formatted
+        </button>
+        <button
+          type="button"
+          class="segmented-option"
+          data-on:click="$rawBody_{{ signalKeyJS .ID }} = true"
+          data-attr:aria-pressed="$rawBody_{{ signalKey .ID }}.toString()"
+        >
+          Raw
+        </button>
+      </div>
+      <button
+        type="button"
+        data-on:click="copyWithFeedback(($rawBody_{{ signalKeyJS .ID }} ? $bodyRaw_{{ signalKeyJS .ID }} : $bodyFormatted_{{ signalKeyJS .ID }}).textContent, copied => $copiedBody_{{ signalKeyJS .ID }} = copied)"
+        class="text-link text-xs font-medium"
+        data-text="$copiedBody_{{ signalKey .ID }} ? 'Copied' : 'Copy body'"
+      ></button>
+    {{ else }}
+      <button
+        type="button"
+        data-on:click="copyWithFeedback($bodyRaw_{{ signalKeyJS .ID }}.textContent, copied => $copiedBody_{{ signalKeyJS .ID }} = copied)"
+        class="text-link text-xs font-medium"
+        data-text="$copiedBody_{{ signalKey .ID }} ? 'Copied' : 'Copy body'"
+      ></button>
+    {{ end }}
+  </div>
+{{ end }}
+
+{{/* Formatted JSON by default, when the body is JSON; the raw body otherwise. */}}
+{{ define "request-body" }}
+  {{ $formatted := prettyJSON .Body }}
+  {{ if $formatted }}
+    <pre
+      data-ref:body-formatted_{{ signalKey .ID }}
+      data-show="!$rawBody_{{ signalKey .ID }}"
+      class="request-body code-surface"
+    >
+{{ $formatted }}</pre>
+  {{ end }}
+  <pre
+    data-ref:body-raw_{{ signalKey .ID }}
+    {{ if $formatted }}style="display: none" data-show="$rawBody_{{ signalKey .ID }}"{{ end }}
+    class="request-body code-surface"
+  >
+{{ .Body }}</pre>
 {{ end }}

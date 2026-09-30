@@ -1,8 +1,10 @@
 package utils
 
 import (
+	"encoding/hex"
 	"html/template"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +41,18 @@ func newTestWebhook() models.Webhook {
 	}
 }
 
+// testRequestRow and testRequestCounter mirror the handlers package's views.
+type testRequestRow struct {
+	Request   models.WebhookRequest
+	CSRFField template.HTML
+	IsNew     bool
+}
+
+type testRequestCounter struct {
+	WebhookID string
+	Count     int64
+}
+
 func TestRenderHtmlHomeHappyPath(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
@@ -51,7 +65,9 @@ func TestRenderHtmlHomeHappyPath(t *testing.T) {
 		Webhooks        []models.Webhook
 		Webhook         models.Webhook
 		ResponseHeaders string
-		RequestsCount   uint
+		ContentType     string
+		RequestRows     []testRequestRow
+		RequestCounter  testRequestCounter
 		Domain          string
 		Year            int
 	}{
@@ -60,7 +76,8 @@ func TestRenderHtmlHomeHappyPath(t *testing.T) {
 		Webhooks:        []models.Webhook{webhook},
 		Webhook:         webhook,
 		ResponseHeaders: "",
-		RequestsCount:   uint(len(webhook.Requests)),
+		RequestRows:     []testRequestRow{{Request: webhook.Requests[0]}},
+		RequestCounter:  testRequestCounter{WebhookID: webhook.ID, Count: int64(len(webhook.Requests))},
 		Domain:          "example.com",
 		Year:            2026,
 	}
@@ -71,16 +88,14 @@ func TestRenderHtmlHomeHappyPath(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "My webhook")
 }
 
-// The sidebar's data-init="@get('/webhook-stream/{id}?active=1')" call is a
+// The sidebar's data-init="@get('/webhook-stream/{id}?...')" call is a
 // single-quoted JS string literal that Datastar compiles via new Function(...).
 // Go's html/template does not trim whitespace around actions by default, so a
-// template edit that reformats the {{ if }}/{{ end }} onto their own lines
-// (e.g. an automated formatter re-wrapping a long attribute) can leak a raw
-// newline into that literal. That's a SyntaxError in JS, so the whole @get()
-// call throws before it runs - the active webhook's SSE connection silently
-// never opens. Assert the rendered literal has no embedded whitespace for
-// both the active and an inactive webhook.
-func TestRenderHtmlHomeWebhookStreamDataInitHasNoEmbeddedWhitespace(t *testing.T) {
+// template reformat (prettier re-wrapping the long attribute) can leak a raw
+// newline into that literal: a JS SyntaxError that silently stops the SSE
+// connection from ever opening. Assert the literal is exact for both the
+// active and an inactive webhook.
+func TestRenderHtmlHomeWebhookStreamDataInit(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
 
@@ -93,7 +108,9 @@ func TestRenderHtmlHomeWebhookStreamDataInitHasNoEmbeddedWhitespace(t *testing.T
 		Webhooks        []models.Webhook
 		Webhook         models.Webhook
 		ResponseHeaders string
-		RequestsCount   uint
+		ContentType     string
+		RequestRows     []testRequestRow
+		RequestCounter  testRequestCounter
 		Domain          string
 		Year            int
 	}{
@@ -106,17 +123,70 @@ func TestRenderHtmlHomeWebhookStreamDataInitHasNoEmbeddedWhitespace(t *testing.T
 	RenderHtml(w, r, "home", data)
 	body := w.Body.String()
 
+	// Each stream resumes after the newest request the page rendered.
 	activeLiteral := jsStringLiteralAfter(t, body, "@get('", 0)
-	assert.Equal(t, "/webhook-stream/"+active.ID+"?active=1", activeLiteral)
+	assert.Equal(t, "/webhook-stream/"+active.ID+"?since="+models.LatestCursor(active.Requests).String()+"&active", activeLiteral)
 
-	inactiveLiteral := jsStringLiteralAfter(t, body, "@get('", strings.Index(body, activeLiteral))
-	assert.Equal(t, "/webhook-stream/"+inactive.ID, inactiveLiteral)
+	inactiveLiteral := jsStringLiteralAfter(t, body, "@get('", strings.Index(body, activeLiteral)+len(activeLiteral))
+	assert.Equal(t, "/webhook-stream/"+inactive.ID+"?since=", inactiveLiteral)
 
-	// A long-lived dashboard connection must not give up after Datastar's
-	// default retryMaxCount of 10 (~3 minutes of backoff) - it should keep
-	// retrying indefinitely across outages/restarts, like the native
-	// EventSource it replaced.
-	assert.Contains(t, body, "retryMaxCount: Infinity")
+	// A long-lived dashboard connection must retry indefinitely, including
+	// after the server ends the stream (e.g. evicting a slow client), and
+	// stay open in background tabs so no live update is deferred. It sends no
+	// signals: the stream needs none, and every row adds some, which would
+	// otherwise grow the URL without bound.
+	assert.Contains(t, body, "{retry: 'always', retryMaxCount: Infinity, openWhenHidden: true, filterSignals: {include: /^$/}}")
+}
+
+func TestRenderHtmlHomeAssetsAreContentHashed(t *testing.T) {
+	w := httptest.NewRecorder()
+	RenderHtmlWithoutLayout(w, httptest.NewRequest("GET", "/login", nil), "login", nil)
+	body := w.Body.String()
+
+	for _, asset := range []string{"css/tailwind.css", "js/vendor/datastar.js", "js/script.js"} {
+		url := assetURL(asset)
+		assert.Regexp(t, `^/static/`+regexp.QuoteMeta(asset)+`\?v=[0-9a-f]{12}$`, url)
+		assert.Contains(t, body, url)
+	}
+}
+
+func TestAssetURL_MissingFileHasNoVersion(t *testing.T) {
+	assert.Equal(t, "/static/nope.js", assetURL("nope.js"))
+}
+
+func TestPrettyJSON(t *testing.T) {
+	assert.Equal(t, "{\n  \"a\": [\n    1,\n    2\n  ]\n}", prettyJSON(`{"a":[1,2]}`))
+	assert.Equal(t, "", prettyJSON("not json"), "non-JSON")
+	assert.Equal(t, "", prettyJSON(`"already"`), "formatting changes nothing")
+	assert.Equal(t, "", prettyJSON(""), "empty")
+}
+
+func TestRenderPartialMainRequestRowBody(t *testing.T) {
+	for name, tc := range map[string]struct {
+		body          string
+		wantFormatted bool
+	}{
+		"json":     {body: `{"event":"x"}`, wantFormatted: true},
+		"not json": {body: "plain text", wantFormatted: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			html, err := RenderPartialToString("main-request-row", testRequestRow{
+				Request: models.WebhookRequest{ID: "req-1", WebhookID: "wh-1", Method: "POST", Body: tc.body},
+			})
+			require.NoError(t, err)
+
+			key := hex.EncodeToString([]byte("req-1"))
+			assert.Contains(t, html, "data-ref:body-raw_"+key)
+			if tc.wantFormatted {
+				assert.Contains(t, html, "&#34;event&#34;: &#34;x&#34;", "indented body")
+				assert.Contains(t, html, `aria-label="Body format"`)
+				assert.Contains(t, html, `data-show="!$rawBody_`+key+`"`, "formatted by default")
+			} else {
+				assert.NotContains(t, html, "body-formatted")
+				assert.NotContains(t, html, "Body format")
+			}
+		})
+	}
 }
 
 // jsStringLiteralAfter returns the contents of the next '...' literal

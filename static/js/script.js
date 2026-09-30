@@ -37,15 +37,33 @@ function removeHeaderRow(button) {
   button.closest(".header-row").remove();
 }
 
+// Serializes the header rows into the hidden response_headers field as a
+// {name: value} object. Blank rows are skipped; a value without a name blocks
+// submission. Returns whether the form may submit.
 function serializeHeaderRows(form) {
   const headers = {};
-  form.querySelectorAll(".header-row").forEach((row) => {
-    const [keyInput, valueInput] = row.querySelectorAll("input");
-    const key = keyInput.value.trim();
+  for (const row of form.querySelectorAll(".header-row")) {
+    const [nameInput, valueInput] = row.querySelectorAll("input");
+    const name = nameInput.value.trim();
     const value = valueInput.value.trim();
-    if (key && value) headers[key] = value;
-  });
+    nameInput.setCustomValidity(!name && value ? "Enter a header name, or remove this row." : "");
+    if (!nameInput.reportValidity()) return false;
+    if (name) headers[name] = value;
+  }
   form.querySelector('input[name="response_headers"]').value = JSON.stringify(headers);
+  return true;
+}
+
+// Copies text to the clipboard, then flashes setCopied(true) for a moment so
+// the triggering button can confirm the copy.
+function copyWithFeedback(text, setCopied) {
+  navigator.clipboard.writeText(text).then(
+    () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    },
+    (err) => console.error("Copy to clipboard failed", err),
+  );
 }
 
 document.addEventListener("DOMContentLoaded", () => {

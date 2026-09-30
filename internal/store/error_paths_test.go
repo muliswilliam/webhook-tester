@@ -104,8 +104,9 @@ func TestGormWebhookRepo_CleanPublic_DeleteRequestsFails(t *testing.T) {
 	// webhooks") logging branches.
 	require.NoError(t, db.Migrator().DropTable(&models.WebhookRequest{}))
 
-	err := repo.CleanPublic(time.Hour)
+	ids, err := repo.CleanPublic(time.Hour)
 	assert.Error(t, err)
+	assert.Nil(t, ids)
 }
 
 func TestGormWebhookRequestRepo_Insert_DuplicateIDErrors(t *testing.T) {

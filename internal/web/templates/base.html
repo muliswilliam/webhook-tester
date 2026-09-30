@@ -36,7 +36,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/css/tailwind.css?v=20260827-datastar" />
+    <link rel="stylesheet" href="{{ asset "css/tailwind.css" }}" />
     <!--
       Client/server Datastar versions must move together: the server uses
       github.com/starfederation/datastar-go (see go.mod) to build the SSE
@@ -44,8 +44,8 @@
       silently break the SSE protocol - check go.mod's datastar-go version
       whenever this vendored bundle is updated, and vice versa.
     -->
-    <script type="module" src="/static/js/vendor/datastar.js?v=1.0.2"></script>
-    <script src="/static/js/script.js?v=20260827-datastar"></script>
+    <script type="module" src="{{ asset "js/vendor/datastar.js" }}"></script>
+    <script src="{{ asset "js/script.js" }}"></script>
     <script
       defer
       data-domain="webhook-tester.williammuli.dev"

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"github.com/gorilla/csrf"
 	"github.com/wader/gormstore/v2"
@@ -17,6 +18,7 @@ import (
 	"webhook-tester/internal/utils"
 
 	"github.com/go-chi/chi/v5"
+	"gorm.io/gorm"
 )
 
 type WebhookRequestHandler struct {
@@ -44,8 +46,14 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 	reqID := chi.URLParam(r, "id")
 	address := r.URL.Query().Get("address")
 
+	userID, _ := h.authSvc.Authorize(r) // 0 for guests
+
 	// 2) Load the webhook and its requests via the service
-	wh, err := h.webhookService.GetWebhookWithRequests(address)
+	wh, err := h.webhookService.GetAccessibleWebhookWithRequests(address, userID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		http.NotFound(w, r)
+		return
+	}
 	if err != nil {
 		h.logger.Printf("failed to load webhook %s: %v", address, err)
 		http.Error(w, "could not load webhook", http.StatusInternalServerError)
@@ -54,7 +62,7 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 
 	// 3) Load the individual request via the service
 	reqEvent, err := h.reqService.Get(reqID)
-	if err != nil {
+	if err != nil || reqEvent.WebhookID != wh.ID {
 		h.logger.Printf("request %s not found: %v", reqID, err)
 		http.NotFound(w, r)
 		return
@@ -98,8 +106,28 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 	utils.RenderHtml(w, r, "request", data)
 }
 
+// accessibleRequest loads a captured request, provided the caller may access
+// the webhook it belongs to.
+func (h *WebhookRequestHandler) accessibleRequest(r *http.Request, id string) (*models.WebhookRequest, error) {
+	wr, err := h.reqService.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	userID, _ := h.authSvc.Authorize(r) // 0 for guests
+	if _, err := h.webhookService.GetAccessibleWebhook(wr.WebhookID, userID); err != nil {
+		return nil, err
+	}
+	return wr, nil
+}
+
 func (h *WebhookRequestHandler) DeleteRequest(w http.ResponseWriter, r *http.Request) {
 	requestId := chi.URLParam(r, "id")
+
+	if _, err := h.accessibleRequest(r, requestId); err != nil {
+		h.logger.Printf("delete: request %s not accessible: %v", requestId, err)
+		http.NotFound(w, r)
+		return
+	}
 
 	err := h.reqService.Delete(requestId)
 
@@ -122,7 +150,7 @@ func (h *WebhookRequestHandler) DeleteRequest(w http.ResponseWriter, r *http.Req
 func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	reqEvent, err := h.reqService.Get(id)
+	reqEvent, err := h.accessibleRequest(r, id)
 	if err != nil {
 		h.logger.Printf("replay: request %s not found: %v", id, err)
 		http.Error(w, "request not found", http.StatusNotFound)

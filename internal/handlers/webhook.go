@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
@@ -147,7 +147,6 @@ func (h *WebhookHandler) DeleteWebhook(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
-	cleanupWebhookState(webhookID)
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -213,60 +212,6 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/?address=%s", webhookID), http.StatusSeeOther)
 }
 
-// webhookEvent carries a captured request together with the request count
-// computed atomically at insert time, so every SSE subscriber for a webhook
-// sees the same count without re-querying the DB itself. CountErr is set when
-// the count query failed; consumers still show the row but skip the
-// count-dependent placeholder removal and counter patch.
-type webhookEvent struct {
-	Request  models.WebhookRequest
-	Count    int64
-	CountErr bool
-}
-
-var webhookStreams = make(map[string][]chan webhookEvent)
-var mu sync.Mutex
-
-// requestMus holds one mutex per webhook ID, so the CreateRequest+CountRequests
-// atomicity below only serializes requests to the *same* webhook instead of
-// forcing every webhook in the app through a single global lock around two DB
-// round-trips.
-var (
-	requestMus   = make(map[string]*sync.Mutex)
-	requestMusMu sync.Mutex
-)
-
-func requestMuFor(webhookID string) *sync.Mutex {
-	requestMusMu.Lock()
-	defer requestMusMu.Unlock()
-	m, ok := requestMus[webhookID]
-	if !ok {
-		m = &sync.Mutex{}
-		requestMus[webhookID] = m
-	}
-	return m
-}
-
-// cleanupWebhookState drops the per-webhook entries in requestMus and
-// webhookStreams once a webhook is deleted, so a long-running server doesn't
-// accumulate a mutex and a (by then empty) channel slice per deleted webhook
-// forever.
-//
-// Theoretical race: if a request for webhookID is still mid-flight holding
-// the mutex removed here, and a new webhook happened to reuse the same ID
-// afterward, requestMuFor would hand out a fresh mutex that doesn't serialize
-// against the still-in-flight one. This requires nanoid ID reuse, which is
-// astronomically unlikely, so it's accepted rather than designed around.
-func cleanupWebhookState(webhookID string) {
-	requestMusMu.Lock()
-	delete(requestMus, webhookID)
-	requestMusMu.Unlock()
-
-	mu.Lock()
-	delete(webhookStreams, webhookID)
-	mu.Unlock()
-}
-
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := strings.TrimPrefix(r.URL.Path, "/webhooks/")
 	h.logger.Printf("Handling webhook request for %s", webhookID)
@@ -303,48 +248,18 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	}
 
 	wr := models.WebhookRequest{
-		ID:         utils.GenerateID(),
-		WebhookID:  webhookID,
-		Method:     r.Method,
-		Headers:    headers,
-		Query:      query,
-		Body:       string(body),
-		ReceivedAt: time.Now().UTC(),
+		ID:        utils.GenerateID(),
+		WebhookID: webhookID,
+		Method:    r.Method,
+		Headers:   headers,
+		Query:     query,
+		Body:      string(body),
 	}
-
-	// CreateRequest, CountRequests and the broadcast below all run as one
-	// atomic unit per webhook, and in that order, under whMu: otherwise two
-	// requests arriving for the same brand-new webhook could both observe the
-	// same (wrong) count - e.g. both seeing 2 instead of 1-then-2 - corrupting
-	// the request counter patched in StreamWebhookEvents, or their events
-	// could reach subscribers out of insertion order if the broadcast ran
-	// after an unguarded ResponseDelay sleep.
-	whMu := requestMuFor(webhookID)
-	whMu.Lock()
-	err = h.webhookSvc.CreateRequest(&wr)
-	if err != nil {
-		whMu.Unlock()
+	if err := h.webhookSvc.RecordRequest(&wr); err != nil {
 		h.logger.Printf("error creating webhook request: %s", err)
 		utils.RenderJSON(w, http.StatusInternalServerError, nil)
 		return
 	}
-	count, countErr := h.webhookSvc.CountRequests(webhookID)
-	if countErr != nil {
-		h.logger.Printf("error counting webhook requests: %s", countErr)
-	}
-	// The row is broadcast even on a count error - only the count-dependent
-	// placeholder removal and counter patch are skipped downstream - so a
-	// transient DB hiccup doesn't hide a captured request from the live view.
-	event := webhookEvent{Request: wr, Count: count, CountErr: countErr != nil}
-	mu.Lock()
-	for _, ch := range webhookStreams[webhookID] {
-		select {
-		case ch <- event:
-		default: // drop if blocked
-		}
-	}
-	mu.Unlock()
-	whMu.Unlock()
 
 	h.metrics.IncWebhookRequest(webhookID)
 
@@ -376,138 +291,155 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	}
 }
 
+// StreamWebhookEvents streams a webhook's captured requests as Datastar
+// element patches. A connection first replays the requests after its cursor -
+// the Last-Event-ID of a reconnect, else the ?since= cursor the page was
+// rendered with - and then streams new ones live, so reconnects never lose
+// requests. The ?active flag marks the connection of the webhook shown in the
+// main panel, which also patches the main request list and counter.
+//
+// The client retries whenever the stream ends; a 204 tells it to stop.
 func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
+	userID, _ := h.authSvc.Authorize(r) // 0 for guests
 
-	// Every sidebar card opens its own connection regardless of which webhook
-	// is currently shown in the main panel, but the main-row/counter markup
-	// this handler patches only exists in the DOM for that one active webhook.
-	// The template sets this query param at connect time (a full page load,
-	// since navigating to a different webhook is a plain link, not an SPA
-	// route change), so it stays correct for the connection's lifetime.
-	isActive := r.URL.Query().Get("active") == "1"
+	if _, err := h.webhookSvc.GetAccessibleWebhook(webhookID, userID); err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
-	// Create a buffered channel for this client: a burst of requests would
-	// otherwise drop live updates as soon as one consumer iteration (DB
-	// count + template renders + SSE writes) fell behind an unbuffered send.
-	eventChan := make(chan webhookEvent, 32)
-	mu.Lock()
-	webhookStreams[webhookID] = append(webhookStreams[webhookID], eventChan)
-	mu.Unlock()
+	rawCursor := r.Header.Get("Last-Event-ID")
+	if rawCursor == "" {
+		rawCursor = r.URL.Query().Get("since")
+	}
+	cursor, err := models.ParseRequestCursor(rawCursor)
+	if err != nil {
+		h.logger.Printf("rejecting stream for %s: %s", webhookID, err)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
-	// Deregister on every exit path (render/patch errors included), not just
-	// the ctx.Done() path, so a broken connection doesn't leak this channel
-	// in webhookStreams forever.
-	defer func() {
-		mu.Lock()
-		subs := webhookStreams[webhookID]
-		for i, sub := range subs {
-			if sub == eventChan {
-				webhookStreams[webhookID] = append(subs[:i], subs[i+1:]...)
-				break
-			}
+	// Subscribe before querying the backlog so nothing captured in between
+	// is missed; live events already replayed are skipped.
+	sub := h.webhookSvc.Subscribe(webhookID)
+	defer sub.Close()
+
+	missed, err := h.webhookSvc.GetRequestsAfter(webhookID, cursor)
+	if err != nil {
+		h.logger.Printf("error loading missed requests for %s: %s", webhookID, err)
+		return
+	}
+
+	stream := &requestStream{
+		sse:       datastar.NewSSE(w, r),
+		webhookID: webhookID,
+		mainPanel: r.URL.Query().Has("active"),
+		csrfField: csrf.TemplateField(r),
+		replayed:  make(map[string]bool, len(missed)),
+	}
+
+	for _, wr := range missed {
+		stream.replayed[wr.ID] = true
+	}
+	if len(missed) > 0 {
+		var count *int64
+		if n, err := h.webhookSvc.CountRequests(webhookID); err == nil {
+			count = &n
 		}
-		mu.Unlock()
-	}()
-
-	sse := datastar.NewSSE(w, r)
-
-	// The "waiting"/"empty" placeholders only exist in the DOM until this
-	// connection's first event, regardless of what count that event reports:
-	// gating on count == 1 instead would permanently skip the removal for
-	// this connection if the count query happened to fail on the webhook's
-	// actual first request.
-	placeholdersCleared := false
+		if err := stream.send(missed, count); err != nil {
+			h.logger.Printf("error streaming missed requests for %s: %s", webhookID, err)
+			return
+		}
+	}
 
 	for {
 		select {
-		case evt := <-eventChan:
-			wr, count := evt.Request, evt.Count
-
-			if evt.CountErr {
-				h.logger.Printf("skipping count-dependent updates for %s: count was unavailable", wr.ID)
-			}
-
-			sidebarHTML, err := utils.RenderPartialToString("sidebar-request-row", wr)
-			if err != nil {
-				h.logger.Printf("error rendering sidebar request row: %s", err)
-				continue
-			}
-
-			if !placeholdersCleared {
-				if err := sse.RemoveElementByID("request-log-waiting-" + wr.WebhookID); err != nil {
-					h.logger.Printf("error removing waiting placeholder: %s", err)
-					return
-				}
-				// The empty-state placeholder only exists in the DOM for the
-				// webhook currently shown in the main panel.
-				if isActive {
-					if err := sse.RemoveElementByID("request-log-empty-" + wr.WebhookID); err != nil {
-						h.logger.Printf("error removing empty placeholder: %s", err)
-						return
-					}
-				}
-				placeholdersCleared = true
-			}
-			if err := sse.PatchElements(sidebarHTML,
-				datastar.WithSelectorID("request-log-"+wr.WebhookID),
-				datastar.WithModePrepend(),
-			); err != nil {
-				h.logger.Printf("error patching sidebar request row: %s", err)
+		case evt, ok := <-sub.Events:
+			if !ok {
+				// Evicted for falling behind, or the webhook was deleted.
+				// Either way the client reconnects and resumes from its cursor.
+				h.logger.Printf("stream for %s closed by broker", webhookID)
 				return
 			}
-
-			// The main-panel row list and counter only exist in the DOM for
-			// the webhook currently shown in the main panel; every other
-			// sidebar card's connection has nothing further to do with this
-			// event.
-			if !isActive {
+			if stream.replayed[evt.Request.ID] {
 				continue
 			}
-
-			// Recomputed per-event rather than once per connection: gorilla/csrf's
-			// session cookie (which masked tokens validate against) has a default
-			// MaxAge of 12 hours, while this UI advertises anonymous workspaces
-			// persisting up to 2 days. A token computed once at connection-open
-			// could go stale by the time it's baked into a row rendered hours
-			// later, breaking that row's Replay/Delete forms even though a fresh
-			// page load would work fine.
-			csrfField := csrf.TemplateField(r)
-			mainHTML, err := utils.RenderPartialToString("main-request-row", map[string]interface{}{
-				"Request":   wr,
-				"CSRFField": csrfField,
-				"IsNew":     true,
-			})
-			if err != nil {
-				h.logger.Printf("error rendering main request row: %s", err)
-				continue
-			}
-			if err := sse.PatchElements(mainHTML,
-				datastar.WithSelectorID("request-log-list-"+wr.WebhookID),
-				datastar.WithModePrepend(),
-			); err != nil {
-				h.logger.Printf("error patching main request row: %s", err)
-				return
-			}
-
-			if evt.CountErr {
-				continue
-			}
-
-			counterHTML, err := utils.RenderPartialToString("request-counter", map[string]interface{}{
-				"WebhookID": wr.WebhookID,
-				"Count":     count,
-			})
-			if err != nil {
-				h.logger.Printf("error rendering request counter: %s", err)
-				continue
-			}
-			if err := sse.PatchElements(counterHTML); err != nil {
-				h.logger.Printf("error patching request counter: %s", err)
+			if err := stream.send([]models.WebhookRequest{evt.Request}, evt.Count); err != nil {
+				h.logger.Printf("error streaming request %s: %s", evt.Request.ID, err)
 				return
 			}
 		case <-r.Context().Done():
 			return
 		}
 	}
+}
+
+// requestRowView is the data for the "main-request-row" template.
+type requestRowView struct {
+	Request   models.WebhookRequest
+	CSRFField template.HTML
+	IsNew     bool
+}
+
+// requestCounterView is the data for the "request-counter" template.
+type requestCounterView struct {
+	WebhookID string
+	Count     int64
+}
+
+// requestStream renders captured requests into one SSE connection.
+type requestStream struct {
+	sse       *datastar.ServerSentEventGenerator
+	webhookID string
+	mainPanel bool
+	csrfField template.HTML
+	replayed  map[string]bool // IDs of requests sent from the backlog
+}
+
+// send prepends each request, oldest first, and then patches the counter if
+// count is known. Each request's last patch carries the request's cursor as
+// the SSE event ID, which the client echoes back as Last-Event-ID on
+// reconnect.
+func (s *requestStream) send(requests []models.WebhookRequest, count *int64) error {
+	for _, wr := range requests {
+		id := datastar.WithPatchElementsEventID(models.CursorAt(wr).String())
+
+		sidebarOpts := []datastar.PatchElementOption{
+			datastar.WithSelectorID("request-log-" + s.webhookID),
+			datastar.WithModePrepend(),
+		}
+		if !s.mainPanel {
+			sidebarOpts = append(sidebarOpts, id)
+		}
+		if err := s.patch("sidebar-request-row", wr, sidebarOpts...); err != nil {
+			return err
+		}
+
+		if s.mainPanel {
+			row := requestRowView{Request: wr, CSRFField: s.csrfField, IsNew: true}
+			if err := s.patch("main-request-row", row,
+				datastar.WithSelectorID("request-log-list-"+s.webhookID),
+				datastar.WithModePrepend(),
+				id,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	if s.mainPanel && count != nil {
+		return s.patch("request-counter", requestCounterView{WebhookID: s.webhookID, Count: *count})
+	}
+	return nil
+}
+
+func (s *requestStream) patch(tmpl string, data any, opts ...datastar.PatchElementOption) error {
+	html, err := utils.RenderPartialToString(tmpl, data)
+	if err != nil {
+		return fmt.Errorf("rendering %s: %w", tmpl, err)
+	}
+	if err := s.sse.PatchElements(html, opts...); err != nil {
+		return fmt.Errorf("patching %s: %w", tmpl, err)
+	}
+	return nil
 }

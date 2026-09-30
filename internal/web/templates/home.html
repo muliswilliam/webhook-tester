@@ -1,6 +1,5 @@
 {{ define "title" }}Webhook workspace{{ end }}
 {{ define "content" }}
-  {{ $csrfField := .CSRFField }}
   <div data-signals="{showEditModal: false, actionsOpen: false}" class="space-y-6">
     {{ if not .User.ID }}
       <aside
@@ -121,7 +120,7 @@
               aria-label="Webhook endpoint URL"
             />
             <button
-              data-on:click="navigator.clipboard.writeText($url.value); $copiedUrl = true; setTimeout(() => $copiedUrl = false, 1500)"
+              data-on:click="copyWithFeedback($url.value, copied => $copiedUrl = copied)"
               class="btn-primary shrink-0"
             >
               <svg
@@ -145,51 +144,76 @@
       </section>
     {{ end }}
 
-
-    <section aria-labelledby="request-log-title">
-      <div class="mb-4 flex items-end justify-between gap-4">
-        <div>
-          <p class="eyebrow">Request log</p>
-          <h2 id="request-log-title" class="mt-1 text-lg font-semibold">
-            <span id="request-count-{{ .Webhook.ID }}" data-count="{{ .RequestsCount }}">
-              {{ .RequestsCount }} captured
-              {{ if eq .RequestsCount 1 }}request{{ else }}requests{{ end }}
-            </span>
-          </h2>
-        </div>
-        <span class="hidden text-xs text-muted sm:block">Updates automatically</span>
-      </div>
-      <div class="space-y-3" id="request-log-list-{{ .Webhook.ID }}">
-        {{ range .Webhook.Requests }}
-          {{ template "main-request-row" (dict "Request" . "CSRFField" $csrfField) }}
-        {{ else }}
-          <div
-            class="surface grid min-h-60 place-items-center p-8 text-center"
-            id="request-log-empty-{{ .Webhook.ID }}"
-          >
-            <div class="max-w-md">
-              <div class="empty-icon">
-                <svg
-                  class="h-6 w-6"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  aria-hidden="true"
-                >
-                  <path d="M4 4h16v16H4zM8 9h8M8 13h5" />
-                </svg>
-              </div>
-              <h3 class="mt-5 text-base font-semibold">Waiting for your first request</h3>
-              <p class="mt-2 text-sm leading-6 text-muted">
-                Copy the endpoint above and send any HTTP request. Its payload, headers, and query
-                parameters will appear here instantly.
-              </p>
-            </div>
+    {{ if .Webhook.ID }}
+      <section aria-labelledby="request-log-title">
+        <div class="mb-4 flex items-end justify-between gap-4">
+          <div>
+            <p class="eyebrow">Request log</p>
+            <h2 id="request-log-title" class="mt-1 text-lg font-semibold">
+              {{ template "request-counter" .RequestCounter }}
+            </h2>
           </div>
-        {{ end }}
-      </div>
-    </section>
+          <span class="hidden text-xs text-muted sm:block">Updates automatically</span>
+        </div>
+        <div class="request-log space-y-3" id="request-log-list-{{ .Webhook.ID }}">
+          {{ range .RequestRows }}
+            {{ template "main-request-row" . }}
+          {{ else }}
+            <div
+              class="request-placeholder surface grid min-h-60 place-items-center p-8 text-center"
+            >
+              <div class="max-w-md">
+                <div class="empty-icon">
+                  <svg
+                    class="h-6 w-6"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    aria-hidden="true"
+                  >
+                    <path d="M4 4h16v16H4zM8 9h8M8 13h5" />
+                  </svg>
+                </div>
+                <h3 class="mt-5 text-base font-semibold">Waiting for your first request</h3>
+                <p class="mt-2 text-sm leading-6 text-muted">
+                  Copy the endpoint above and send any HTTP request. Its payload, headers, and query
+                  parameters will appear here instantly.
+                </p>
+              </div>
+            </div>
+          {{ end }}
+        </div>
+      </section>
+    {{ else }}
+      <section
+        class="surface grid min-h-60 place-items-center p-8 text-center"
+        aria-labelledby="no-endpoints-title"
+      >
+        <div class="max-w-md">
+          <div class="empty-icon">
+            <svg
+              class="h-6 w-6"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              aria-hidden="true"
+            >
+              <path d="M8 12h8M12 8v8" />
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          </div>
+          <h1 id="no-endpoints-title" class="mt-5 text-base font-semibold">No endpoints yet</h1>
+          <p class="mt-2 text-sm leading-6 text-muted">
+            Create an endpoint to get a unique URL. Every request sent to it is captured here.
+          </p>
+          <button class="btn-primary mt-5" data-on:click__stop="$showModal = true">
+            Create endpoint
+          </button>
+        </div>
+      </section>
+    {{ end }}
 
     {{ if .Webhook.ID }}
       <details class="surface overflow-hidden">
@@ -215,7 +239,7 @@
           <div class="section-bar border-b">
             <span class="text-xs text-muted">cURL</span>
             <button
-              data-on:click="navigator.clipboard.writeText($curl.innerText); $copiedCurl = true; setTimeout(() => $copiedCurl = false, 1500)"
+              data-on:click="copyWithFeedback($curl.innerText, copied => $copiedCurl = copied)"
               class="text-link text-xs font-medium"
               data-text="$copiedCurl ? 'Copied' : 'Copy command'"
             ></button>
@@ -263,7 +287,7 @@
             aria-label="API key"
           />
           <button
-            data-on:click="navigator.clipboard.writeText($apikey.value); $copiedApiKey = true; setTimeout(() => $copiedApiKey = false, 1500)"
+            data-on:click="copyWithFeedback($apikey.value, copied => $copiedApiKey = copied)"
             class="btn-secondary shrink-0"
             data-text="$copiedApiKey ? 'Copied' : 'Copy key'"
           ></button>
@@ -272,126 +296,103 @@
     {{ end }}
 
 
-    <div
-      style="display: none"
-      data-show="$showEditModal"
-      data-on:keydown__window="if (evt.key === 'Escape' && $showEditModal) $showEditModal = false"
+    <dialog
+      class="modal"
+      aria-labelledby="edit-webhook-title"
+      data-effect="$showEditModal ? el.open || el.showModal() : el.close()"
+      data-on:close="$showEditModal = false"
+      data-on:click="evt.target === el && ($showEditModal = false)"
     >
-      <div
-        style="display: none"
-        data-show="$showEditModal"
-        class="fixed inset-0 z-40 bg-black/55"
-        data-on:click="$showEditModal = false"
-        aria-hidden="true"
-      ></div>
-      <div
-        style="display: none"
-        data-show="$showEditModal"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
-      >
-        <div
-          class="modal-panel max-h-[90vh]"
-          data-on:click__outside="$showEditModal = false"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-webhook-title"
-        >
-          <div class="mb-6 flex items-start justify-between">
-            <div>
-              <p class="eyebrow">Response settings</p>
-              <h2 id="edit-webhook-title" class="mt-2 text-xl font-semibold">Edit webhook</h2>
-            </div>
-            <button
-              class="icon-btn"
-              data-on:click="$showEditModal = false"
-              aria-label="Close dialog"
-            >
-              <svg
-                class="h-5 w-5"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <path d="m6 6 12 12M18 6 6 18" />
-              </svg>
-            </button>
+      <div class="modal-panel">
+        <div class="mb-6 flex items-start justify-between">
+          <div>
+            <p class="eyebrow">Response settings</p>
+            <h2 id="edit-webhook-title" class="mt-2 text-xl font-semibold">Edit webhook</h2>
           </div>
-          <form method="POST" action="/update-webhook/{{ .Webhook.ID }}" class="space-y-5">
-            {{ .CSRFField }}
+          <button class="icon-btn" data-on:click="$showEditModal = false" aria-label="Close dialog">
+            <svg
+              class="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              aria-hidden="true"
+            >
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+        <form method="POST" action="/update-webhook/{{ .Webhook.ID }}" class="space-y-5">
+          {{ .CSRFField }}
+          <div>
+            <label for="title" class="field-label">Title</label>
+            <input id="title" name="title" class="field" value="{{ .Webhook.Title }}" required />
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2">
             <div>
-              <label for="title" class="field-label">Title</label>
-              <input id="title" name="title" class="field" value="{{ .Webhook.Title }}" required />
-            </div>
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label for="response_code" class="field-label">Response code</label>
-                <input
-                  id="response_code"
-                  type="number"
-                  inputmode="numeric"
-                  name="response_code"
-                  class="field"
-                  value="{{ .Webhook.ResponseCode }}"
-                  required
-                />
-              </div>
-              <div>
-                <label for="content_type" class="field-label">Content type</label>
-                <select id="content_type" name="content_type" class="field">
-                  <option value="application/json">application/json</option>
-                  <option value="text/plain">text/plain</option>
-                  <option value="text/html">text/html</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label for="response_delay" class="field-label">Response delay (ms)</label>
+              <label for="response_code" class="field-label">Response code</label>
               <input
-                id="response_delay"
+                id="response_code"
                 type="number"
                 inputmode="numeric"
-                name="response_delay"
+                name="response_code"
                 class="field"
-                value="{{ .Webhook.ResponseDelay }}"
+                value="{{ .Webhook.ResponseCode }}"
+                required
               />
             </div>
             <div>
-              <label for="payload" class="field-label">Response payload</label>
-              <textarea id="payload" name="payload" rows="4" class="field font-mono">
+              <label for="content_type" class="field-label">Content type</label>
+              <select id="content_type" name="content_type" class="field">
+                {{ template "content-type-options" .ContentType }}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label for="response_delay" class="field-label">Response delay (ms)</label>
+            <input
+              id="response_delay"
+              type="number"
+              inputmode="numeric"
+              name="response_delay"
+              class="field"
+              value="{{ .Webhook.ResponseDelay }}"
+            />
+          </div>
+          <div>
+            <label for="payload" class="field-label">Response payload</label>
+            <textarea id="payload" name="payload" rows="4" class="field font-mono">
 {{ if .Webhook.Payload }}{{ .Webhook.Payload }}{{ end }}</textarea>
-            </div>
-            <div>
-              <label for="response_headers" class="field-label">Response headers (JSON)</label>
-              <textarea
-                id="response_headers"
-                name="response_headers"
-                rows="3"
-                class="field font-mono"
-                placeholder='{ "X-Test": "123" }'
-              >
+          </div>
+          <div>
+            <label for="response_headers" class="field-label">Response headers (JSON)</label>
+            <textarea
+              id="response_headers"
+              name="response_headers"
+              rows="3"
+              class="field font-mono"
+              placeholder='{ "X-Test": "123" }'
+            >
 {{ .ResponseHeaders }}</textarea>
-            </div>
-            <label class="check-row">
-              <input
-                type="checkbox"
-                id="notify"
-                name="notify_on_event"
-                value="true"
-                {{ if .Webhook.NotifyOnEvent }}checked{{ end }}
-              />
-              <span>Notify me when a request arrives</span>
-            </label>
-            <div class="flex justify-end gap-3 pt-2">
-              <button type="button" data-on:click="$showEditModal = false" class="btn-secondary">
-                Cancel
-              </button>
-              <button type="submit" class="btn-primary">Save changes</button>
-            </div>
-          </form>
-        </div>
+          </div>
+          <label class="check-row">
+            <input
+              type="checkbox"
+              id="notify"
+              name="notify_on_event"
+              value="true"
+              {{ if .Webhook.NotifyOnEvent }}checked{{ end }}
+            />
+            <span>Notify me when a request arrives</span>
+          </label>
+          <div class="flex justify-end gap-3 pt-2">
+            <button type="button" data-on:click="$showEditModal = false" class="btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" class="btn-primary">Save changes</button>
+          </div>
+        </form>
       </div>
-    </div>
+    </dialog>
   </div>
 {{ end }}

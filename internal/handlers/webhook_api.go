@@ -215,7 +215,6 @@ func (h *WebhookAiHandler) DeleteWebhookApi(w http.ResponseWriter, r *http.Reque
 		})
 		return
 	}
-	cleanupWebhookState(id)
 
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -183,9 +183,7 @@ func TestHomeHandler_LoggedInUser_AddressLoadError(t *testing.T) {
 
 	// The webhook lookup for `address` fails, but since the caller is logged
 	// in, Home does not redirect - it just renders with an empty active
-	// webhook. Note this endpoint does not verify that `address` belongs to
-	// the logged-in user, so a valid ID for someone else's webhook would be
-	// loaded here just the same (see reported IDOR-style concern).
+	// webhook.
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "Mine") // sidebar still lists the user's own webhooks
 }
@@ -205,4 +203,54 @@ func TestHomeHandler_ResponseHeadersMarshalled(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "X-Test")
+}
+
+func TestHomeHandler_LoggedInUser_AddressOfAnotherUsersWebhook(t *testing.T) {
+	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "Mine", UserID: int(user.ID)})
+	whRepo.put(&models.Webhook{ID: "theirs", Title: "Their secret hook", UserID: 999})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=theirs", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "Their secret hook")
+}
+
+// A guest following an ?address= link to an owned webhook is turned away
+// without losing their own workspace cookie.
+func TestHomeHandler_Guest_AddressOfOwnedWebhook(t *testing.T) {
+	h, whRepo, _, _, _ := newTestHomeHandler(t)
+	whRepo.put(&models.Webhook{ID: "mine", Title: "Guest hook"})
+	whRepo.put(&models.Webhook{ID: "owned", Title: "Owned hook", UserID: 7})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=owned", nil)
+	req.AddCookie(&http.Cookie{Name: sessionIdName, Value: "mine"})
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.NotContains(t, rec.Body.String(), "Owned hook")
+	for _, c := range rec.Result().Cookies() {
+		assert.NotEqual(t, sessionIdName, c.Name, "the guest's workspace cookie must survive")
+	}
+}
+
+func TestHomeHandler_EditModalSelectsContentType(t *testing.T) {
+	h, whRepo, _, _, _ := newTestHomeHandler(t)
+	contentType := "text/plain"
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "Plain", ContentType: &contentType})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=wh1", nil)
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	assert.Regexp(t, `<option value="text/plain"\s+selected`, rec.Body.String())
 }
