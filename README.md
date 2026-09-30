@@ -1,6 +1,6 @@
 # 🧪 Webhook Tester
 
-A lightweight, developer-friendly platform for testing and debugging webhooks — built in Go.
+A lightweight, developer-friendly platform for testing and debugging webhooks - built in Go.
 
 This project allows developers to create unique webhook endpoints, capture incoming requests, inspect headers and
 payloads, and optionally replay those requests.
@@ -39,7 +39,12 @@ openssl rand -base64 32
 ```
 Paste it into your .env file.
 
-### 3. Run Locally
+### 3. Optional settings
+
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`: SMTP server for password reset emails. Without `SMTP_HOST`, emails are written to the server log instead.
+- `METRICS_ADDR` (default `:9091`): internal address serving Prometheus metrics at `/metrics`. Don't expose it publicly.
+
+### 4. Run Locally
 
 ```bash
 go run cmd/main.go

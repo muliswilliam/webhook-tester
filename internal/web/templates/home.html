@@ -79,20 +79,36 @@
                 <form
                   method="POST"
                   action="/delete-requests/{{ .Webhook.ID }}"
-                  onsubmit="return confirm('Clear every captured request for this endpoint?')"
+                  onsubmit="return confirmSubmit(event, this)"
+                  data-confirm-title="Clear all requests?"
+                  data-confirm-message="Every captured request for this endpoint will be deleted. The endpoint URL keeps working."
+                  data-confirm-label="Clear requests"
                 >
                   {{ .CSRFField }}
-                  <button type="submit" class="action-menu-item" role="menuitem">
+                  <button
+                    type="submit"
+                    class="action-menu-item"
+                    role="menuitem"
+                    data-on:click="$actionsOpen = false"
+                  >
                     Clear requests
                   </button>
                 </form>
                 <form
                   method="POST"
                   action="/delete-webhook/{{ .Webhook.ID }}"
-                  onsubmit="return confirm('Delete this endpoint and all captured requests? This cannot be undone.')"
+                  onsubmit="return confirmSubmit(event, this)"
+                  data-confirm-title="Delete this endpoint?"
+                  data-confirm-message="The endpoint and all of its captured requests will be deleted. Requests sent to its URL will fail. This can't be undone."
+                  data-confirm-label="Delete endpoint"
                 >
                   {{ .CSRFField }}
-                  <button type="submit" class="action-menu-item action-menu-danger" role="menuitem">
+                  <button
+                    type="submit"
+                    class="action-menu-item action-menu-danger"
+                    role="menuitem"
+                    data-on:click="$actionsOpen = false"
+                  >
                     Delete endpoint
                   </button>
                 </form>
@@ -138,7 +154,8 @@
             </button>
           </div>
           <p class="mt-3 text-xs leading-5 text-muted">
-            Accepts GET, POST, PUT, PATCH, and DELETE. New requests appear in real time.
+            Accepts GET, POST, PUT, PATCH, and DELETE on this URL or any path below it. New requests
+            appear in real time.
           </p>
         </div>
       </section>
@@ -322,7 +339,12 @@
             </svg>
           </button>
         </div>
-        <form method="POST" action="/update-webhook/{{ .Webhook.ID }}" class="space-y-5">
+        <form
+          method="POST"
+          action="/update-webhook/{{ .Webhook.ID }}"
+          class="space-y-5"
+          onsubmit="return serializeHeaderRows(this)"
+        >
           {{ .CSRFField }}
           <div>
             <label for="title" class="field-label">Title</label>
@@ -338,6 +360,8 @@
                 name="response_code"
                 class="field"
                 value="{{ .Webhook.ResponseCode }}"
+                min="{{ minResponseCode }}"
+                max="{{ maxResponseCode }}"
                 required
               />
             </div>
@@ -357,6 +381,8 @@
               name="response_delay"
               class="field"
               value="{{ .Webhook.ResponseDelay }}"
+              min="0"
+              max="{{ maxResponseDelay }}"
             />
           </div>
           <div>
@@ -364,17 +390,7 @@
             <textarea id="payload" name="payload" rows="4" class="field font-mono">
 {{ if .Webhook.Payload }}{{ .Webhook.Payload }}{{ end }}</textarea>
           </div>
-          <div>
-            <label for="response_headers" class="field-label">Response headers (JSON)</label>
-            <textarea
-              id="response_headers"
-              name="response_headers"
-              rows="3"
-              class="field font-mono"
-              placeholder='{ "X-Test": "123" }'
-            >
-{{ .ResponseHeaders }}</textarea>
-          </div>
+          {{ template "header-editor" .Webhook.ResponseHeaders }}
           <label class="check-row">
             <input
               type="checkbox"

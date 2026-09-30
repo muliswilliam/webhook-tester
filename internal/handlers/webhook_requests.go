@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gorilla/csrf"
-	"github.com/wader/gormstore/v2"
 	"html/template"
 	"log"
 	"net/http"
@@ -16,10 +15,25 @@ import (
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
+	"webhook-tester/internal/web/view"
 
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 )
+
+// replayClient re-sends captured requests.
+var replayClient = &http.Client{
+	// Longer than the maximum response delay, so a slow endpoint still
+	// completes.
+	Timeout: models.MaxResponseDelay*time.Millisecond + 10*time.Second,
+	Transport: func() http.RoundTripper {
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		// Otherwise the client adds an Accept-Encoding header the original
+		// request didn't have.
+		t.DisableCompression = true
+		return t
+	}(),
+}
 
 type WebhookRequestHandler struct {
 	reqService     *service.WebhookRequestService
@@ -27,7 +41,6 @@ type WebhookRequestHandler struct {
 	metrics        *metrics.Recorder
 	logger         *log.Logger
 	webhookService *service.WebhookService
-	sessionStore   *gormstore.Store
 }
 
 // NewWebhookRequestHandler creates a new handler.
@@ -51,7 +64,7 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 	// 2) Load the webhook and its requests via the service
 	wh, err := h.webhookService.GetAccessibleWebhookWithRequests(address, userID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		http.NotFound(w, r)
+		view.RenderNotFound(w, r)
 		return
 	}
 	if err != nil {
@@ -64,7 +77,7 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 	reqEvent, err := h.reqService.Get(reqID)
 	if err != nil || reqEvent.WebhookID != wh.ID {
 		h.logger.Printf("request %s not found: %v", reqID, err)
-		http.NotFound(w, r)
+		view.RenderNotFound(w, r)
 		return
 	}
 
@@ -103,7 +116,7 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 		CSRFField: csrf.TemplateField(r),
 	}
 
-	utils.RenderHtml(w, r, "request", data)
+	view.RenderHTML(w, r, "request", data)
 }
 
 // accessibleRequest loads a captured request, provided the caller may access
@@ -123,27 +136,23 @@ func (h *WebhookRequestHandler) accessibleRequest(r *http.Request, id string) (*
 func (h *WebhookRequestHandler) DeleteRequest(w http.ResponseWriter, r *http.Request) {
 	requestId := chi.URLParam(r, "id")
 
-	if _, err := h.accessibleRequest(r, requestId); err != nil {
+	wr, err := h.accessibleRequest(r, requestId)
+	if err != nil {
 		h.logger.Printf("delete: request %s not accessible: %v", requestId, err)
-		http.NotFound(w, r)
+		view.RenderNotFound(w, r)
 		return
 	}
 
-	err := h.reqService.Delete(requestId)
-
-	if err != nil {
+	if err := h.reqService.Delete(requestId); err != nil {
 		h.logger.Printf("failed to delete webhook %s: %v", requestId, err)
 		http.Error(w, "could not delete webhook", http.StatusInternalServerError)
 		return
 	}
 
-	referer := r.Referer()
-	if referer == "" {
-		referer = "/" // fallback
-	}
-
-	// Redirect back to the referring page
-	http.Redirect(w, r, referer, http.StatusFound)
+	// Back to the webhook's page: the referer may be the deleted request's
+	// own detail page.
+	utils.SetFlashSuccess(w, "Request deleted.")
+	http.Redirect(w, r, "/?address="+url.QueryEscape(wr.WebhookID), http.StatusSeeOther)
 }
 
 // ReplayRequest re‐sends a stored webhook request via your services.
@@ -153,12 +162,12 @@ func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Req
 	reqEvent, err := h.accessibleRequest(r, id)
 	if err != nil {
 		h.logger.Printf("replay: request %s not found: %v", id, err)
-		http.Error(w, "request not found", http.StatusNotFound)
+		view.RenderNotFound(w, r)
 		return
 	}
 
 	domain := os.Getenv("DOMAIN")
-	target, err := url.JoinPath(domain, "webhooks", reqEvent.WebhookID)
+	target, err := url.JoinPath(domain, "webhooks", reqEvent.WebhookID, reqEvent.Path)
 	if err != nil {
 		h.logger.Printf("replay: invalid target URL: %v", err)
 		http.Error(w, "could not construct replay URL", http.StatusInternalServerError)
@@ -187,16 +196,17 @@ func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(outReq)
+	resp, err := replayClient.Do(outReq)
 	if err != nil {
 		h.logger.Printf("replay: error sending request: %v", err)
-		http.Error(w, "error sending request", http.StatusBadGateway)
+		utils.SetFlashError(w, "Replay failed: the request couldn't be sent.")
+		http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 		return
 	}
-	defer resp.Body.Close()
+	_ = resp.Body.Close() // only the status is used
 
-	// 6) Redirect back to the request details page
-	redirectURL := fmt.Sprintf("/requests/%s?address=%s", reqEvent.ID, reqEvent.WebhookID)
-	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+	// Stay on the page the replay was started from; the replayed copy
+	// streams into its request log.
+	utils.SetFlashSuccess(w, fmt.Sprintf("Request replayed. The endpoint answered %s.", resp.Status))
+	http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 }

@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 	"webhook-tester/internal/handlers"
+	"webhook-tester/internal/mailer"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
+	"webhook-tester/internal/web/view"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
@@ -19,10 +21,12 @@ func NewWebRouter(
 	wrs *service.WebhookRequestService,
 	ws *service.WebhookService,
 	authSvc *service.AuthService,
+	m mailer.Mailer,
 	metricsRec metrics.Recorder,
 	logger *log.Logger,
 ) http.Handler {
 	r := chi.NewRouter()
+	r.NotFound(view.RenderNotFound)
 
 	// CSRF Setup.
 	//
@@ -79,7 +83,7 @@ func NewWebRouter(
 	r.Post("/update-webhook/{id}", webhookHandler.UpdateWebhook)
 	r.Get("/webhook-stream/{id}", webhookHandler.StreamWebhookEvents)
 
-	authHandler := handlers.NewAuthHandler(authSvc, logger, metricsRec)
+	authHandler := handlers.NewAuthHandler(authSvc, ws, m, logger, metricsRec)
 	r.Get("/register", authHandler.RegisterGet)
 	r.Post("/register", authHandler.RegisterPost)
 	r.Get("/login", authHandler.LoginGet)

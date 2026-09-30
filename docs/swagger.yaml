@@ -3,45 +3,65 @@ definitions:
   CreateWebhookRequest:
     properties:
       content_type:
+        description: Content-Type of the response. Defaults to application/json.
+        example: application/json
         type: string
       notify_on_event:
         type: boolean
       payload:
+        description: Response body
+        example: '{"message":"ok"}'
         type: string
       response_code:
+        description: HTTP status code the endpoint answers with, 100-599. Defaults
+          to 200.
+        example: 200
         type: integer
       response_delay:
-        description: milliseconds
+        description: Milliseconds to wait before answering, 0-30000
+        example: 0
         type: integer
+      response_headers:
+        additionalProperties:
+          type: string
+        description: Extra response headers
+        type: object
       title:
-        description: |-
-          Title of the webhook
-          required: true
+        description: Title of the webhook
+        example: Payment events
         type: string
+    required:
+    - title
     type: object
   ErrorResponse:
     properties:
       error:
-        example: Webhook not found
+        example: webhook not found
         type: string
     type: object
   UpdateWebhookRequest:
     properties:
       content_type:
+        example: application/json
         type: string
       notify_on_event:
         type: boolean
       payload:
+        example: '{"message":"ok"}'
         type: string
       response_code:
+        example: 200
         type: integer
       response_delay:
-        description: milliseconds
+        example: 0
         type: integer
+      response_headers:
+        additionalProperties:
+          type: string
+        description: Replaces all response headers
+        type: object
       title:
-        description: |-
-          Title of the webhook
-          required: true
+        example: Payment events
         type: string
     type: object
   Webhook:
@@ -65,6 +85,10 @@ definitions:
       response_delay:
         description: milliseconds
         type: integer
+      response_headers:
+        additionalProperties:
+          type: string
+        type: object
       title:
         type: string
       updated_at:
@@ -77,32 +101,38 @@ definitions:
       body:
         type: string
       headers:
-        $ref: '#/definitions/datatypes.JSONMap'
+        additionalProperties:
+          type: string
+        type: object
       id:
         type: string
       method:
         type: string
+      path:
+        example: /orders/42
+        type: string
       query:
-        $ref: '#/definitions/datatypes.JSONMap'
+        additionalProperties:
+          type: string
+        type: object
       received_at:
         type: string
       webhook_id:
         type: string
     type: object
-  datatypes.JSONMap:
-    additionalProperties: true
-    type: object
 info:
   contact:
     email: william@srninety.one
     name: William Muli
-  description: REST API to interact with webhooks and webhook requests
+  description: Manage your Webhook Tester endpoints programmatically. Authenticate
+    every request with the X-API-Key header; your key is under API access in your
+    [workspace](/).
   title: Webhook Tester API
   version: "1.0"
 paths:
   /webhooks:
     get:
-      description: List webhooks and associated request
+      description: List webhooks and their most recent requests
       produces:
       - application/json
       responses:
@@ -112,12 +142,18 @@ paths:
             items:
               $ref: '#/definitions/Webhook'
             type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: List webhooks
       tags:
       - Webhooks
     post:
+      consumes:
+      - application/json
       description: Returns the details of the created webhook
       parameters:
       - description: Webhook body
@@ -129,10 +165,18 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
-          description: OK
+        "201":
+          description: Created
           schema:
             $ref: '#/definitions/Webhook'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Create a webhook
@@ -140,7 +184,7 @@ paths:
       - Webhooks
   /webhooks/{id}:
     delete:
-      description: Deletes a webhook
+      description: Deletes a webhook and its captured requests
       parameters:
       - description: Webhook ID
         in: path
@@ -154,8 +198,12 @@ paths:
           description: No Content
           schema:
             type: string
-        "500":
-          description: Internal Server Error
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/ErrorResponse'
       security:
@@ -177,23 +225,32 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/Webhook'
-            type: array
+            $ref: '#/definitions/Webhook'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       security:
       - ApiKeyAuth: []
       summary: Get webhook by ID
       tags:
       - Webhooks
-    put:
-      description: Updates a webhook
+    patch:
+      consumes:
+      - application/json
+      description: Changes only the fields included in the body. PUT is accepted as
+        an alias of PATCH.
       parameters:
       - description: Webhook ID
         in: path
         name: id
         required: true
         type: string
-      - description: Updated webhook
+      - description: Fields to change
         in: body
         name: webhook
         required: true
@@ -205,12 +262,63 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/Webhook'
-            type: array
+            $ref: '#/definitions/Webhook'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
       security:
       - ApiKeyAuth: []
-      summary: Updates a webhook
+      summary: Update a webhook
+      tags:
+      - Webhooks
+    put:
+      consumes:
+      - application/json
+      description: Changes only the fields included in the body. PUT is accepted as
+        an alias of PATCH.
+      parameters:
+      - description: Webhook ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: webhook
+        required: true
+        schema:
+          $ref: '#/definitions/UpdateWebhookRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/Webhook'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Update a webhook
       tags:
       - Webhooks
 securityDefinitions:

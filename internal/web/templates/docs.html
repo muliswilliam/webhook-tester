@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API reference - Webhook Tester</title>
+  </head>
+  <body>
+    <div id="api-docs"></div>
+    <!-- Pinned with SRI; update the version and integrity hash together. -->
+    <script
+      src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.3/dist/browser/standalone.js"
+      integrity="sha384-HWi/QCSPi64AQ0xBXFGDk+7gmvZ4hJ/7sZMIXqWVz6Ikb6+Cxej/hWKaomOStyFb"
+      crossorigin="anonymous"
+    ></script>
+    <script>
+      (function () {
+        var theme = "system";
+        try {
+          theme = localStorage.getItem("webhook-tester-theme") || "system";
+        } catch (_) {}
+        var dark =
+          theme === "dark" ||
+          (theme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
+        Scalar.createApiReference("#api-docs", {
+          url: "/docs/openapi.json",
+          darkMode: dark,
+          showDeveloperTools: "never",
+          telemetry: false,
+          agent: { disabled: true },
+          mcp: { disabled: true },
+          authentication: { preferredSecurityScheme: "ApiKeyAuth" },
+          metaData: { title: "API reference - Webhook Tester" },
+        });
+      })();
+    </script>
+  </body>
+</html>

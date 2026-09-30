@@ -2,21 +2,28 @@ package main
 
 import (
 	"context"
+	"errors"
 	"github.com/robfig/cron"
-	"gorm.io/gorm"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 	"webhook-tester/cmd/server"
 	"webhook-tester/internal/metrics"
+	"webhook-tester/internal/service"
 )
 
-func scheduleCleanup(db *gorm.DB, c *cron.Cron) {
-	// clean every day
-	err := c.AddFunc("0 0 * * *", func() {
-		//sqlstore.CleanPublicWebhooks(db, 48*time.Hour) // 48 hours old
+// guestWorkspaceTTL is how long a guest's public webhook lives, matching the
+// "expires in two days" promise in the UI and the guest cookie's lifetime.
+const guestWorkspaceTTL = 48 * time.Hour
+
+func scheduleCleanup(webhookSvc *service.WebhookService, logger *log.Logger, c *cron.Cron) {
+	err := c.AddFunc("@hourly", func() {
+		if err := webhookSvc.CleanPublicWebhooks(guestWorkspaceTTL); err != nil {
+			logger.Printf("error cleaning expired guest webhooks: %s", err)
+		}
 	})
 	if err != nil {
 		log.Fatalf("error scheduling cleanup: %s", err)
@@ -25,7 +32,7 @@ func scheduleCleanup(db *gorm.DB, c *cron.Cron) {
 
 // @title Webhook Tester API
 // @version 1.0
-// @description REST API to interact with webhooks and webhook requests
+// @description Manage your Webhook Tester endpoints programmatically. Authenticate every request with the X-API-Key header; your key is under API access in your [workspace](/).
 
 // @contact.name William Muli
 // @contact.url
@@ -39,18 +46,19 @@ func main() {
 	s.MountHandlers()
 	metrics.Register()
 
-	go func() {
-		err := s.Srv.ListenAndServe()
-		if err != nil {
-			s.Logger.Fatal(err)
-		}
-	}()
+	for _, srv := range []*http.Server{s.Srv, s.MetricsSrv} {
+		go func() {
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				s.Logger.Fatal(err)
+			}
+		}()
+	}
 
-	s.Logger.Printf("server listening on port 3000")
+	s.Logger.Printf("server listening on %s, metrics on %s", s.Srv.Addr, s.MetricsSrv.Addr)
 
 	// cron setup
 	c := cron.New()
-	scheduleCleanup(s.DB, c)
+	scheduleCleanup(s.WebhookSvc, s.Logger, c)
 	c.Start()
 	defer c.Stop()
 
@@ -63,8 +71,10 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	if err := s.Srv.Shutdown(ctx); err != nil {
-		s.Logger.Printf("graceful shutdown failed: %s", err)
+	for _, srv := range []*http.Server{s.Srv, s.MetricsSrv} {
+		if err := srv.Shutdown(ctx); err != nil {
+			s.Logger.Printf("graceful shutdown of %s failed: %s", srv.Addr, err)
+		}
 	}
 
 	s.Logger.Printf("server stopped")

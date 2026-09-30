@@ -103,3 +103,54 @@
     </span>
   </label>
 {{ end }}
+
+{{ define "brand-mark" }}
+  <span class="brand-mark">
+    <svg
+      class="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      aria-hidden="true"
+    >
+      <path d="M8 12h8M12 8v8" />
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  </span>
+{{ end }}
+
+{{/* The one-time notice queued by the previous request, if any. */}}
+{{ define "flash-notice" }}
+  {{ with flash }}
+    <div
+      class="notice-{{ .Kind }} flex items-start justify-between gap-3"
+      role="{{ if eq .Kind "error" }}
+        alert
+      {{ else }}
+        status
+      {{ end }}"
+      data-signals:flash-open="true"
+      data-show="$flashOpen"
+    >
+      <p>{{ .Message }}</p>
+      <button
+        type="button"
+        class="notice-dismiss"
+        data-on:click="$flashOpen = false"
+        aria-label="Dismiss"
+      >
+        <svg
+          class="h-4 w-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <path d="m6 6 12 12M18 6 6 18" />
+        </svg>
+      </button>
+    </div>
+  {{ end }}
+{{ end }}

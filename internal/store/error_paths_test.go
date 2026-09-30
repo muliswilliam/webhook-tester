@@ -95,7 +95,7 @@ func TestGormWebhookRepo_CleanPublic_DeleteRequestsFails(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewGormWebookRepo(db, testLogger())
 
-	wh := &models.Webhook{ID: "pub-1", Title: "a", UserID: 0}
+	wh := &models.Webhook{ID: "pub-1", Title: "a", UserID: 0, CreatedAt: time.Now().UTC().Add(-2 * time.Hour)}
 	require.NoError(t, db.Create(wh).Error)
 
 	// Dropping the webhook_requests table makes the request-deletion step

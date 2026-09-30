@@ -19,7 +19,8 @@ func NewWebhookRouter(
 	r := chi.NewRouter()
 	wh := handlers.NewWebhookHandler(webhookSvc, webhookReqSvc, authSvc, logger, metrics)
 
-	// Match all HTTP methods at /{webhookID}
-	r.HandleFunc("/*", wh.HandleWebhookRequest)
+	// Match all HTTP methods at /{id} and any subpath of it
+	r.HandleFunc("/{id}", wh.HandleWebhookRequest)
+	r.HandleFunc("/{id}/*", wh.HandleWebhookRequest)
 	return r
 }

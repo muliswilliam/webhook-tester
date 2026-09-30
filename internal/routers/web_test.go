@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"webhook-tester/internal/mailer"
 	appMetrics "webhook-tester/internal/metrics"
 	"webhook-tester/internal/routers"
 	"webhook-tester/internal/service"
@@ -35,7 +36,7 @@ func setupWebRouter(t *testing.T) http.Handler {
 
 	metricsRec := &appMetrics.PrometheusRecorder{}
 
-	return routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, metricsRec, logger)
+	return routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, &mailer.LogMailer{Logger: logger}, metricsRec, logger)
 }
 
 func TestNewWebRouter_PlainHTTPRequest(t *testing.T) {
@@ -91,4 +92,16 @@ func TestNewWebRouter_GetRoutesDispatch(t *testing.T) {
 			require.Equal(t, http.StatusOK, rec.Code, "route %s should dispatch successfully", route)
 		})
 	}
+}
+
+func TestNewWebRouter_UnknownRouteRendersNotFoundPage(t *testing.T) {
+	r := setupWebRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/no-such-page", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+	require.Contains(t, rec.Body.String(), "Page not found")
 }

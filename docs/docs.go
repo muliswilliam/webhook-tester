@@ -25,7 +25,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "List webhooks and associated request",
+                "description": "List webhooks and their most recent requests",
                 "produces": [
                     "application/json"
                 ],
@@ -42,6 +42,12 @@ const docTemplate = `{
                                 "$ref": "#/definitions/Webhook"
                             }
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
                     }
                 }
             },
@@ -52,6 +58,9 @@ const docTemplate = `{
                     }
                 ],
                 "description": "Returns the details of the created webhook",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -71,10 +80,22 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "201": {
+                        "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/Webhook"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
                         }
                     }
                 }
@@ -108,10 +129,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/Webhook"
-                            }
+                            "$ref": "#/definitions/Webhook"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
                         }
                     }
                 }
@@ -122,14 +152,17 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Updates a webhook",
+                "description": "Changes only the fields included in the body. PUT is accepted as an alias of PATCH.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Webhooks"
                 ],
-                "summary": "Updates a webhook",
+                "summary": "Update a webhook",
                 "parameters": [
                     {
                         "type": "string",
@@ -139,7 +172,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Updated webhook",
+                        "description": "Fields to change",
                         "name": "webhook",
                         "in": "body",
                         "required": true,
@@ -152,10 +185,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/Webhook"
-                            }
+                            "$ref": "#/definitions/Webhook"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
                         }
                     }
                 }
@@ -166,7 +214,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Deletes a webhook",
+                "description": "Deletes a webhook and its captured requests",
                 "produces": [
                     "application/json"
                 ],
@@ -190,8 +238,76 @@ const docTemplate = `{
                             "type": "string"
                         }
                     },
-                    "500": {
-                        "description": "Internal Server Error",
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Changes only the fields included in the body. PUT is accepted as an alias of PATCH.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Webhooks"
+                ],
+                "summary": "Update a webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Webhook ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "webhook",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/UpdateWebhookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/Webhook"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/ErrorResponse"
                         }
@@ -203,26 +319,44 @@ const docTemplate = `{
     "definitions": {
         "CreateWebhookRequest": {
             "type": "object",
+            "required": [
+                "title"
+            ],
             "properties": {
                 "content_type": {
-                    "type": "string"
+                    "description": "Content-Type of the response. Defaults to application/json.",
+                    "type": "string",
+                    "example": "application/json"
                 },
                 "notify_on_event": {
                     "type": "boolean"
                 },
                 "payload": {
-                    "type": "string"
+                    "description": "Response body",
+                    "type": "string",
+                    "example": "{\"message\":\"ok\"}"
                 },
                 "response_code": {
-                    "type": "integer"
+                    "description": "HTTP status code the endpoint answers with, 100-599. Defaults to 200.",
+                    "type": "integer",
+                    "example": 200
                 },
                 "response_delay": {
-                    "description": "milliseconds",
-                    "type": "integer"
+                    "description": "Milliseconds to wait before answering, 0-30000",
+                    "type": "integer",
+                    "example": 0
+                },
+                "response_headers": {
+                    "description": "Extra response headers",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "title": {
-                    "description": "Title of the webhook\nrequired: true",
-                    "type": "string"
+                    "description": "Title of the webhook",
+                    "type": "string",
+                    "example": "Payment events"
                 }
             }
         },
@@ -231,7 +365,7 @@ const docTemplate = `{
             "properties": {
                 "error": {
                     "type": "string",
-                    "example": "Webhook not found"
+                    "example": "webhook not found"
                 }
             }
         },
@@ -239,24 +373,34 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "content_type": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "application/json"
                 },
                 "notify_on_event": {
                     "type": "boolean"
                 },
                 "payload": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "{\"message\":\"ok\"}"
                 },
                 "response_code": {
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 200
                 },
                 "response_delay": {
-                    "description": "milliseconds",
-                    "type": "integer"
+                    "type": "integer",
+                    "example": 0
+                },
+                "response_headers": {
+                    "description": "Replaces all response headers",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "title": {
-                    "description": "Title of the webhook\nrequired: true",
-                    "type": "string"
+                    "type": "string",
+                    "example": "Payment events"
                 }
             }
         },
@@ -291,6 +435,12 @@ const docTemplate = `{
                     "description": "milliseconds",
                     "type": "integer"
                 },
+                "response_headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "title": {
                     "type": "string"
                 },
@@ -309,7 +459,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "headers": {
-                    "$ref": "#/definitions/datatypes.JSONMap"
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "id": {
                     "type": "string"
@@ -317,8 +470,15 @@ const docTemplate = `{
                 "method": {
                     "type": "string"
                 },
+                "path": {
+                    "type": "string",
+                    "example": "/orders/42"
+                },
                 "query": {
-                    "$ref": "#/definitions/datatypes.JSONMap"
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "received_at": {
                     "type": "string"
@@ -327,10 +487,6 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        },
-        "datatypes.JSONMap": {
-            "type": "object",
-            "additionalProperties": true
         }
     },
     "securityDefinitions": {
@@ -349,7 +505,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/api",
 	Schemes:          []string{},
 	Title:            "Webhook Tester API",
-	Description:      "REST API to interact with webhooks and webhook requests",
+	Description:      "Manage your Webhook Tester endpoints programmatically. Authenticate every request with the X-API-Key header; your key is under API access in your [workspace](/).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

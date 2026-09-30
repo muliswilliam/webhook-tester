@@ -366,3 +366,22 @@ func TestGormWebhookRepo_CleanPublic_NoMatches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, deleted)
 }
+
+func TestGormWebhookRepo_AssignOwner(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGormWebookRepo(db, testLogger())
+	require.NoError(t, db.Create(&models.Webhook{ID: "guest"}).Error)
+	require.NoError(t, db.Create(&models.Webhook{ID: "owned", UserID: 3}).Error)
+
+	require.NoError(t, repo.AssignOwner("guest", 7))
+	got, err := repo.Get("guest")
+	require.NoError(t, err)
+	assert.Equal(t, 7, got.UserID)
+
+	assert.ErrorIs(t, repo.AssignOwner("owned", 7), gorm.ErrRecordNotFound)
+	got, err = repo.Get("owned")
+	require.NoError(t, err)
+	assert.Equal(t, 3, got.UserID)
+
+	assert.ErrorIs(t, repo.AssignOwner("missing", 7), gorm.ErrRecordNotFound)
+}

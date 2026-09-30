@@ -48,7 +48,21 @@ func TestNewWebhookDTO(t *testing.T) {
 	assert.Equal(t, payload, dto.Payload)
 	assert.Equal(t, w.NotifyOnEvent, dto.NotifyOnEvent)
 	assert.Equal(t, w.UserID, dto.UserID)
-	assert.Equal(t, w.CreatedAt, dto.CreatedAt)
-	assert.Equal(t, w.UpdatedAt, dto.UpdatedAt)
-	assert.Equal(t, requests, dto.Requests)
+	assert.Equal(t, w.CreatedAt.UTC(), dto.CreatedAt)
+	assert.Equal(t, time.UTC, dto.CreatedAt.Location())
+	assert.Equal(t, w.UpdatedAt.UTC(), dto.UpdatedAt)
+	assert.Equal(t, []WebhookRequest{{
+		ID: "req-1", WebhookID: "wh-1", Method: "POST", Body: "{}",
+		Headers: map[string]string{}, Query: map[string]string{},
+	}}, dto.Requests)
+	assert.Equal(t, map[string]string{}, dto.ResponseHeaders)
+}
+
+func TestNewWebhookDTO_NilFields(t *testing.T) {
+	dto := NewWebhookDTO(models.Webhook{ID: "wh-1"})
+
+	assert.Equal(t, "", dto.ContentType)
+	assert.Equal(t, "", dto.Payload)
+	assert.NotNil(t, dto.Requests)
+	assert.NotNil(t, dto.ResponseHeaders)
 }

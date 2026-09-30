@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,24 +21,89 @@ import (
 	"webhook-tester/internal/utils"
 )
 
-func newTestAuthHandler(t *testing.T) (*AuthHandler, *testUserRepo, *testMetricsRecorder, *service.AuthService) {
-	t.Helper()
-	userRepo := newTestUserRepo()
-	metricsRec := &testMetricsRecorder{}
-	authSvc := newTestAuthService(t, userRepo)
-	h := NewAuthHandler(authSvc, newTestLogger(), metricsRec)
-	return h, userRepo, metricsRec, authSvc
+// authFixture is an AuthHandler wired to in-memory fakes.
+type authFixture struct {
+	h           *AuthHandler
+	userRepo    *testUserRepo
+	webhookRepo *testWebhookRepo
+	metrics     *testMetricsRecorder
+	authSvc     *service.AuthService
+	mailer      *testMailer
+	logs        *syncBuffer
 }
 
-func newTestAuthHandlerWithLogBuf(t *testing.T) (*AuthHandler, *testUserRepo, *testMetricsRecorder, *service.AuthService, *bytes.Buffer) {
+func newAuthFixture(t *testing.T) *authFixture {
 	t.Helper()
-	userRepo := newTestUserRepo()
-	metricsRec := &testMetricsRecorder{}
-	authSvc := newTestAuthService(t, userRepo)
-	var buf bytes.Buffer
-	logger := log.New(&buf, "", 0)
-	h := NewAuthHandler(authSvc, logger, metricsRec)
-	return h, userRepo, metricsRec, authSvc, &buf
+	f := &authFixture{
+		userRepo:    newTestUserRepo(),
+		webhookRepo: newTestWebhookRepo(),
+		metrics:     &testMetricsRecorder{},
+		mailer:      newTestMailer(),
+		logs:        &syncBuffer{},
+	}
+	f.authSvc = newTestAuthService(t, f.userRepo)
+	f.h = NewAuthHandler(f.authSvc, service.NewWebhookService(f.webhookRepo), f.mailer, log.New(f.logs, "", 0), f.metrics)
+	return f
+}
+
+func newTestAuthHandler(t *testing.T) (*AuthHandler, *testUserRepo, *testMetricsRecorder, *service.AuthService) {
+	t.Helper()
+	f := newAuthFixture(t)
+	return f.h, f.userRepo, f.metrics, f.authSvc
+}
+
+// testMailer records sent emails on a channel, since password reset emails
+// are sent in the background.
+type testMailer struct {
+	sent chan sentMail
+}
+
+type sentMail struct {
+	to, subject, body string
+}
+
+func newTestMailer() *testMailer {
+	return &testMailer{sent: make(chan sentMail, 10)}
+}
+
+func (m *testMailer) Send(to, subject, body string) error {
+	m.sent <- sentMail{to: to, subject: subject, body: body}
+	return nil
+}
+
+// syncBuffer is a bytes.Buffer safe for the background email goroutine to
+// log into while a test reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func postForm(target string, form url.Values) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req
+}
+
+// flashFrom returns the flash notice a response queued, or nil.
+func flashFrom(t *testing.T, rec *httptest.ResponseRecorder) *utils.Flash {
+	t.Helper()
+	next := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, c := range rec.Result().Cookies() {
+		next.AddCookie(c)
+	}
+	return utils.PopFlash(httptest.NewRecorder(), next)
 }
 
 func futureTime() time.Time {
@@ -111,20 +177,68 @@ func TestAuthHandler_RegisterPost_UnexpectedError(t *testing.T) {
 }
 
 func TestAuthHandler_RegisterPost_Success(t *testing.T) {
-	h, userRepo, metricsRec, _ := newTestAuthHandler(t)
+	f := newAuthFixture(t)
 
-	form := url.Values{"name": {"Jane"}, "email": {"jane@x.com"}, "password": {"Passw0rd!"}}
-	req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
-
-	h.RegisterPost(rec, req)
+	f.h.RegisterPost(rec, postForm("/register", url.Values{"name": {"Jane"}, "email": {"jane@x.com"}, "password": {"Passw0rd!"}}))
 
 	require.Equal(t, http.StatusSeeOther, rec.Code)
-	assert.Equal(t, "/login", rec.Header().Get("Location"))
-	assert.Equal(t, 1, metricsRec.signUps)
-	_, ok := userRepo.byEmail["jane@x.com"]
+	assert.Equal(t, "/", rec.Header().Get("Location"))
+	assert.Equal(t, 1, f.metrics.signUps)
+	_, ok := f.userRepo.byEmail["jane@x.com"]
 	assert.True(t, ok)
+	assert.True(t, hasCookie(rec, testSessionCookieName), "expected the new user to be signed in")
+	flash := flashFrom(t, rec)
+	require.NotNil(t, flash)
+	assert.Equal(t, utils.FlashSuccess, flash.Kind)
+}
+
+func TestAuthHandler_RegisterPost_ClaimsGuestWorkspace(t *testing.T) {
+	f := newAuthFixture(t)
+	f.webhookRepo.put(&models.Webhook{ID: "guest-wh"})
+
+	req := postForm("/register", url.Values{"name": {"Jane"}, "email": {"jane@x.com"}, "password": {"Passw0rd!"}})
+	req.AddCookie(&http.Cookie{Name: sessionIdName, Value: "guest-wh"})
+	rec := httptest.NewRecorder()
+	f.h.RegisterPost(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "/?address=guest-wh", rec.Header().Get("Location"))
+	user := f.userRepo.byEmail["jane@x.com"]
+	assert.Equal(t, int(user.ID), f.webhookRepo.webhooks["guest-wh"].UserID)
+	assert.True(t, guestCookieCleared(rec))
+	assert.Contains(t, flashFrom(t, rec).Message, "saved to your account")
+}
+
+func TestAuthHandler_RegisterPost_ExpiredGuestWorkspace(t *testing.T) {
+	f := newAuthFixture(t)
+
+	req := postForm("/register", url.Values{"name": {"Jane"}, "email": {"jane@x.com"}, "password": {"Passw0rd!"}})
+	req.AddCookie(&http.Cookie{Name: sessionIdName, Value: "gone"})
+	rec := httptest.NewRecorder()
+	f.h.RegisterPost(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "/", rec.Header().Get("Location"))
+	assert.True(t, guestCookieCleared(rec))
+}
+
+func hasCookie(rec *httptest.ResponseRecorder, name string) bool {
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == name && c.MaxAge >= 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func guestCookieCleared(rec *httptest.ResponseRecorder) bool {
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionIdName && c.MaxAge == -1 {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAuthHandler_LoginGet(t *testing.T) {
@@ -160,6 +274,7 @@ func TestAuthHandler_LoginPost_InvalidCredentials(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "Invalid email or password")
+	assert.Contains(t, rec.Body.String(), `value="nouser@x.com"`, "expected the email to be kept")
 	assert.Equal(t, 0, metricsRec.logins)
 }
 
@@ -194,13 +309,32 @@ func TestAuthHandler_LoginPost_Success(t *testing.T) {
 	assert.True(t, sawInvalidatedGuestCookie, "expected the guest cookie to be invalidated on login")
 }
 
+func TestAuthHandler_LoginPost_ClaimsGuestWorkspace(t *testing.T) {
+	f := newAuthFixture(t)
+	hash, err := utils.HashPassword("Passw0rd!")
+	require.NoError(t, err)
+	user := &models.User{Email: "jane@x.com", Password: hash}
+	f.userRepo.addUser(user)
+	f.webhookRepo.put(&models.Webhook{ID: "guest-wh"})
+
+	req := postForm("/login", url.Values{"email": {"jane@x.com"}, "password": {"Passw0rd!"}})
+	req.AddCookie(&http.Cookie{Name: sessionIdName, Value: "guest-wh"})
+	rec := httptest.NewRecorder()
+	f.h.LoginPost(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "/?address=guest-wh", rec.Header().Get("Location"))
+	assert.Equal(t, int(user.ID), f.webhookRepo.webhooks["guest-wh"].UserID)
+	assert.True(t, guestCookieCleared(rec))
+}
+
 func TestAuthHandler_LoginPost_CreateSessionError(t *testing.T) {
 	userRepo := newTestUserRepo()
 	metricsRec := &testMetricsRecorder{}
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	authSvc := service.NewAuthService(userRepo, db, "test-secret")
-	h := NewAuthHandler(authSvc, newTestLogger(), metricsRec)
+	h := NewAuthHandler(authSvc, service.NewWebhookService(newTestWebhookRepo()), newTestMailer(), newTestLogger(), metricsRec)
 
 	hash, err := utils.HashPassword("Passw0rd!")
 	require.NoError(t, err)
@@ -263,34 +397,38 @@ func TestAuthHandler_ForgotPasswordPost_ParseFormError(t *testing.T) {
 }
 
 func TestAuthHandler_ForgotPasswordPost_UnknownUser(t *testing.T) {
-	h, _, _, _, buf := newTestAuthHandlerWithLogBuf(t)
+	f := newAuthFixture(t)
 
-	form := url.Values{"email": {"nouser@x.com"}}
-	req := httptest.NewRequest(http.MethodPost, "/forgot-password", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
+	f.h.ForgotPasswordPost(rec, postForm("/forgot-password", url.Values{"email": {"nouser@x.com"}}))
 
-	h.ForgotPasswordPost(rec, req)
-
+	// Same answer as for a registered email, so accounts can't be enumerated.
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.NotContains(t, rec.Body.String(), "Check your inbox")
-	assert.Contains(t, buf.String(), "Forgot password error")
+	assert.Contains(t, rec.Body.String(), "If an account exists for that email")
+	assert.Eventually(t, func() bool { return strings.Contains(f.logs.String(), "forgot password") }, time.Second, 5*time.Millisecond)
+	assert.Empty(t, f.mailer.sent)
 }
 
 func TestAuthHandler_ForgotPasswordPost_Success(t *testing.T) {
-	h, userRepo, _, _, buf := newTestAuthHandlerWithLogBuf(t)
-	userRepo.addUser(&models.User{Email: "jane@x.com"})
+	f := newAuthFixture(t)
+	f.userRepo.addUser(&models.User{Email: "jane@x.com"})
+	t.Setenv("DOMAIN", "http://example.com")
 
-	form := url.Values{"email": {"jane@x.com"}}
-	req := httptest.NewRequest(http.MethodPost, "/forgot-password", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
-
-	h.ForgotPasswordPost(rec, req)
+	f.h.ForgotPasswordPost(rec, postForm("/forgot-password", url.Values{"email": {" jane@x.com "}}))
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Body.String(), "Check your inbox")
-	assert.Contains(t, buf.String(), "Password reset link")
+	assert.Contains(t, rec.Body.String(), "If an account exists for that email")
+	select {
+	case mail := <-f.mailer.sent:
+		assert.Equal(t, "jane@x.com", mail.to)
+		assert.Equal(t, "Reset your Webhook Tester password", mail.subject)
+		token := f.userRepo.byEmail["jane@x.com"].ResetToken
+		require.NotEmpty(t, token)
+		assert.Contains(t, mail.body, "http://example.com/reset-password?token="+token)
+	case <-time.After(time.Second):
+		t.Fatal("expected a password reset email")
+	}
 }
 
 func TestAuthHandler_ResetPasswordGet_MissingToken(t *testing.T) {
@@ -377,6 +515,7 @@ func TestAuthHandler_ResetPasswordPost_Success(t *testing.T) {
 
 	require.Equal(t, http.StatusSeeOther, rec.Code)
 	assert.Equal(t, "/login", rec.Header().Get("Location"))
+	assert.Equal(t, &utils.Flash{Kind: utils.FlashSuccess, Message: "Password updated. Sign in with your new password."}, flashFrom(t, rec))
 
 	u, ok := userRepo.byEmail["jane@x.com"]
 	require.True(t, ok)

@@ -26,9 +26,12 @@
 
     <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div class="min-w-0">
-        <div class="mb-3 flex items-center gap-3">
+        <div class="mb-3 flex min-w-0 items-center gap-3">
           <span class="method-badge">{{ .Request.Method }}</span>
-          <span class="text-xs text-muted">
+          {{ if .Request.Path }}
+            <span class="truncate font-mono text-xs">{{ .Request.Path }}</span>
+          {{ end }}
+          <span class="shrink-0 text-xs text-muted">
             {{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
           </span>
         </div>
@@ -61,7 +64,10 @@
         <form
           method="POST"
           action="/requests/{{ .Request.ID }}/delete"
-          onsubmit="return confirm('Delete this captured request?')"
+          onsubmit="return confirmSubmit(event, this)"
+          data-confirm-title="Delete this request?"
+          data-confirm-message="The captured request will be permanently deleted."
+          data-confirm-label="Delete request"
         >
           {{ .CSRFField }}
           <button class="btn-danger">Delete request</button>

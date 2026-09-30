@@ -30,10 +30,11 @@ func TestMountHandlers(t *testing.T) {
 	webhookdb.AutoMigrate(db)
 
 	srv := &server.Server{
-		Router: chi.NewRouter(),
-		DB:     db,
-		Logger: log.New(io.Discard, "", 0),
-		Srv:    &http.Server{},
+		Router:     chi.NewRouter(),
+		DB:         db,
+		Logger:     log.New(io.Discard, "", 0),
+		Srv:        &http.Server{},
+		MetricsSrv: &http.Server{},
 	}
 
 	srv.MountHandlers()
@@ -52,11 +53,15 @@ func TestMountHandlers(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, rec.Code)
 	})
 
-	t.Run("metrics", func(t *testing.T) {
+	t.Run("metrics are served only on the metrics server", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 		rec := httptest.NewRecorder()
-		srv.Router.ServeHTTP(rec, req)
+		srv.MetricsSrv.Handler.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
+
+		rec = httptest.NewRecorder()
+		srv.Router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusNotFound, rec.Code)
 	})
 
 	t.Run("docs", func(t *testing.T) {
@@ -64,5 +69,23 @@ func TestMountHandlers(t *testing.T) {
 		rec := httptest.NewRecorder()
 		srv.Router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), "API reference - Webhook Tester")
+	})
+
+	t.Run("OpenAPI document", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/docs/openapi.json", nil)
+		rec := httptest.NewRecorder()
+		srv.Router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+		require.Contains(t, rec.Body.String(), `"swagger": "2.0"`)
+	})
+
+	t.Run("unknown page", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/no-such-page", nil)
+		rec := httptest.NewRecorder()
+		srv.Router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusNotFound, rec.Code)
+		require.Contains(t, rec.Body.String(), "Page not found")
 	})
 }

@@ -1,4 +1,4 @@
-package utils
+package view
 
 import (
 	"encoding/hex"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"webhook-tester/internal/models"
+	"webhook-tester/internal/utils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,36 +54,34 @@ type testRequestCounter struct {
 	Count     int64
 }
 
-func TestRenderHtmlHomeHappyPath(t *testing.T) {
+func TestRenderHTMLHomeHappyPath(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
 
 	webhook := newTestWebhook()
 
 	data := struct {
-		CSRFField       template.HTML
-		User            models.User
-		Webhooks        []models.Webhook
-		Webhook         models.Webhook
-		ResponseHeaders string
-		ContentType     string
-		RequestRows     []testRequestRow
-		RequestCounter  testRequestCounter
-		Domain          string
-		Year            int
+		CSRFField      template.HTML
+		User           models.User
+		Webhooks       []models.Webhook
+		Webhook        models.Webhook
+		ContentType    string
+		RequestRows    []testRequestRow
+		RequestCounter testRequestCounter
+		Domain         string
+		Year           int
 	}{
-		CSRFField:       template.HTML(`<input type="hidden">`),
-		User:            models.User{},
-		Webhooks:        []models.Webhook{webhook},
-		Webhook:         webhook,
-		ResponseHeaders: "",
-		RequestRows:     []testRequestRow{{Request: webhook.Requests[0]}},
-		RequestCounter:  testRequestCounter{WebhookID: webhook.ID, Count: int64(len(webhook.Requests))},
-		Domain:          "example.com",
-		Year:            2026,
+		CSRFField:      template.HTML(`<input type="hidden">`),
+		User:           models.User{},
+		Webhooks:       []models.Webhook{webhook},
+		Webhook:        webhook,
+		RequestRows:    []testRequestRow{{Request: webhook.Requests[0]}},
+		RequestCounter: testRequestCounter{WebhookID: webhook.ID, Count: int64(len(webhook.Requests))},
+		Domain:         "example.com",
+		Year:           2026,
 	}
 
-	RenderHtml(w, r, "home", data)
+	RenderHTML(w, r, "home", data)
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "My webhook")
@@ -95,7 +94,7 @@ func TestRenderHtmlHomeHappyPath(t *testing.T) {
 // newline into that literal: a JS SyntaxError that silently stops the SSE
 // connection from ever opening. Assert the literal is exact for both the
 // active and an inactive webhook.
-func TestRenderHtmlHomeWebhookStreamDataInit(t *testing.T) {
+func TestRenderHTMLHomeWebhookStreamDataInit(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
 
@@ -103,16 +102,15 @@ func TestRenderHtmlHomeWebhookStreamDataInit(t *testing.T) {
 	inactive := models.Webhook{ID: "wh-2"}
 
 	data := struct {
-		CSRFField       template.HTML
-		User            models.User
-		Webhooks        []models.Webhook
-		Webhook         models.Webhook
-		ResponseHeaders string
-		ContentType     string
-		RequestRows     []testRequestRow
-		RequestCounter  testRequestCounter
-		Domain          string
-		Year            int
+		CSRFField      template.HTML
+		User           models.User
+		Webhooks       []models.Webhook
+		Webhook        models.Webhook
+		ContentType    string
+		RequestRows    []testRequestRow
+		RequestCounter testRequestCounter
+		Domain         string
+		Year           int
 	}{
 		CSRFField: template.HTML(`<input type="hidden">`),
 		Webhooks:  []models.Webhook{active, inactive},
@@ -120,7 +118,7 @@ func TestRenderHtmlHomeWebhookStreamDataInit(t *testing.T) {
 		Domain:    "example.com",
 	}
 
-	RenderHtml(w, r, "home", data)
+	RenderHTML(w, r, "home", data)
 	body := w.Body.String()
 
 	// Each stream resumes after the newest request the page rendered.
@@ -138,9 +136,9 @@ func TestRenderHtmlHomeWebhookStreamDataInit(t *testing.T) {
 	assert.Contains(t, body, "{retry: 'always', retryMaxCount: Infinity, openWhenHidden: true, filterSignals: {include: /^$/}}")
 }
 
-func TestRenderHtmlHomeAssetsAreContentHashed(t *testing.T) {
+func TestRenderHTMLHomeAssetsAreContentHashed(t *testing.T) {
 	w := httptest.NewRecorder()
-	RenderHtmlWithoutLayout(w, httptest.NewRequest("GET", "/login", nil), "login", nil)
+	RenderHTMLWithoutLayout(w, httptest.NewRequest("GET", "/login", nil), "login", nil)
 	body := w.Body.String()
 
 	for _, asset := range []string{"css/tailwind.css", "js/vendor/datastar.js", "js/script.js"} {
@@ -170,7 +168,7 @@ func TestRenderPartialMainRequestRowBody(t *testing.T) {
 		"not json": {body: "plain text", wantFormatted: false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			html, err := RenderPartialToString("main-request-row", testRequestRow{
+			html, err := RenderRequestPartial("main-request-row", testRequestRow{
 				Request: models.WebhookRequest{ID: "req-1", WebhookID: "wh-1", Method: "POST", Body: tc.body},
 			})
 			require.NoError(t, err)
@@ -206,7 +204,7 @@ func jsStringLiteralAfter(t *testing.T, body, marker string, fromIndex int) stri
 	return literal
 }
 
-func TestRenderHtmlRequestHappyPath(t *testing.T) {
+func TestRenderHTMLRequestHappyPath(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
 
@@ -231,22 +229,22 @@ func TestRenderHtmlRequestHappyPath(t *testing.T) {
 		CSRFField: template.HTML(`<input type="hidden">`),
 	}
 
-	RenderHtml(w, r, "request", data)
+	RenderHTML(w, r, "request", data)
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "req-1")
 }
 
-func TestRenderHtmlUnknownTemplatePanics(t *testing.T) {
+func TestRenderHTMLUnknownTemplatePanics(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
 
 	assert.Panics(t, func() {
-		RenderHtml(w, r, "does-not-exist", nil)
+		RenderHTML(w, r, "does-not-exist", nil)
 	})
 }
 
-func TestRenderHtmlWithoutLayoutRegister(t *testing.T) {
+func TestRenderHTMLWithoutLayoutRegister(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/register", nil)
 
@@ -260,31 +258,70 @@ func TestRenderHtmlWithoutLayoutRegister(t *testing.T) {
 		CSRFField: template.HTML(`<input type="hidden">`),
 	}
 
-	RenderHtmlWithoutLayout(w, r, "register", data)
+	RenderHTMLWithoutLayout(w, r, "register", data)
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "Create account")
 }
 
-func TestRenderHtmlWithoutLayoutLogin(t *testing.T) {
+func TestRenderHTMLWithoutLayoutLogin(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/login", nil)
 
 	data := struct {
 		CSRFField template.HTML
 		Error     string
+		Email     string
 	}{
 		CSRFField: template.HTML(`<input type="hidden">`),
 		Error:     "bad credentials",
+		Email:     "jane@example.com",
 	}
 
-	RenderHtmlWithoutLayout(w, r, "login", data)
+	RenderHTMLWithoutLayout(w, r, "login", data)
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "bad credentials")
+	assert.Contains(t, w.Body.String(), `value="jane@example.com"`)
 }
 
-func TestRenderHtmlWithoutLayoutForgotPassword(t *testing.T) {
+func TestRenderShowsAndClearsFlash(t *testing.T) {
+	queue := httptest.NewRecorder()
+	utils.SetFlashSuccess(queue, "Password <updated>.")
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/login", nil)
+	for _, c := range queue.Result().Cookies() {
+		r.AddCookie(c)
+	}
+	RenderHTMLWithoutLayout(w, r, "login", struct {
+		CSRFField template.HTML
+		Error     string
+		Email     string
+	}{})
+
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "Password &lt;updated&gt;.", "flash text is escaped")
+	assert.Contains(t, w.Body.String(), `class="notice-success`)
+	var cleared bool
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "_webhook_tester_flash" && c.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	assert.True(t, cleared, "a flash shows once")
+}
+
+func TestRenderNotFound(t *testing.T) {
+	w := httptest.NewRecorder()
+	RenderNotFound(w, httptest.NewRequest("GET", "/nope", nil))
+
+	assert.Equal(t, 404, w.Code)
+	assert.Equal(t, "text/html; charset=utf-8", w.Header().Get("Content-Type"))
+	assert.Contains(t, w.Body.String(), "Page not found")
+}
+
+func TestRenderHTMLWithoutLayoutForgotPassword(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/forgot-password", nil)
 
@@ -297,12 +334,12 @@ func TestRenderHtmlWithoutLayoutForgotPassword(t *testing.T) {
 		Success:   true,
 	}
 
-	RenderHtmlWithoutLayout(w, r, "forgot-password", data)
+	RenderHTMLWithoutLayout(w, r, "forgot-password", data)
 
 	assert.Equal(t, 200, w.Code)
 }
 
-func TestRenderHtmlWithoutLayoutResetPassword(t *testing.T) {
+func TestRenderHTMLWithoutLayoutResetPassword(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/reset-password", nil)
 
@@ -317,13 +354,13 @@ func TestRenderHtmlWithoutLayoutResetPassword(t *testing.T) {
 		Token:     "abc123",
 	}
 
-	RenderHtmlWithoutLayout(w, r, "reset-password", data)
+	RenderHTMLWithoutLayout(w, r, "reset-password", data)
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "abc123")
 }
 
-func TestRenderHtmlWithoutLayoutPolicy(t *testing.T) {
+func TestRenderHTMLWithoutLayoutPolicy(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/policy", nil)
 
@@ -331,13 +368,13 @@ func TestRenderHtmlWithoutLayoutPolicy(t *testing.T) {
 		Year int
 	}{Year: 2026}
 
-	RenderHtmlWithoutLayout(w, r, "policy", data)
+	RenderHTMLWithoutLayout(w, r, "policy", data)
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "2026")
 }
 
-func TestRenderHtmlWithoutLayoutTerms(t *testing.T) {
+func TestRenderHTMLWithoutLayoutTerms(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/terms", nil)
 
@@ -345,7 +382,7 @@ func TestRenderHtmlWithoutLayoutTerms(t *testing.T) {
 		Year int
 	}{Year: 2026}
 
-	RenderHtmlWithoutLayout(w, r, "terms", data)
+	RenderHTMLWithoutLayout(w, r, "terms", data)
 
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "2026")
@@ -356,29 +393,29 @@ func TestRenderHtmlWithoutLayoutTerms(t *testing.T) {
 // to 200 by the time template.Execute hits the bad field access below and
 // calls http.Error. These tests only assert that the error branch executes
 // without panicking; the recorded status code cannot be used as a signal.
-func TestRenderHtmlExecuteError(t *testing.T) {
+func TestRenderHTMLExecuteError(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
 
 	assert.NotPanics(t, func() {
-		RenderHtml(w, r, "home", 5)
+		RenderHTML(w, r, "home", 5)
 	})
 }
 
-func TestRenderHtmlWithoutLayoutExecuteError(t *testing.T) {
+func TestRenderHTMLWithoutLayoutExecuteError(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/register", nil)
 
 	assert.NotPanics(t, func() {
-		RenderHtmlWithoutLayout(w, r, "register", 5)
+		RenderHTMLWithoutLayout(w, r, "register", 5)
 	})
 }
 
-func TestRenderHtmlWithoutLayoutUnknownTemplatePanics(t *testing.T) {
+func TestRenderHTMLWithoutLayoutUnknownTemplatePanics(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/", nil)
 
 	assert.Panics(t, func() {
-		RenderHtmlWithoutLayout(w, r, "does-not-exist", nil)
+		RenderHTMLWithoutLayout(w, r, "does-not-exist", nil)
 	})
 }

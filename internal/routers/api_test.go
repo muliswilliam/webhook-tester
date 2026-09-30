@@ -119,10 +119,9 @@ func TestNewApiRouter_CRUDWithValidKey(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 
 	// Update
-	updateBody, _ := json.Marshal(dtos.UpdateWebhookRequest{
-		CreateWebhookRequest: dtos.CreateWebhookRequest{Title: "updated title"},
-	})
-	req = httptest.NewRequest(http.MethodPut, "/webhooks/"+created.ID+"/", bytes.NewReader(updateBody))
+	title := "updated title"
+	updateBody, _ := json.Marshal(dtos.UpdateWebhookRequest{Title: &title})
+	req = httptest.NewRequest(http.MethodPatch, "/webhooks/"+created.ID+"/", bytes.NewReader(updateBody))
 	req.Header.Set("X-API-Key", apiKey)
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -132,12 +131,56 @@ func TestNewApiRouter_CRUDWithValidKey(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &updated))
 	require.Equal(t, "updated title", updated.Title)
 
+	// PUT is an alias of PATCH
+	req = httptest.NewRequest(http.MethodPut, "/webhooks/"+created.ID+"/", bytes.NewReader([]byte(`{"title":"via put"}`)))
+	req.Header.Set("X-API-Key", apiKey)
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &updated))
+	require.Equal(t, "via put", updated.Title)
+
 	// Delete
 	req = httptest.NewRequest(http.MethodDelete, "/webhooks/"+created.ID+"/", nil)
 	req.Header.Set("X-API-Key", apiKey)
 	rec = httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNoContent, rec.Code)
+
+	// Delete again -> not found
+	req = httptest.NewRequest(http.MethodDelete, "/webhooks/"+created.ID+"/", nil)
+	req.Header.Set("X-API-Key", apiKey)
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestNewApiRouter_JSONErrors(t *testing.T) {
+	r, apiKey := setupAPIRouter(t)
+
+	cases := []struct {
+		method, path, key string
+		want              int
+	}{
+		{http.MethodGet, "/webhooks/", "", http.StatusUnauthorized},
+		{http.MethodGet, "/webhooks/", "bogus", http.StatusUnauthorized},
+		{http.MethodGet, "/nope", apiKey, http.StatusNotFound},
+		{http.MethodPatch, "/webhooks/", apiKey, http.StatusMethodNotAllowed},
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest(c.method, c.path, nil)
+		if c.key != "" {
+			req.Header.Set("X-API-Key", c.key)
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		require.Equal(t, c.want, rec.Code, c.path)
+		require.Contains(t, rec.Header().Get("Content-Type"), "application/json", c.path)
+		var body dtos.ErrorResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body), c.path)
+		require.NotEmpty(t, body.Error, c.path)
+	}
 }
 
 func TestNewApiRouter_InvalidKey(t *testing.T) {

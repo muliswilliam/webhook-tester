@@ -1,16 +1,21 @@
 package handlers
 
 import (
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"webhook-tester/internal/mailer"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
 	"webhook-tester/internal/utils"
+	"webhook-tester/internal/web/view"
 
 	"github.com/gorilla/csrf"
+	"gorm.io/gorm"
 )
 
 type RegisterPageData struct {
@@ -24,6 +29,7 @@ type RegisterPageData struct {
 type LoginPageData struct {
 	CSRFField template.HTML
 	Error     string
+	Email     string
 }
 
 type ForgotPasswordPageData struct {
@@ -42,13 +48,42 @@ type ResetPasswordPageData struct {
 
 // AuthHandler handles registration and login
 type AuthHandler struct {
-	auth    *service.AuthService
-	metrics metrics.Recorder
-	logger  *log.Logger
+	auth       *service.AuthService
+	webhookSvc *service.WebhookService
+	mailer     mailer.Mailer
+	metrics    metrics.Recorder
+	logger     *log.Logger
 }
 
-func NewAuthHandler(auth *service.AuthService, l *log.Logger, m metrics.Recorder) *AuthHandler {
-	return &AuthHandler{auth: auth, logger: l, metrics: m}
+func NewAuthHandler(
+	auth *service.AuthService,
+	webhookSvc *service.WebhookService,
+	m mailer.Mailer,
+	l *log.Logger,
+	mr metrics.Recorder,
+) *AuthHandler {
+	return &AuthHandler{auth: auth, webhookSvc: webhookSvc, mailer: m, logger: l, metrics: mr}
+}
+
+// claimGuestWorkspace moves the guest workspace named by the request's guest
+// cookie, if any, into userID's account and clears the cookie. It returns the
+// claimed webhook's ID, or "" if there was nothing to claim.
+func (h *AuthHandler) claimGuestWorkspace(w http.ResponseWriter, r *http.Request, userID uint) string {
+	c, err := r.Cookie(sessionIdName)
+	if err != nil {
+		return ""
+	}
+	c.MaxAge = -1
+	c.Path = "/"
+	http.SetCookie(w, c)
+
+	if err := h.webhookSvc.ClaimGuestWebhook(c.Value, userID); err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			h.logger.Printf("error claiming guest webhook %s for user %d: %v", c.Value, userID, err)
+		}
+		return ""
+	}
+	return c.Value
 }
 
 func (h *AuthHandler) RegisterGet(w http.ResponseWriter, r *http.Request) {
@@ -56,13 +91,13 @@ func (h *AuthHandler) RegisterGet(w http.ResponseWriter, r *http.Request) {
 		CSRFField: csrf.TemplateField(r),
 	}
 
-	utils.RenderHtmlWithoutLayout(w, r, "register", data)
+	view.RenderHTMLWithoutLayout(w, r, "register", data)
 }
 
 // helper to render the register page
 func (h *AuthHandler) renderRegisterForm(w http.ResponseWriter, r *http.Request, data *RegisterPageData) {
 	data.CSRFField = csrf.TemplateField(r)
-	utils.RenderHtmlWithoutLayout(w, r, "register", data)
+	view.RenderHTMLWithoutLayout(w, r, "register", data)
 }
 
 func (h *AuthHandler) RegisterPost(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +127,7 @@ func (h *AuthHandler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.auth.Register(email, password, fullName)
+	user, err := h.auth.Register(email, password, fullName)
 	if err != nil {
 		// Duplicate email?
 		if strings.Contains(err.Error(), "email already taken") {
@@ -112,14 +147,28 @@ func (h *AuthHandler) RegisterPost(w http.ResponseWriter, r *http.Request) {
 
 	h.metrics.IncSignUp()
 
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	if err := h.auth.CreateSession(w, r, user); err != nil {
+		// The account exists, so let the user sign in by hand.
+		h.logger.Printf("error creating session after registration: %v", err)
+		utils.SetFlashSuccess(w, "Account created. Sign in to continue.")
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+
+	if id := h.claimGuestWorkspace(w, r, user.ID); id != "" {
+		utils.SetFlashSuccess(w, "Account created. Your endpoint and its requests are now saved to your account.")
+		http.Redirect(w, r, "/?address="+url.QueryEscape(id), http.StatusSeeOther)
+		return
+	}
+	utils.SetFlashSuccess(w, "Account created. Create your first endpoint to start capturing requests.")
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (h *AuthHandler) LoginGet(w http.ResponseWriter, r *http.Request) {
 	data := LoginPageData{
 		CSRFField: csrf.TemplateField(r),
 	}
-	utils.RenderHtmlWithoutLayout(w, r, "login", data)
+	view.RenderHTMLWithoutLayout(w, r, "login", data)
 }
 
 func (h *AuthHandler) LoginPost(w http.ResponseWriter, r *http.Request) {
@@ -136,6 +185,7 @@ func (h *AuthHandler) LoginPost(w http.ResponseWriter, r *http.Request) {
 		h.logger.Printf("error authenticating user: %v", err)
 		h.renderLoginForm(w, r, &LoginPageData{
 			Error: "Invalid email or password",
+			Email: email,
 		})
 		return
 	}
@@ -147,20 +197,20 @@ func (h *AuthHandler) LoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if c, err := r.Cookie(sessionIdName); err == nil {
-		c.MaxAge = -1
-		http.SetCookie(w, c)
-	}
-
 	h.metrics.IncLogin()
 
+	if id := h.claimGuestWorkspace(w, r, user.ID); id != "" {
+		utils.SetFlashSuccess(w, "Signed in. Your guest endpoint is now saved to your account.")
+		http.Redirect(w, r, "/?address="+url.QueryEscape(id), http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // renderLoginForm is a small helper to DRY up template rendering
 func (h *AuthHandler) renderLoginForm(w http.ResponseWriter, r *http.Request, data *LoginPageData) {
 	data.CSRFField = csrf.TemplateField(r)
-	utils.RenderHtmlWithoutLayout(w, r, "login", data)
+	view.RenderHTMLWithoutLayout(w, r, "login", data)
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +222,7 @@ func (h *AuthHandler) ForgotPasswordGet(w http.ResponseWriter, r *http.Request) 
 	data := ForgotPasswordPageData{
 		CSRFField: csrf.TemplateField(r),
 	}
-	utils.RenderHtmlWithoutLayout(w, r, "forgot-password", data)
+	view.RenderHTMLWithoutLayout(w, r, "forgot-password", data)
 }
 
 // ForgotPasswordPost handles the form submission.
@@ -182,25 +232,39 @@ func (h *AuthHandler) ForgotPasswordPost(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	email := r.FormValue("email")
+	email := strings.TrimSpace(r.FormValue("email"))
 	domain := os.Getenv("DOMAIN")
 
+	// Send in the background and answer the same way whether or not the
+	// account exists, so neither the response nor its timing reveals which
+	// emails are registered.
+	go h.sendPasswordReset(email, domain)
+
+	view.RenderHTMLWithoutLayout(w, r, "forgot-password", ForgotPasswordPageData{
+		CSRFField: csrf.TemplateField(r),
+		Success:   true,
+	})
+}
+
+func (h *AuthHandler) sendPasswordReset(email, domain string) {
 	link, err := h.auth.ForgotPassword(email, domain)
-	data := ForgotPasswordPageData{CSRFField: csrf.TemplateField(r)}
 	if err != nil {
-		h.logger.Printf("Forgot password error: %v", err)
-		// render without revealing details
-		utils.RenderHtmlWithoutLayout(w, r, "forgot-password", data)
+		h.logger.Printf("forgot password for %q: %v", email, err)
 		return
 	}
-	// Log or email the link
-	h.logger.Printf("Password reset link: %s", link)
-	data.Success = true
-	utils.RenderHtmlWithoutLayout(w, r, "forgot-password", data)
+	body := "Hi,\n\n" +
+		"Someone asked to reset the password for your Webhook Tester account. " +
+		"Open this link to choose a new password:\n\n" +
+		link + "\n\n" +
+		"The link expires in 24 hours. If you didn't ask for this, you can ignore this email - " +
+		"your password won't change.\n"
+	if err := h.mailer.Send(email, "Reset your Webhook Tester password", body); err != nil {
+		h.logger.Printf("error sending password reset email: %v", err)
+	}
 }
 
 func (h *AuthHandler) renderResetForm(w http.ResponseWriter, r *http.Request, data *ResetPasswordPageData) {
-	utils.RenderHtmlWithoutLayout(w, r, "reset-password", data)
+	view.RenderHTMLWithoutLayout(w, r, "reset-password", data)
 }
 
 // ResetPasswordGet renders the reset form if the token is valid.
@@ -223,7 +287,7 @@ func (h *AuthHandler) ResetPasswordGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Token is good—show the form
+	// Token is good - show the form
 	h.renderResetForm(w, r, &ResetPasswordPageData{
 		Token:     token,
 		CSRFField: csrf.TemplateField(r),
@@ -259,5 +323,6 @@ func (h *AuthHandler) ResetPasswordPost(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	utils.SetFlashSuccess(w, "Password updated. Sign in with your new password.")
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }

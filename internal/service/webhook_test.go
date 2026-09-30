@@ -30,6 +30,7 @@ type fakeWebhookRepo struct {
 	cleanPublicIDs     []string
 	countRequestsErr   error
 	requestsAfterErr   error
+	assignOwnerErr     error
 
 	getAllCalled        bool
 	getAllByUserCalled  bool
@@ -166,6 +167,18 @@ func (f *fakeWebhookRepo) GetRequestsAfter(webhookID string, after models.Reques
 		}
 	}
 	return out, nil
+}
+
+func (f *fakeWebhookRepo) AssignOwner(id string, userID uint) error {
+	if f.assignOwnerErr != nil {
+		return f.assignOwnerErr
+	}
+	w, ok := f.webhooks[id]
+	if !ok || w.UserID != 0 {
+		return gorm.ErrRecordNotFound
+	}
+	w.UserID = int(userID)
+	return nil
 }
 
 func (f *fakeWebhookRepo) CountRequests(webhookID string) (int64, error) {
@@ -481,19 +494,6 @@ func TestWebhookService_DeleteWebhook(t *testing.T) {
 	requireClosed(t, sub)
 }
 
-func TestWebhookService_GetWebhookWithRequests(t *testing.T) {
-	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
-	repo.webhooks["abc"] = &models.Webhook{ID: "abc"}
-
-	w, err := svc.GetWebhookWithRequests("abc")
-	require.NoError(t, err)
-	assert.Equal(t, "abc", w.ID)
-
-	_, err = svc.GetWebhookWithRequests("missing")
-	assert.Error(t, err)
-}
-
 func TestWebhookService_CountRequests(t *testing.T) {
 	repo := newFakeWebhookRepo()
 	svc := NewWebhookService(repo)
@@ -529,4 +529,34 @@ func TestWebhookService_CleanPublicWebhooks(t *testing.T) {
 	repo.cleanPublicErr = assert.AnError
 	err = svc.CleanPublicWebhooks(time.Hour)
 	assert.ErrorIs(t, err, assert.AnError)
+}
+
+func TestWebhookService_ClaimGuestWebhook(t *testing.T) {
+	repo := newFakeWebhookRepo()
+	svc := NewWebhookService(repo)
+	repo.webhooks["guest"] = &models.Webhook{ID: "guest"}
+	repo.webhooks["owned"] = &models.Webhook{ID: "owned", UserID: 3}
+
+	require.NoError(t, svc.ClaimGuestWebhook("guest", 7))
+	assert.Equal(t, 7, repo.webhooks["guest"].UserID)
+
+	assert.ErrorIs(t, svc.ClaimGuestWebhook("owned", 7), gorm.ErrRecordNotFound, "can't take another user's webhook")
+	assert.Equal(t, 3, repo.webhooks["owned"].UserID)
+	assert.ErrorIs(t, svc.ClaimGuestWebhook("missing", 7), gorm.ErrRecordNotFound)
+}
+
+func TestWebhookService_GetUserWebhookWithRequests(t *testing.T) {
+	repo := newFakeWebhookRepo()
+	svc := NewWebhookService(repo)
+	repo.webhooks["mine"] = &models.Webhook{ID: "mine", UserID: 7, Requests: []models.WebhookRequest{{ID: "r1"}}}
+	repo.webhooks["guest"] = &models.Webhook{ID: "guest"}
+
+	wh, err := svc.GetUserWebhookWithRequests("mine", 7)
+	require.NoError(t, err)
+	assert.Len(t, wh.Requests, 1)
+
+	_, err = svc.GetUserWebhookWithRequests("guest", 7)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound, "public webhooks aren't the user's")
+	_, err = svc.GetUserWebhookWithRequests("mine", 8)
+	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
