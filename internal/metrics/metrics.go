@@ -30,6 +30,19 @@ var (
 			Help: "Total number of successful user logins.",
 		},
 	)
+
+	// deliveries of captured requests to forward targets, by outcome
+	DeliveriesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "webhook_deliveries_total",
+		Help: "Total number of deliveries to forward targets, by outcome (2xx, 3xx, 4xx, 5xx, error, blocked).",
+	}, []string{"outcome"})
+
+	// how long deliveries to forward targets take
+	DeliveryDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "webhook_delivery_duration_seconds",
+		Help:    "Duration of deliveries to forward targets, in seconds.",
+		Buckets: prometheus.DefBuckets,
+	})
 )
 
 // Register prometheus metrics
@@ -39,5 +52,7 @@ func Register() {
 		WebhookRequestsReceived,
 		SignupsTotal,
 		LoginsTotal,
+		DeliveriesTotal,
+		DeliveryDuration,
 	)
 }

@@ -1,5 +1,7 @@
 package metrics
 
+import "time"
+
 type PrometheusRecorder struct{}
 
 func (r *PrometheusRecorder) IncWebhooksCreated() {
@@ -16,4 +18,9 @@ func (r *PrometheusRecorder) IncSignUp() {
 
 func (r *PrometheusRecorder) IncLogin() {
 	LoginsTotal.Inc()
+}
+
+func (r *PrometheusRecorder) ObserveDelivery(outcome DeliveryOutcome, duration time.Duration) {
+	DeliveriesTotal.WithLabelValues(string(outcome)).Inc()
+	DeliveryDuration.Observe(duration.Seconds())
 }

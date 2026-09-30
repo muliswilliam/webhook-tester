@@ -16,6 +16,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
 )
@@ -424,6 +425,13 @@ type testMetricsRecorder struct {
 	signUps         int
 	logins          int
 	webhookRequests []string
+	deliveries      []metrics.DeliveryOutcome
+}
+
+func (m *testMetricsRecorder) ObserveDelivery(outcome metrics.DeliveryOutcome, _ time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deliveries = append(m.deliveries, outcome)
 }
 
 func (m *testMetricsRecorder) IncWebhooksCreated() {
