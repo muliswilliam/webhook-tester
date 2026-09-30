@@ -45,12 +45,17 @@ type broker struct {
 
 	locksMu sync.Mutex
 	locks   map[string]*webhookLock
+
+	// stampMu guards lastStamp, the latest capture timestamp handed out. It
+	// lives on the broker rather than on each webhookLock because those are
+	// dropped when idle, which would reset the monotonic floor.
+	stampMu   sync.Mutex
+	lastStamp time.Time
 }
 
 type webhookLock struct {
 	sync.Mutex
-	refs      int
-	lastStamp time.Time
+	refs int
 }
 
 func newBroker() *broker {
@@ -62,7 +67,7 @@ func newBroker() *broker {
 
 // withWebhookLock runs fn while holding webhookID's lock, passing it a
 // timestamp at microsecond (DB) precision that is strictly later than any
-// earlier one handed out under the same lock. Locks are reference-counted and
+// earlier one handed out by the broker. Locks are reference-counted and
 // dropped once unused, so they never outlive the requests in flight.
 func (b *broker) withWebhookLock(webhookID string, fn func(stamp time.Time)) {
 	b.locksMu.Lock()
@@ -75,11 +80,7 @@ func (b *broker) withWebhookLock(webhookID string, fn func(stamp time.Time)) {
 	b.locksMu.Unlock()
 
 	l.Lock()
-	stamp := time.Now().UTC().Truncate(time.Microsecond)
-	if !stamp.After(l.lastStamp) {
-		stamp = l.lastStamp.Add(time.Microsecond)
-	}
-	l.lastStamp = stamp
+	stamp := b.nextStamp()
 	defer func() {
 		l.Unlock()
 		b.locksMu.Lock()
@@ -90,6 +91,19 @@ func (b *broker) withWebhookLock(webhookID string, fn func(stamp time.Time)) {
 		b.locksMu.Unlock()
 	}()
 	fn(stamp)
+}
+
+// nextStamp returns the current time at microsecond precision, bumped if
+// needed so it is strictly later than every stamp returned before.
+func (b *broker) nextStamp() time.Time {
+	b.stampMu.Lock()
+	defer b.stampMu.Unlock()
+	stamp := time.Now().UTC().Truncate(time.Microsecond)
+	if !stamp.After(b.lastStamp) {
+		stamp = b.lastStamp.Add(time.Microsecond)
+	}
+	b.lastStamp = stamp
+	return stamp
 }
 
 func (b *broker) subscribe(webhookID string) *Subscription {
