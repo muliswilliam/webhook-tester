@@ -150,6 +150,13 @@ func TestRenderPartialDeliveryBadgeAndItem(t *testing.T) {
 
 func renderRequestPage(t *testing.T, webhook models.Webhook, req models.WebhookRequest) string {
 	t.Helper()
+	return renderRequestPageWithSidebar(t, []models.Webhook{webhook}, webhook, req)
+}
+
+// renderRequestPageWithSidebar is renderRequestPage with the given webhooks
+// in the sidebar.
+func renderRequestPageWithSidebar(t *testing.T, sidebar []models.Webhook, webhook models.Webhook, req models.WebhookRequest) string {
+	t.Helper()
 	data := struct {
 		ID        string
 		Year      int
@@ -161,7 +168,7 @@ func renderRequestPage(t *testing.T, webhook models.Webhook, req models.WebhookR
 		CSRFField template.HTML
 	}{
 		ID:        req.ID,
-		Webhooks:  []models.Webhook{webhook},
+		Webhooks:  sidebar,
 		Webhook:   &webhook,
 		Request:   &req,
 		CSRFField: template.HTML(`<input type="hidden">`),
@@ -219,6 +226,18 @@ func TestRenderHTMLRequestStreamScope(t *testing.T) {
 
 	literal := jsStringLiteralAfter(t, body, "@get('", 0)
 	assert.Equal(t, "/webhook-stream/"+webhook.ID+"?since="+models.LatestCursor(webhook.Requests).String()+"&request=req-1", literal)
+	assert.Equal(t, 1, strings.Count(body, "/webhook-stream/"+webhook.ID+"?"))
+}
+
+// The request page of a webhook missing from the sidebar opens the
+// webhook's stream on its own; see TestRenderHTMLHomeUnlistedWebhookStream.
+func TestRenderHTMLRequestStreamScope_UnlistedWebhook(t *testing.T) {
+	webhook := newTestWebhook()
+	body := renderRequestPageWithSidebar(t, []models.Webhook{{ID: "wh-own"}}, webhook, webhook.Requests[0])
+
+	literal := jsStringLiteralAfter(t, body, "@get('/webhook-stream/"+webhook.ID, 0)
+	assert.Equal(t, "?since="+models.LatestCursor(webhook.Requests).String()+"&request=req-1&unlisted", literal)
+	assert.Equal(t, 1, strings.Count(body, "/webhook-stream/"+webhook.ID+"?"))
 }
 
 // between returns the part of s from the first from up to the next to.

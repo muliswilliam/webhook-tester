@@ -153,6 +153,8 @@
         {{/* The stream of the page's webhook also updates the main panel:
           "stream-scope" is the query that says how. By default it is the
           workspace's request log; pages showing something else override it.
+          A page webhook missing from the sidebar, such as a guest webhook a
+          signed-in user opened, gets a stream of its own below the cards.
         */}}
         <div class="flex-1 space-y-2 overflow-y-auto px-3 py-2">
           {{ range .Webhooks }}
@@ -225,6 +227,12 @@
                 {{ end }}
               </div>
             </div>
+          {{ end }}
+          {{ if and $activeID (not (hasWebhook .Webhooks $activeID)) }}
+            <div
+              hidden
+              data-init="@get('/webhook-stream/{{ $activeID }}?since={{ streamCursor .Webhook.Requests }}{{- template "stream-scope" $ -}}&unlisted', {retry: 'always', retryMaxCount: Infinity, openWhenHidden: true, filterSignals: {include: /^$/}})"
+            ></div>
           {{ end }}
         </div>
 

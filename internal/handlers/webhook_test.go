@@ -1148,6 +1148,28 @@ func TestWebhookHandler_StreamWebhookEvents_RequestPagePatchesOnlyItsDeliveries(
 	assert.NotContains(t, run.rec.body(), "request-log-list-wh")
 }
 
+// The stream of a webhook missing from the page's sidebar, such as a guest
+// webhook a signed-in user opened, patches only the main panel: there is no
+// sidebar request list to patch.
+func TestWebhookHandler_StreamWebhookEvents_UnlistedSkipsSidebar(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	page := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active&unlisted", nil))
+	requestPage := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?request=req-shown&unlisted", nil))
+	wr := recordRequest(t, h, "wh", "req-new")
+	recordDelivery(t, h, "wh", "req-shown", "del-shown", http.StatusOK, time.Now().UTC())
+
+	page.waitFor(t, "selector #request-log-list-wh", "req-new", "1 captured request",
+		"id: "+models.CursorAt(wr).String(), `id="delivery-list-req-shown"`)
+	assert.NotContains(t, page.rec.body(), "selector #request-log-wh")
+
+	requestPage.waitFor(t, `id="delivery-del-shown"`)
+	body := requestPage.rec.body()
+	assert.NotContains(t, body, "req-new", "the request page shows no request list")
+	assert.NotContains(t, body, "selector #request-log-wh")
+}
+
 func TestWebhookHandler_StreamWebhookEvents_SidebarSkipsDeliveries(t *testing.T) {
 	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
 	whRepo.put(&models.Webhook{ID: "wh"})
