@@ -18,6 +18,7 @@ require (
 	github.com/unrolled/render v1.7.0
 	github.com/wader/gormstore/v2 v2.0.3
 	golang.org/x/crypto v0.37.0
+	golang.org/x/text v0.28.0
 	gorm.io/datatypes v1.2.5
 	gorm.io/driver/postgres v1.5.7
 	gorm.io/driver/sqlite v1.5.7
@@ -59,7 +60,6 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/tools v0.35.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

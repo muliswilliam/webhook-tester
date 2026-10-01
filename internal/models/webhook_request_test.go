@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -91,6 +92,10 @@ func TestWebhookRequest_URLAt(t *testing.T) {
 			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/v1..2/./.well-known/..x/%2e/a;b=.."},
 			want: "https://api.example.com/hooks/v1..2/./.well-known/..x/%2e/a;b=..",
 		},
+		"dots and spaces that aren't dot segments kept": {
+			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/a%20../.%20./..x./%20../%c0%80/%ff%fe/caf%C3%A9"},
+			want: "https://api.example.com/hooks/a%20../.%20./..x./%20../%c0%80/%ff%fe/caf%C3%A9",
+		},
 		"empty segments kept": {base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/a//b/"}, want: "https://api.example.com/hooks/a//b/"},
 		"subpath and query": {
 			base: "https://api.example.com/hooks?k=v", wr: WebhookRequest{Path: "/a%2Fb", RawQuery: "x=1"},
@@ -132,6 +137,31 @@ func TestWebhookRequest_URLAtRefusesSubpathsThatCouldLeaveBase(t *testing.T) {
 		"/%zz/%2e%2e/admin",
 		"/100%/..%2fadmin",
 		"/%2e%2e%zz/..%2fadmin",
+		// Windows (IIS) drops a segment's trailing dots and spaces, and C
+		// servers stop at a NUL.
+		"/.../admin",
+		"/..%20/admin",
+		"/..%20./admin",
+		"/.. . /admin",
+		"/..%09/admin",
+		"/..%00/admin",
+		"/..%2e%2e/admin",
+		// Overlong UTF-8 forms of ".", "/" and "\", which old IIS decoded.
+		"/%c0%ae%c0%ae/admin",
+		"/%C0%AE./admin",
+		"/..%c0%afadmin",
+		"/..%c1%9cadmin",
+		"/%e0%80%ae%e0%80%ae/admin",
+		"/%f0%80%80%ae%f0%80%80%ae/admin",
+		// Forms whose NFKC normalization is "..", "/" or "\".
+		"/\uff0e\uff0e/admin",
+		"/%ef%bc%8e%ef%bc%8e/admin",
+		"/\u2025/admin",
+		"/..\uff0fadmin",
+		"/..%ef%bc%bcadmin",
+		"/\uff05\uff12\uff45\uff05\uff12\uff45/admin",
+		// Encoded more deeply than any real subpath.
+		"/%" + strings.Repeat("25", 20) + "41",
 	} {
 		t.Run(p, func(t *testing.T) {
 			_, err := WebhookRequest{Path: p}.URLAt("https://api.example.com/hooks/stripe")

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/datatypes"
 )
 
@@ -151,28 +152,44 @@ func (wr WebhookRequest) URLAt(base string) (string, error) {
 
 // climbsOut reports whether some server could read a ".." segment in the
 // subpath p, and so resolve it to a path above the one p is appended to.
-// Servers disagree on what a ".." is: some decode "%2e", "%2f" and "%5c"
-// before splitting, some decode twice, some decode the valid escapes around
-// an invalid one, some split on "\" too, and some (Tomcat, Spring) ignore
-// ";parameters" in a segment. Rather than rewrite p for one reading, it is
-// checked against all of them: fully decoded, skipping invalid escapes,
-// split on "/" and "\", with each segment's ";parameters" dropped.
+// Servers disagree on what a ".." is, so rather than rewrite p for one
+// reading, it is checked against all of them:
+//   - Some decode "%2e", "%2f" and "%5c" before splitting, some decode more
+//     than once, and some decode the valid escapes around an invalid one.
+//   - Old IIS decoded overlong UTF-8 ("%c0%ae" for "."), and some servers
+//     apply NFKC normalization ("\uff0e" for ".").
+//
+// So p is decoded, skipping invalid escapes, overlong UTF-8 is decoded and
+// NFKC applied, until nothing changes; a p that keeps changing is refused.
+// Then:
+//   - Some split on "\" too, and some (Tomcat, Spring) ignore ";parameters"
+//     in a segment.
+//   - Windows drops a segment's trailing dots and spaces, and C servers stop
+//     at a NUL, so a segment that is ".." followed only by dots, spaces,
+//     tabs or NULs counts as one.
 func climbsOut(p string) bool {
-	for {
-		decoded := unescapeLeniently(p)
+	for i := 0; ; i++ {
+		decoded := norm.NFKC.String(decodeOverlongUTF8(unescapeLeniently(p)))
 		if decoded == p {
 			break
+		}
+		if i == maxSubpathDecodings {
+			return true
 		}
 		p = decoded
 	}
 	for _, seg := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
 		seg, _, _ = strings.Cut(seg, ";")
-		if seg == ".." {
+		if strings.HasPrefix(seg, "..") && strings.Trim(seg, ". \t\x00") == "" {
 			return true
 		}
 	}
 	return false
 }
+
+// maxSubpathDecodings bounds climbsOut's decoding. Real subpaths settle
+// after one or two rounds.
+const maxSubpathDecodings = 16
 
 // unescapeLeniently decodes p's valid percent-escapes, keeping invalid ones
 // as written.
@@ -202,4 +219,51 @@ func unhex(c byte) byte {
 	default:
 		return c - 'a' + 10
 	}
+}
+
+// decodeOverlongUTF8 replaces each overlong UTF-8 sequence in s, such as
+// "\xc0\xae" for ".", with the character it encodes. Other bytes, valid or
+// not, are kept.
+func decodeOverlongUTF8(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if r, n := overlongRune(s[i:]); n > 0 {
+			b.WriteRune(r)
+			i += n
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+// overlongRune decodes an overlong UTF-8 sequence at the start of s,
+// returning its character and length, or a length of 0 if there is none.
+func overlongRune(s string) (rune, int) {
+	for _, form := range [...]struct {
+		lead, mask byte
+		n          int
+		min        rune // the least character that needs n bytes
+	}{
+		{0xc0, 0x1f, 2, 0x80},
+		{0xe0, 0x0f, 3, 0x800},
+		{0xf0, 0x07, 4, 0x10000},
+	} {
+		if len(s) < form.n || s[0]&^form.mask != form.lead {
+			continue
+		}
+		r := rune(s[0] & form.mask)
+		for i := 1; i < form.n; i++ {
+			if s[i]&0xc0 != 0x80 {
+				return 0, 0
+			}
+			r = r<<6 | rune(s[i]&0x3f)
+		}
+		if r < form.min {
+			return r, form.n
+		}
+		return 0, 0
+	}
+	return 0, 0
 }
