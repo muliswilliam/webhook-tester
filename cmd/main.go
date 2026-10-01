@@ -74,9 +74,9 @@ func main() {
 			s.Logger.Printf("graceful shutdown of %s failed: %s", srv.Addr, err)
 		}
 	}
-	// No new captures arrive now; let in-flight forwards record their
-	// deliveries.
-	if err := s.Forwarder.Wait(ctx); err != nil {
+	// Let in-flight forwards record their deliveries. Captures still being
+	// handled, if the server's shutdown timed out, record refused ones.
+	if err := s.Forwarder.Shutdown(ctx); err != nil {
 		s.Logger.Printf("in-flight forwards didn't finish: %s", err)
 	}
 

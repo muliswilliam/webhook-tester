@@ -7,6 +7,8 @@ type Recorder interface {
 	IncWebhookRequest(webhookID string)
 	IncSignUp()
 	IncLogin()
-	// ObserveDelivery records one delivery's outcome and how long it took.
+	// ObserveDelivery records one forward attempt's outcome and how long it
+	// took. Every attempt is observed, including refused ones (queue full,
+	// shutting down) and those whose delivery couldn't be stored.
 	ObserveDelivery(outcome DeliveryOutcome, duration time.Duration)
 }

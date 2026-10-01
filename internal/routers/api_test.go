@@ -48,7 +48,7 @@ func newTestForwarder(t *testing.T, db *gorm.DB, webhookSvc *service.WebhookServ
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		require.NoError(t, f.Wait(ctx), "in-flight forwards didn't finish")
+		require.NoError(t, f.Shutdown(ctx), "in-flight forwards didn't finish")
 	})
 	return f
 }

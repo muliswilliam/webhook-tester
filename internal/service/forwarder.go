@@ -36,6 +36,9 @@ const (
 	// ErrMsgQueueFull is the error of an automatic forward dropped because
 	// the maximum number of forwards were already in flight.
 	ErrMsgQueueFull = "forwarding queue full"
+	// ErrMsgShuttingDown is the error of an automatic forward dropped
+	// because the server was shutting down.
+	ErrMsgShuttingDown = "server shutting down"
 	// ErrMsgDestinationNotAllowed starts the error of a forward whose
 	// destination resolved to an address forwarding may not reach.
 	ErrMsgDestinationNotAllowed = "destination not allowed"
@@ -45,10 +48,10 @@ const (
 // forwarding may not reach.
 var errDestinationNotAllowed = errors.New(ErrMsgDestinationNotAllowed)
 
-// hopByHopHeaders apply to a single connection, so they are never relayed
-// (RFC 9110 section 7.6.1). Host and Content-Length are set by the client
-// for the outgoing request instead.
-var hopByHopHeaders = map[string]bool{
+// unforwardedHeaders are the captured headers never relayed: the hop-by-hop
+// ones, which apply to a single connection (RFC 9110 section 7.6.1), and
+// Host and Content-Length, which the client sets for the outgoing request.
+var unforwardedHeaders = map[string]bool{
 	"Connection":          true,
 	"Proxy-Connection":    true,
 	"Keep-Alive":          true,
@@ -78,9 +81,12 @@ type Forwarder struct {
 	metrics    metrics.Recorder
 	logger     *log.Logger
 
-	// slots bounds the automatic forwards in flight; inFlight tracks them
-	// so Wait can drain them.
-	slots    chan struct{}
+	// slots bounds the automatic forwards in flight.
+	slots chan struct{}
+	// mu guards closed, and orders inFlight.Add before Shutdown's Wait:
+	// once closed is set, no automatic forward is started.
+	mu       sync.Mutex
+	closed   bool
 	inFlight sync.WaitGroup
 }
 
@@ -156,7 +162,11 @@ var nonPublicPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("192.0.0.0/24"),  // IETF protocol assignments
 	netip.MustParsePrefix("198.18.0.0/15"), // benchmarking
 	netip.MustParsePrefix("240.0.0.0/4"),   // reserved, incl. broadcast
-	netip.MustParsePrefix("64:ff9b::/96"),  // NAT64, which maps to any IPv4 address
+	// IPv6 ranges that embed an IPv4 address, which may be a private one:
+	netip.MustParsePrefix("64:ff9b::/96"),   // NAT64
+	netip.MustParsePrefix("64:ff9b:1::/48"), // local-use NAT64
+	netip.MustParsePrefix("2002::/16"),      // 6to4
+	netip.MustParsePrefix("2001::/32"),      // Teredo
 }
 
 // isPublicAddr reports whether ip is a public unicast address: not private,
@@ -179,41 +189,32 @@ func isPublicAddr(ip netip.Addr) bool {
 // including a network error, is a delivery; failing to store it is only
 // logged, since that happens when wr was deleted while it was in flight.
 func (f *Forwarder) Forward(ctx context.Context, wh models.Webhook, wr models.WebhookRequest, trigger models.DeliveryTrigger) models.Delivery {
-	d := models.Delivery{
-		ID:        utils.GenerateID(),
-		RequestID: wr.ID,
-		WebhookID: wr.WebhookID,
-		Trigger:   trigger,
-		StartedAt: time.Now().UTC().Truncate(time.Microsecond),
-	}
+	d := newDelivery(wr, trigger)
 	outcome := f.send(ctx, wh, wr, &d)
 	f.record(&d, outcome)
 	return d
 }
 
 // ForwardAsync forwards wr in the background with trigger auto. If the
-// maximum number of forwards are already in flight, it records a "forwarding
-// queue full" delivery instead of waiting.
+// maximum number of forwards are already in flight, or Shutdown was called,
+// it records a delivery saying why instead of forwarding.
 func (f *Forwarder) ForwardAsync(wh models.Webhook, wr models.WebhookRequest) {
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		f.refuse(wh, wr, ErrMsgShuttingDown)
+		return
+	}
 	select {
 	case f.slots <- struct{}{}:
 	default:
-		d := models.Delivery{
-			ID:        utils.GenerateID(),
-			RequestID: wr.ID,
-			WebhookID: wr.WebhookID,
-			Trigger:   models.DeliveryTriggerAuto,
-			StartedAt: time.Now().UTC().Truncate(time.Microsecond),
-		}
-		if wh.ForwardURL != nil {
-			d.TargetURL, _ = forwardTarget(*wh.ForwardURL, wr)
-		}
-		d.Error = ptr(ErrMsgQueueFull)
-		f.record(&d, metrics.DeliveryOutcomeError)
+		f.mu.Unlock()
+		f.refuse(wh, wr, ErrMsgQueueFull)
 		return
 	}
-
 	f.inFlight.Add(1)
+	f.mu.Unlock()
+
 	go func() {
 		defer func() {
 			<-f.slots
@@ -225,9 +226,25 @@ func (f *Forwarder) ForwardAsync(wh models.Webhook, wr models.WebhookRequest) {
 	}()
 }
 
-// Wait blocks until the automatic forwards in flight have finished, or ctx
-// is done.
-func (f *Forwarder) Wait(ctx context.Context) error {
+// refuse records an automatic delivery of wr that wasn't attempted, with
+// reason as its error.
+func (f *Forwarder) refuse(wh models.Webhook, wr models.WebhookRequest, reason string) {
+	d := newDelivery(wr, models.DeliveryTriggerAuto)
+	if wh.ForwardURL != nil {
+		d.TargetURL, _ = forwardTarget(*wh.ForwardURL, wr)
+	}
+	d.Error = ptr(reason)
+	f.record(&d, metrics.DeliveryOutcomeError)
+}
+
+// Shutdown stops starting automatic forwards - later ones are recorded as
+// refused - and waits until those in flight have been recorded, or ctx is
+// done. Synchronous forwards (Forward) still work afterwards.
+func (f *Forwarder) Shutdown(ctx context.Context) error {
+	f.mu.Lock()
+	f.closed = true
+	f.mu.Unlock()
+
 	done := make(chan struct{})
 	go func() {
 		f.inFlight.Wait()
@@ -238,6 +255,17 @@ func (f *Forwarder) Wait(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// newDelivery starts the delivery of wr with the given trigger.
+func newDelivery(wr models.WebhookRequest, trigger models.DeliveryTrigger) models.Delivery {
+	return models.Delivery{
+		ID:        utils.GenerateID(),
+		RequestID: wr.ID,
+		WebhookID: wr.WebhookID,
+		Trigger:   trigger,
+		StartedAt: time.Now().UTC().Truncate(time.Microsecond),
 	}
 }
 
@@ -294,7 +322,10 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 	return metrics.DeliveryOutcomeForStatus(resp.StatusCode)
 }
 
-// record stores, publishes and counts the delivery.
+// record counts, stores and publishes the delivery. The metrics count every
+// forward attempt, refused ones included, whether or not its delivery can be
+// stored: they measure forwarding itself, and a delivery is only lost when
+// its request was deleted meanwhile or the DB failed, which is logged.
 func (f *Forwarder) record(d *models.Delivery, outcome metrics.DeliveryOutcome) {
 	f.metrics.ObserveDelivery(outcome, time.Duration(d.DurationMs)*time.Millisecond)
 	if err := f.deliveries.Insert(d); err != nil {
@@ -341,7 +372,7 @@ func forwardHeaders(wr models.WebhookRequest) http.Header {
 	for k, v := range wr.Headers {
 		s, ok := v.(string)
 		key := textproto.CanonicalMIMEHeaderKey(k)
-		if !ok || hopByHopHeaders[key] || drop[key] {
+		if !ok || unforwardedHeaders[key] || drop[key] {
 			continue
 		}
 		h.Set(key, s)
