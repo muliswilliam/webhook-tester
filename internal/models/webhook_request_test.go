@@ -33,7 +33,7 @@ func TestFieldValues(t *testing.T) {
 			assert.Equal(t, tc.want, FieldValues(tc.value))
 		})
 	}
-	assert.Equal(t, "a,b", FieldValue([]any{"a", "b"}), "displayed values are comma-joined")
+	assert.Equal(t, "a,b", FieldValue([]any{"a", "b"}), "values are comma-joined")
 }
 
 func TestWebhookRequest_HeaderValues(t *testing.T) {

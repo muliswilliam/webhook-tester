@@ -98,7 +98,7 @@ func TestRenderPartialMainRequestRowDeliveries(t *testing.T) {
 	assert.Contains(t, list, "&#34;error&#34;: &#34;boom&#34;", "formatted JSON response body")
 	assert.Contains(t, list, "Truncated to the first 64 KiB")
 	assert.Contains(t, list, "X-Handler")
-	assert.Contains(t, list, "a=1,b=2", "a repeated header shows each value")
+	assert.Regexp(t, `<span class="block">a=1</span>\s*<span class="block">b=2</span>`, list, "a repeated header shows one value per line")
 	assert.Contains(t, list, "connection refused")
 
 	// Both replay targets are offered.

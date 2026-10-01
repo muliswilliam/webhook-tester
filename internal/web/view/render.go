@@ -58,7 +58,7 @@ var funcMap = template.FuncMap{
 	"deliveryStatus":       deliveryStatus,
 	"deliveryBadge":        NewDeliveryBadge,
 	"formatDuration":       formatDuration,
-	"fieldValue":           models.FieldValue,
+	"fieldValues":          models.FieldValues,
 	"maxDeliveryBodyKiB":   func() int { return models.MaxDeliveryResponseBody >> 10 },
 	"replayTargetEndpoint": func() models.ReplayTarget { return models.ReplayTargetEndpoint },
 	"replayTargetForward":  func() models.ReplayTarget { return models.ReplayTargetForward },

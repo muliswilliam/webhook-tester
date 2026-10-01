@@ -74,7 +74,7 @@ func FieldValues(v any) []string {
 }
 
 // FieldValue is a captured header's or query parameter's values joined with
-// commas, which is how they are displayed and returned by the API.
+// commas, which is how the API returns them. Pages show one value per line.
 func FieldValue(v any) string {
 	return strings.Join(FieldValues(v), ",")
 }

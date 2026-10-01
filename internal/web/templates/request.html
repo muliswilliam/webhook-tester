@@ -124,7 +124,11 @@
               {{ range $key, $val := .Request.Headers }}
                 <tr>
                   <td>{{ $key }}</td>
-                  <td class="break-all">{{ fieldValue $val }}</td>
+                  <td class="break-all">
+                    <div class="space-y-1.5">
+                      {{ range fieldValues $val }}<span class="block">{{ . }}</span>{{ end }}
+                    </div>
+                  </td>
                 </tr>
               {{ else }}
                 <tr><td colspan="2">No headers captured</td></tr>
@@ -147,7 +151,11 @@
               {{ range $key, $val := .Request.Query }}
                 <tr>
                   <td>{{ $key }}</td>
-                  <td class="break-all">{{ fieldValue $val }}</td>
+                  <td class="break-all">
+                    <div class="space-y-1.5">
+                      {{ range fieldValues $val }}<span class="block">{{ . }}</span>{{ end }}
+                    </div>
+                  </td>
                 </tr>
               {{ else }}
                 <tr><td colspan="2">No query parameters</td></tr>
