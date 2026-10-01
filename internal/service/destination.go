@@ -29,9 +29,6 @@ type ForwardPolicy struct {
 	AllowPrivateNetworks bool
 	// Resolver looks up forward URL hosts; nil uses net.DefaultResolver.
 	Resolver Resolver
-
-	// lookupTimeout overrides forwardURLLookupTimeout in tests.
-	lookupTimeout time.Duration
 }
 
 // checkDestination reports an error if forwardURL, an already validated
@@ -63,11 +60,7 @@ func (p ForwardPolicy) checkDestination(ctx context.Context, forwardURL string) 
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
-	timeout := p.lookupTimeout
-	if timeout <= 0 {
-		timeout = forwardURLLookupTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, forwardURLLookupTimeout)
 	defer cancel()
 	addrs, err := resolver.LookupNetIP(ctx, "ip", host)
 	if err != nil || len(addrs) == 0 {

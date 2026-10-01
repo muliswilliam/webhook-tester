@@ -105,14 +105,16 @@ func TestWebhookService_ValidateWebhook_PrivateForwardURLMessage(t *testing.T) {
 }
 
 // A lookup that doesn't answer in time doesn't block saving: the dial-time
-// guard still applies to every forward.
+// guard still applies to every forward. The lookup is bounded by the
+// caller's context too, which keeps the test fast.
 func TestWebhookService_ValidateWebhook_SlowLookupAccepts(t *testing.T) {
-	policy := ForwardPolicy{Resolver: slowResolver{}, lookupTimeout: 20 * time.Millisecond}
-	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", policy)
+	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", ForwardPolicy{Resolver: slowResolver{}})
 	forwardURL := "https://slow.example.com/hooks"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
 
 	start := time.Now()
-	err := svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &forwardURL}, nil)
+	err := svc.ValidateWebhook(ctx, &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &forwardURL}, nil)
 	assert.NoError(t, err)
 	assert.Less(t, time.Since(start), time.Second)
 }
