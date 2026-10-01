@@ -167,6 +167,9 @@ func (s *WebhookService) RecordRequest(wr *models.WebhookRequest) error {
 // together with all of its request's deliveries, newest first. A webhook's
 // deliveries are recorded one at a time, so each event's list holds every
 // delivery published before it, and the latest list is always complete.
+// The list may lack d itself: if d started before the request's newest
+// models.MaxDeliveriesPerRequest deliveries, storing it pruned it again.
+// Pages render the list, so such a delivery never shows.
 func (s *WebhookService) RecordDelivery(d *models.Delivery) error {
 	var err error
 	s.broker.withWebhookLock(d.WebhookID, func(time.Time) {

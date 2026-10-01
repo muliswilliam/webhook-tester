@@ -25,7 +25,10 @@ func NewGormDeliveryRepo(db *gorm.DB, logger *log.Logger) *GormDeliveryRepo {
 }
 
 // Insert stores d, generating its ID if unset, and deletes its request's
-// deliveries beyond the newest models.MaxDeliveriesPerRequest.
+// deliveries beyond the newest models.MaxDeliveriesPerRequest. "Newest" is
+// by start, not by insertion: a slow delivery that started before the
+// newest MaxDeliveriesPerRequest finished is deleted again in the same
+// transaction that inserts it, and Insert still succeeds.
 func (r *GormDeliveryRepo) Insert(d *models.Delivery) error {
 	if d.ID == "" {
 		d.ID = utils.GenerateID()
