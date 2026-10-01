@@ -333,10 +333,13 @@ func TestHomeHandler_WebhookFormsShareFields(t *testing.T) {
 	h.Home(rec, req)
 	body := rec.Body.String()
 
-	for _, field := range []string{"title", "response_code", "content_type", "response_delay", "payload", "response_headers", "forward_url", "notify"} {
+	for _, field := range []string{"title", "response_code", "content_type", "response_delay", "payload", "response_headers", "forward_url"} {
 		assert.Contains(t, body, `id="create_`+field+`"`)
 		assert.Contains(t, body, `id="edit_`+field+`"`)
 	}
+	// Notifications aren't sent yet, so neither form offers them.
+	assert.NotContains(t, body, `name="notify_on_event"`)
+	assert.NotContains(t, body, "Notify me")
 	assert.Regexp(t, `id="create_response_code"[^>]*value="200"`, body)
 	assert.Regexp(t, `id="edit_response_code"[^>]*value="201"`, body)
 	assert.Regexp(t, `id="edit_response_delay"[^>]*value="250"`, body)

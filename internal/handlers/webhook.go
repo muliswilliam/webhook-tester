@@ -195,7 +195,8 @@ func (h *WebhookHandler) applyWebhookForm(r *http.Request, wh *models.Webhook, i
 	payload := r.FormValue("payload")
 	next.ContentType = &contentType
 	next.Payload = &payload
-	next.NotifyOnEvent = r.FormValue("notify_on_event") == "true"
+	// The form doesn't offer notify_on_event until notifications are sent, so
+	// the stored value is kept as is.
 	// The form offers the field only on webhooks that can forward; a guest
 	// webhook ignores it. A blank value clears it.
 	if next.CanForward() && r.PostForm.Has("forward_url") {

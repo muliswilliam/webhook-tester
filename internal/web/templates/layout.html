@@ -421,22 +421,6 @@
   {{ else }}
     {{ template "forward-url-signin" }}
   {{ end }}
-  <div>
-    <label class="check-row">
-      <input
-        type="checkbox"
-        id="{{ $p }}notify"
-        name="notify_on_event"
-        value="true"
-        aria-describedby="{{ $p }}notify_hint"
-        {{ if .Webhook.NotifyOnEvent }}checked{{ end }}
-      />
-      <span>Notify me when a request arrives</span>
-    </label>
-    <p id="{{ $p }}notify_hint" class="mt-1.5 text-xs leading-5 text-muted">
-      Saves your preference for email alerts, which aren't sent yet.
-    </p>
-  </div>
 {{ end }}
 
 {{/* Key/value editor for a webhook's response headers; expects a

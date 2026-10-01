@@ -87,7 +87,6 @@ func TestWebhookHandler_Create_Success(t *testing.T) {
 		"content_type":     {"application/json"},
 		"response_delay":   {"0"},
 		"payload":          {`{"ok":true}`},
-		"notify_on_event":  {"true"},
 		"response_headers": {`{"X-Test":"1"}`},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
@@ -347,7 +346,6 @@ func TestWebhookHandler_UpdateWebhook_Success(t *testing.T) {
 		"response_code":    {"201"},
 		"response_delay":   {"5"},
 		"payload":          {"new-payload"},
-		"notify_on_event":  {"true"},
 		"response_headers": {`{"X-A":"1"}`},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/update-webhook/wh1", strings.NewReader(form.Encode()))
@@ -365,7 +363,60 @@ func TestWebhookHandler_UpdateWebhook_Success(t *testing.T) {
 	assert.Equal(t, 201, w.ResponseCode)
 	assert.Equal(t, uint(5), w.ResponseDelay)
 	assert.Equal(t, "new-payload", *w.Payload)
-	assert.True(t, w.NotifyOnEvent)
+}
+
+// The forms don't offer notify_on_event, so saving one keeps the stored value
+// rather than resetting it, and ignores a value posted anyway.
+func TestWebhookHandler_UpdateWebhook_KeepsNotifyOnEvent(t *testing.T) {
+	cases := map[string]struct {
+		stored bool
+		form   url.Values
+	}{
+		"stored true, not posted":   {stored: true, form: url.Values{"title": {"t"}}},
+		"stored false, not posted":  {stored: false, form: url.Values{"title": {"t"}}},
+		"stored true, posted false": {stored: true, form: url.Values{"title": {"t"}, "notify_on_event": {"false"}}},
+		"stored false, posted true": {stored: false, form: url.Values{"title": {"t"}, "notify_on_event": {"true"}}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+			whRepo.put(&models.Webhook{ID: "wh1", Title: "old", NotifyOnEvent: tc.stored})
+
+			router := routerWithParam("/update-webhook/{id}", http.MethodPost, h.UpdateWebhook)
+			req := httptest.NewRequest(http.MethodPost, "/update-webhook/wh1", strings.NewReader(tc.form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusSeeOther, rec.Code)
+			require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+			w := whRepo.webhooks["wh1"]
+			assert.Equal(t, "t", w.Title)
+			assert.Equal(t, tc.stored, w.NotifyOnEvent)
+		})
+	}
+}
+
+// A webhook created from the form doesn't opt in to notifications, even when
+// notify_on_event is posted.
+func TestWebhookHandler_Create_IgnoresNotifyOnEvent(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+
+	form := url.Values{"title": {"hook"}, "notify_on_event": {"true"}}
+	req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Create(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	require.Len(t, whRepo.webhooks, 1)
+	for _, w := range whRepo.webhooks {
+		assert.False(t, w.NotifyOnEvent)
+	}
 }
 
 func TestWebhookHandler_UpdateWebhook_RejectsInvalidInput(t *testing.T) {
