@@ -201,7 +201,7 @@ func (f *Forwarder) refuse(wh models.Webhook, wr models.WebhookRequest, reason s
 		d.TargetURL, _ = wr.URLAt(*wh.ForwardURL)
 	}
 	d.Error = ptr(reason)
-	d.Outcome = models.DeliveryOutcomeError
+	d.Outcome = models.DeliveryOutcomeDropped
 	f.record(&d)
 }
 

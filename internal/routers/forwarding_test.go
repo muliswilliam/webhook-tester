@@ -562,7 +562,7 @@ func TestForwarding_QueueFullRecordsDeliveryWithoutBlockingCapture(t *testing.T)
 	assert.Nil(t, second.StatusCode)
 	require.NotNil(t, second.Error)
 	assert.Equal(t, service.ErrMsgQueueFull, *second.Error)
-	assert.Equal(t, models.DeliveryOutcomeError, second.Outcome)
+	assert.Equal(t, models.DeliveryOutcomeDropped, second.Outcome, "told apart from network errors")
 	assert.Equal(t, tg.URL+"/second", second.TargetURL)
 	assert.Len(t, tg.requests(), 1)
 }
@@ -595,6 +595,7 @@ func TestForwarding_ShutdownRefusesNewForwards(t *testing.T) {
 		d := env.awaitDelivery(t, wr.ID)
 		if d.Error != nil {
 			assert.Equal(t, service.ErrMsgShuttingDown, *d.Error)
+			assert.Equal(t, models.DeliveryOutcomeDropped, d.Outcome)
 			assert.Equal(t, tg.URL+wr.Path, d.TargetURL)
 			refused++
 		}

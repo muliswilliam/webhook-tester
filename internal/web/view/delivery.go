@@ -17,7 +17,7 @@ const (
 
 // DeliveryStatus is how a delivery's outcome is shown.
 type DeliveryStatus struct {
-	Label string // short, for a badge: "200", "Error" or "Blocked"
+	Label string // short, for a badge: "200", "Error", "Blocked" or "Dropped"
 	Tone  string // success, neutral, warning or danger
 	Title string // longer, for a tooltip: "200 OK", or the error
 }
@@ -31,6 +31,7 @@ var outcomeTones = map[models.DeliveryOutcome]string{
 	models.DeliveryOutcome5xx:     toneDanger,
 	models.DeliveryOutcomeError:   toneDanger,
 	models.DeliveryOutcomeBlocked: toneDanger,
+	models.DeliveryOutcomeDropped: toneDanger,
 }
 
 // deliveryStatus describes d's outcome.
@@ -45,9 +46,13 @@ func deliveryStatus(d models.Delivery) DeliveryStatus {
 		return s
 	}
 
-	s.Label = "Error"
-	if d.Outcome == models.DeliveryOutcomeBlocked {
+	switch d.Outcome {
+	case models.DeliveryOutcomeBlocked:
 		s.Label = "Blocked"
+	case models.DeliveryOutcomeDropped:
+		s.Label = "Dropped"
+	default:
+		s.Label = "Error"
 	}
 	s.Title = "Not delivered"
 	if d.Error != nil {

@@ -43,9 +43,11 @@ const (
 	DeliveryOutcome4xx DeliveryOutcome = "4xx"
 	DeliveryOutcome5xx DeliveryOutcome = "5xx"
 	// DeliveryOutcomeError is a delivery that failed at the network level
-	// (DNS, connection refused, TLS, timeout) or wasn't attempted, e.g.
-	// because the forwarding queue was full.
+	// (DNS, connection refused, TLS, timeout) or couldn't be sent at all.
 	DeliveryOutcomeError DeliveryOutcome = "error"
+	// DeliveryOutcomeDropped is an automatic delivery that wasn't attempted
+	// because the forwarding queue was full or the server was shutting down.
+	DeliveryOutcomeDropped DeliveryOutcome = "dropped"
 	// DeliveryOutcomeBlocked is a delivery refused because its destination
 	// resolved to an address forwarding isn't allowed to reach.
 	DeliveryOutcomeBlocked DeliveryOutcome = "blocked"
@@ -96,7 +98,7 @@ const MaxDeliveriesPerRequest = 50
 // Delivery is one attempt to relay a captured request to a forward target.
 // A delivery that reached the target has a StatusCode; one that failed at
 // the network level (DNS, connection refused, TLS, timeout, blocked
-// destination) has an Error instead. Outcome tells them apart.
+// destination), or was dropped, has an Error instead. Outcome tells them apart.
 type Delivery struct {
 	ID         string          `gorm:"primaryKey" json:"id"`
 	RequestID  string          `gorm:"index;not null" json:"request_id"`

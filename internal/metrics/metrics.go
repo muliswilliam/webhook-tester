@@ -34,7 +34,7 @@ var (
 	// deliveries of captured requests to forward targets, by outcome
 	DeliveriesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "webhook_deliveries_total",
-		Help: "Total number of forward attempts, including refused ones and those whose delivery could not be stored, by outcome (2xx, 3xx, 4xx, 5xx, error, blocked).",
+		Help: "Total number of forward attempts, including refused ones and those whose delivery could not be stored, by outcome (2xx, 3xx, 4xx, 5xx, error, blocked, dropped).",
 	}, []string{"outcome"})
 
 	// how long deliveries to forward targets take

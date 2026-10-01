@@ -40,6 +40,10 @@ func TestDeliveryStatus(t *testing.T) {
 			models.Delivery{Outcome: models.DeliveryOutcomeBlocked, Error: ptr("destination not allowed: 10.0.0.1 is a private or reserved address")},
 			DeliveryStatus{Label: "Blocked", Tone: "danger", Title: "Not delivered: destination not allowed: 10.0.0.1 is a private or reserved address"},
 		},
+		"dropped": {
+			models.Delivery{Outcome: models.DeliveryOutcomeDropped, Error: ptr("forwarding queue full")},
+			DeliveryStatus{Label: "Dropped", Tone: "danger", Title: "Not delivered: forwarding queue full"},
+		},
 		"no outcome": {models.Delivery{}, DeliveryStatus{Label: "Error", Tone: "danger", Title: "Not delivered"}},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -69,7 +69,7 @@ func TestPrometheusRecorderObserveDelivery(t *testing.T) {
 	r := &PrometheusRecorder{}
 	outcomes := []models.DeliveryOutcome{
 		models.DeliveryOutcome2xx, models.DeliveryOutcome3xx, models.DeliveryOutcome4xx,
-		models.DeliveryOutcome5xx, models.DeliveryOutcomeError, models.DeliveryOutcomeBlocked,
+		models.DeliveryOutcome5xx, models.DeliveryOutcomeError, models.DeliveryOutcomeBlocked, models.DeliveryOutcomeDropped,
 	}
 	for _, outcome := range outcomes {
 		t.Run(string(outcome), func(t *testing.T) {
