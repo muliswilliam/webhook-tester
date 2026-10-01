@@ -329,7 +329,7 @@ const docTemplate = `{
                     "example": "application/json"
                 },
                 "forward_url": {
-                    "description": "Absolute http or https URL every captured request is also relayed to.\nOmit it, or send \"\", to leave forwarding off.",
+                    "description": "Absolute http or https URL every captured request is also relayed to.\nOmit it, or send \"\", to leave forwarding off. Private and local\naddresses, such as localhost, are rejected unless the server allows\nprivate networks; use a public tunnel URL to reach a local server.",
                     "type": "string",
                     "example": "https://example.ngrok-free.app/webhooks/stripe"
                 },
@@ -382,7 +382,7 @@ const docTemplate = `{
                     "example": "application/json"
                 },
                 "forward_url": {
-                    "description": "Absolute http or https URL every captured request is also relayed to.\nnull or \"\" turns forwarding off.",
+                    "description": "Absolute http or https URL every captured request is also relayed to.\nnull or \"\" turns forwarding off. Private and local addresses, such as\nlocalhost, are rejected unless the server allows private networks; use\na public tunnel URL to reach a local server.",
                     "type": "string",
                     "x-nullable": true,
                     "example": "https://example.ngrok-free.app/webhooks/stripe"

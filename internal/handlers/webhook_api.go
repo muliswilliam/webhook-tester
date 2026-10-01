@@ -61,7 +61,7 @@ func (h *WebhookAiHandler) CreateWebhookApi(w http.ResponseWriter, r *http.Reque
 		ForwardURL:      &input.ForwardURL, // Normalize unsets ""
 	}
 	webhook.Normalize()
-	if err := h.Service.ValidateWebhook(&webhook); err != nil {
+	if err := h.Service.ValidateWebhook(r.Context(), &webhook); err != nil {
 		renderAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -185,7 +185,7 @@ func (h *WebhookAiHandler) UpdateWebhookApi(w http.ResponseWriter, r *http.Reque
 		webhook.ForwardURL = input.ForwardURL.Value // null and "" both clear it
 	}
 	webhook.Normalize()
-	if err := h.Service.ValidateWebhook(webhook); err != nil {
+	if err := h.Service.ValidateWebhook(r.Context(), webhook); err != nil {
 		renderAPIError(w, http.StatusBadRequest, err.Error())
 		return
 	}

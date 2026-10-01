@@ -150,36 +150,6 @@ func denyPrivateAddresses(_, address string, _ syscall.RawConn) error {
 	return nil
 }
 
-// nonPublicPrefixes are ranges outside the standard library's predicates
-// that still don't lead to the public internet.
-var nonPublicPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"),     // "this network"
-	netip.MustParsePrefix("100.64.0.0/10"), // carrier-grade NAT, used internally by some clouds
-	netip.MustParsePrefix("192.0.0.0/24"),  // IETF protocol assignments
-	netip.MustParsePrefix("198.18.0.0/15"), // benchmarking
-	netip.MustParsePrefix("240.0.0.0/4"),   // reserved, incl. broadcast
-	// IPv6 ranges that embed an IPv4 address, which may be a private one:
-	netip.MustParsePrefix("64:ff9b::/96"),   // NAT64
-	netip.MustParsePrefix("64:ff9b:1::/48"), // local-use NAT64
-	netip.MustParsePrefix("2002::/16"),      // 6to4
-	netip.MustParsePrefix("2001::/32"),      // Teredo
-}
-
-// isPublicAddr reports whether ip is a public unicast address: not private,
-// loopback, link-local, unspecified, multicast or otherwise reserved.
-func isPublicAddr(ip netip.Addr) bool {
-	ip = ip.Unmap()
-	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-		return false
-	}
-	for _, p := range nonPublicPrefixes {
-		if p.Contains(ip) {
-			return false
-		}
-	}
-	return true
-}
-
 // Forward relays wr to wh's forward URL, records the attempt as a delivery
 // with the given trigger, publishes it and returns it. Every outcome,
 // including a network error, is a delivery; failing to store it is only

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"time"
@@ -15,20 +16,36 @@ type WebhookService struct {
 	repo       repository.WebhookRepository
 	deliveries repository.DeliveryRepository
 	domain     string
+	forwarding ForwardPolicy
 	broker     *broker
 }
 
 // NewWebhookService constructs a WebhookService with the given repositories.
 // domain is the public base URL of this instance (the DOMAIN setting), which
 // webhook endpoints are served under, e.g. "https://webhooks.example.com".
-func NewWebhookService(repo repository.WebhookRepository, deliveries repository.DeliveryRepository, domain string) *WebhookService {
-	return &WebhookService{repo: repo, deliveries: deliveries, domain: domain, broker: newBroker()}
+// forwarding says which destinations the forwarder reaches, so forward URLs
+// it would refuse are rejected when saved.
+func NewWebhookService(
+	repo repository.WebhookRepository,
+	deliveries repository.DeliveryRepository,
+	domain string,
+	forwarding ForwardPolicy,
+) *WebhookService {
+	return &WebhookService{repo: repo, deliveries: deliveries, domain: domain, forwarding: forwarding, broker: newBroker()}
 }
 
-// ValidateWebhook validates w against this instance, so its forward URL
-// can't point back at the endpoints EndpointURL builds.
-func (s *WebhookService) ValidateWebhook(w *models.Webhook) error {
-	return w.Validate(s.domain)
+// ValidateWebhook validates w against this instance: its forward URL can't
+// point back at the endpoints EndpointURL builds, nor, unless private
+// networks are allowed, at a private or local address the forwarder won't
+// reach. Checking the latter may look up the forward URL's host.
+func (s *WebhookService) ValidateWebhook(ctx context.Context, w *models.Webhook) error {
+	if err := w.Validate(s.domain); err != nil {
+		return err
+	}
+	if w.ForwardURL != nil {
+		return s.forwarding.checkDestination(ctx, *w.ForwardURL)
+	}
+	return nil
 }
 
 // EndpointURL is the URL of the webhook's endpoint on this instance, which

@@ -4,8 +4,10 @@ import (
 	"context"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"slices"
 	"sort"
 	"strings"
@@ -463,6 +465,26 @@ func (m *testMetricsRecorder) IncLogin() {
 
 // testDomain is the DOMAIN of the handlers under test.
 const testDomain = "https://tester.example.com"
+
+// testResolver resolves the hosts it lists and fails every other lookup,
+// as for an unknown host, so tests never query real DNS.
+type testResolver map[string][]netip.Addr
+
+func (r testResolver) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, error) {
+	if addrs, ok := r[host]; ok {
+		return addrs, nil
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+}
+
+// privateHost is a hostname testForwardPolicy resolves to a private address.
+const privateHost = "db.internal.example.com"
+
+// testForwardPolicy is the default forwarding policy (private networks not
+// allowed) over testResolver.
+var testForwardPolicy = service.ForwardPolicy{
+	Resolver: testResolver{privateHost: {netip.MustParseAddr("10.0.0.7")}},
+}
 
 func newTestLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)

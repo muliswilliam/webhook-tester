@@ -43,7 +43,7 @@ Paste it into your .env file.
 
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`: SMTP server for password reset emails. Without `SMTP_HOST`, emails are written to the server log instead.
 - `METRICS_ADDR` (default `:9091`): internal address serving Prometheus metrics at `/metrics`. Don't expose it publicly.
-- `FORWARD_ALLOW_PRIVATE_NETWORKS` (default `false`): let forwarding reach private, loopback and link-local addresses, such as `localhost` or services on your own network. Keep it off on a public instance, or anyone with an account can make the server call into your internal network.
+- `FORWARD_ALLOW_PRIVATE_NETWORKS` (default `false`): let forwarding reach private, loopback and link-local addresses, such as `localhost` or services on your own network. Keep it off on a public instance, or anyone with an account can make the server call into your internal network. While it's off, a forward URL that points at such an address is rejected when it's saved.
 - `FORWARD_TIMEOUT` (default `10s`): how long a forward to a webhook's forward URL may take, as a Go duration (`500ms`, `30s`).
 - `FORWARD_MAX_CONCURRENT` (default `32`): how many automatic forwards may be in flight at once. Captured requests beyond that still get captured, and their delivery records a "forwarding queue full" error.
 

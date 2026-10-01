@@ -24,7 +24,9 @@ type CreateWebhookRequest struct {
 	ResponseHeaders map[string]string `json:"response_headers"`
 	NotifyOnEvent   bool              `json:"notify_on_event"`
 	// Absolute http or https URL every captured request is also relayed to.
-	// Omit it, or send "", to leave forwarding off.
+	// Omit it, or send "", to leave forwarding off. Private and local
+	// addresses, such as localhost, are rejected unless the server allows
+	// private networks; use a public tunnel URL to reach a local server.
 	ForwardURL string `json:"forward_url" example:"https://example.ngrok-free.app/webhooks/stripe"`
 } // @name CreateWebhookRequest
 
@@ -39,7 +41,9 @@ type UpdateWebhookRequest struct {
 	ResponseHeaders *map[string]string `json:"response_headers"`
 	NotifyOnEvent   *bool              `json:"notify_on_event"`
 	// Absolute http or https URL every captured request is also relayed to.
-	// null or "" turns forwarding off.
+	// null or "" turns forwarding off. Private and local addresses, such as
+	// localhost, are rejected unless the server allows private networks; use
+	// a public tunnel URL to reach a local server.
 	ForwardURL NullableString `json:"forward_url,omitzero" swaggertype:"string" extensions:"x-nullable" example:"https://example.ngrok-free.app/webhooks/stripe"`
 } // @name UpdateWebhookRequest
 

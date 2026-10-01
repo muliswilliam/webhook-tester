@@ -24,13 +24,20 @@ import (
 
 func newTestWebhookHandler(t *testing.T) (*WebhookHandler, *testWebhookRepo, *testWebhookRequestRepo, *testUserRepo, *testMetricsRecorder, *service.AuthService) {
 	t.Helper()
+	return newTestWebhookHandlerWith(t, testForwardPolicy)
+}
+
+// newTestWebhookHandlerWith is newTestWebhookHandler for an instance with
+// the given forwarding policy.
+func newTestWebhookHandlerWith(t *testing.T, policy service.ForwardPolicy) (*WebhookHandler, *testWebhookRepo, *testWebhookRequestRepo, *testUserRepo, *testMetricsRecorder, *service.AuthService) {
+	t.Helper()
 	whRepo := newTestWebhookRepo()
 	reqRepo := newTestWebhookRequestRepo()
 	userRepo := newTestUserRepo()
 	metricsRec := &testMetricsRecorder{}
 	authSvc := newTestAuthService(t, userRepo)
 
-	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{}, testDomain)
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{}, testDomain, policy)
 	reqSvc := service.NewWebhookRequestService(reqRepo)
 
 	forwarder := newTestForwarder(whSvc, metricsRec)
@@ -482,6 +489,59 @@ func TestWebhookHandler_UpdateWebhook_ForwardURL(t *testing.T) {
 	rec = postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {""}}, cookie)
 	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
 	assert.Nil(t, forwardURL())
+}
+
+// With private networks not allowed, the edit and create forms reject a
+// forward URL the forwarder could never reach, saying how to reach a local
+// server instead.
+func TestWebhookHandler_Forms_RejectPrivateForwardURL(t *testing.T) {
+	for _, forwardURL := range []string{
+		"http://localhost:8080/hooks",
+		"http://127.0.0.1:3000/hooks",
+		"http://" + privateHost + "/hooks",
+	} {
+		t.Run(forwardURL, func(t *testing.T) {
+			h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+			user := &models.User{Email: "a@b.com"}
+			userRepo.addUser(user)
+			cookie := sessionCookieFor(t, authSvc, user)
+			whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200, UserID: int(user.ID)})
+
+			rec := postUpdateForm(h, url.Values{"title": {"renamed"}, "forward_url": {forwardURL}}, cookie)
+			flash := flashFrom(t, rec)
+			assert.Equal(t, utils.FlashError, flash.Kind)
+			assert.Contains(t, flash.Message, "Changes not saved: forward URL points to a private or local address")
+			assert.Contains(t, flash.Message, "use a public tunnel URL (ngrok, cloudflared)")
+			assert.Equal(t, "t", whRepo.webhooks["wh1"].Title, "nothing is saved")
+			assert.Nil(t, whRepo.webhooks["wh1"].ForwardURL)
+
+			form := url.Values{"title": {"fwd"}, "forward_url": {forwardURL}}
+			req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.AddCookie(cookie)
+			rec = httptest.NewRecorder()
+			h.Create(rec, req)
+			flash = flashFrom(t, rec)
+			assert.Equal(t, utils.FlashError, flash.Kind)
+			assert.Contains(t, flash.Message, "Couldn't create the endpoint: forward URL points to a private or local address")
+			assert.Len(t, whRepo.webhooks, 1, "no webhook is created")
+		})
+	}
+}
+
+// A self-hosted instance that allows private networks accepts them.
+func TestWebhookHandler_UpdateWebhook_PrivateForwardURLAllowedByPolicy(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandlerWith(t,
+		service.ForwardPolicy{AllowPrivateNetworks: true, Resolver: testForwardPolicy.Resolver})
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200, UserID: int(user.ID)})
+
+	rec := postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {"http://localhost:8080/hooks"}}, sessionCookieFor(t, authSvc, user))
+
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+	require.NotNil(t, whRepo.webhooks["wh1"].ForwardURL)
+	assert.Equal(t, "http://localhost:8080/hooks", *whRepo.webhooks["wh1"].ForwardURL)
 }
 
 func TestWebhookHandler_UpdateWebhook_GuestCantSetForwardURL(t *testing.T) {

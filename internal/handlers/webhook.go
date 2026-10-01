@@ -203,7 +203,7 @@ func (h *WebhookHandler) applyWebhookForm(r *http.Request, wh *models.Webhook) e
 	}
 
 	next.Normalize()
-	if err := h.webhookSvc.ValidateWebhook(&next); err != nil {
+	if err := h.webhookSvc.ValidateWebhook(r.Context(), &next); err != nil {
 		return err
 	}
 	*wh = next

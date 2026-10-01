@@ -62,7 +62,8 @@ func (srv *Server) MountHandlers() {
 	repo := store.NewGormWebookRepo(srv.DB, srv.Logger)
 	userRepo := store.NewGormUserRepo(srv.DB, srv.Logger)
 	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
-	webhookSvc := service.NewWebhookService(repo, store.NewGormDeliveryRepo(srv.DB, srv.Logger), srv.Domain)
+	webhookSvc := service.NewWebhookService(repo, store.NewGormDeliveryRepo(srv.DB, srv.Logger), srv.Domain,
+		service.ForwardPolicy{AllowPrivateNetworks: srv.Forwarding.AllowPrivateNetworks})
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
 	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
 	srv.WebhookSvc = webhookSvc

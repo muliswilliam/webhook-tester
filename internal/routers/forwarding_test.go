@@ -59,7 +59,8 @@ func newForwardingEnvAt(t *testing.T, cfg config.Forwarding, domain string) *for
 	db := newAPITestDB(t)
 	logger := testLogger()
 	authSvc := service.NewAuthService(store.NewGormUserRepo(db, logger), db, "some-32-plus-byte-secret-value!!")
-	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger), store.NewGormDeliveryRepo(db, logger), domain)
+	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger), store.NewGormDeliveryRepo(db, logger), domain,
+		service.ForwardPolicy{AllowPrivateNetworks: cfg.AllowPrivateNetworks, Resolver: testResolver{}})
 	webhookReqSvc := service.NewWebhookRequestService(store.NewGormWebhookRequestRepo(db, logger))
 	forwarder := newTestForwarder(t, webhookSvc, cfg)
 	metricsRec := &appMetrics.PrometheusRecorder{}
