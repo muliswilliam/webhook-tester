@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -527,6 +528,34 @@ func TestWebhookHandler_Forms_RejectPrivateForwardURL(t *testing.T) {
 			assert.Len(t, whRepo.webhooks, 1, "no webhook is created")
 		})
 	}
+}
+
+// The edit form checks a forward URL's destination as it is set, not on
+// every save: a saved forward URL whose host now resolves to a private
+// address doesn't stop the owner editing the webhook's other settings.
+func TestWebhookHandler_UpdateWebhook_UnchangedForwardURLNotRechecked(t *testing.T) {
+	resolver := testResolver{"rebound.example.com": {netip.MustParseAddr("93.184.215.14")}}
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandlerWith(t, service.ForwardPolicy{Resolver: resolver})
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+	cookie := sessionCookieFor(t, authSvc, user)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200, UserID: int(user.ID)})
+
+	rec := postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {"https://rebound.example.com/hooks"}}, cookie)
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+
+	resolver["rebound.example.com"] = []netip.Addr{netip.MustParseAddr("10.0.0.7")}
+
+	rec = postUpdateForm(h, url.Values{"title": {"renamed"}, "forward_url": {"https://rebound.example.com/hooks"}}, cookie)
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind, flashFrom(t, rec).Message)
+	assert.Equal(t, "renamed", whRepo.webhooks["wh1"].Title)
+	assert.Equal(t, "https://rebound.example.com/hooks", *whRepo.webhooks["wh1"].ForwardURL)
+
+	rec = postUpdateForm(h, url.Values{"title": {"renamed"}, "forward_url": {"https://rebound.example.com/other"}}, cookie)
+	flash := flashFrom(t, rec)
+	assert.Equal(t, utils.FlashError, flash.Kind, "a changed forward URL is checked")
+	assert.Contains(t, flash.Message, "forward URL points to a private or local address")
+	assert.Equal(t, "https://rebound.example.com/hooks", *whRepo.webhooks["wh1"].ForwardURL)
 }
 
 // A self-hosted instance that allows private networks accepts them.
