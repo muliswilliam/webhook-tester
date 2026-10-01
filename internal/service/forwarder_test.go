@@ -25,6 +25,11 @@ func TestIsPublicAddr(t *testing.T) {
 		"64:ff9b::7f00:1", "64:ff9b:1::a00:1", // NAT64 of 127.0.0.1, local-use NAT64 of 10.0.0.1
 		"2002:7f00:1::1", "2002:a9fe:a9fe::1", // 6to4 of 127.0.0.1 and 169.254.169.254
 		"2001:0:4136:e378:8000:63bf:3fff:fdd2", // Teredo
+		"::7f00:1", "::a00:1",                  // IPv4-compatible (deprecated) of 127.0.0.1 and 10.0.0.1
+		"::ffff:0:7f00:1", // SIIT of 127.0.0.1
+		"fec0::1",         // site-local (deprecated)
+		"100::1",          // discard-only
+		"4000::1",         // outside 2000::/3, the global unicast block
 	} {
 		assert.False(t, isPublicAddr(netip.MustParseAddr(ip)), ip)
 	}

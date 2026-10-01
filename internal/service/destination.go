@@ -94,11 +94,19 @@ var nonPublicPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("2001::/32"),      // Teredo
 }
 
+// globalUnicastIPv6 is the block every public IPv6 unicast address is
+// allocated from. Outside it are the IPv4-compatible, SIIT, site-local and
+// discard ranges, among others, which may lead to internal hosts.
+var globalUnicastIPv6 = netip.MustParsePrefix("2000::/3")
+
 // isPublicAddr reports whether ip is a public unicast address: not private,
 // loopback, link-local, unspecified, multicast or otherwise reserved. Both
 // the forwarder's dial guard and the save-time check use it.
 func isPublicAddr(ip netip.Addr) bool {
 	ip = ip.Unmap()
+	if ip.Is6() && !globalUnicastIPv6.Contains(ip) {
+		return false
+	}
 	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
 		return false
 	}
