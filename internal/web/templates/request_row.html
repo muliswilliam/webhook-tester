@@ -25,7 +25,7 @@
         <span class="method-badge">{{ .Request.Method }}</span>
         {{ if .Request.Path }}
           <span class="truncate font-mono text-xs">{{ .Request.Path }}</span>
-          <span class="hidden truncate font-mono text-xs text-muted md:inline">
+          <span class="hidden shrink-0 font-mono text-xs text-muted md:inline">
             {{ .Request.ID }}
           </span>
         {{ else }}
