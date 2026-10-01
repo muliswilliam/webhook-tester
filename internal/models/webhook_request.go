@@ -31,8 +31,10 @@ type WebhookRequest struct {
 	ReceivedAt time.Time `json:"received_at"`
 
 	// Deliveries are the attempts to relay this request to a forward
-	// target. They aren't part of the API.
-	Deliveries []Delivery `gorm:"foreignKey:RequestID" json:"-"`
+	// target. They aren't part of the API. The delete paths remove them
+	// explicitly; the cascade also removes one a forward records while its
+	// request is being deleted, which would otherwise fail the delete.
+	Deliveries []Delivery `gorm:"foreignKey:RequestID;constraint:OnDelete:CASCADE" json:"-"`
 } // @name WebhookRequest
 
 // CapturedValues stores headers or query parameters as a captured request

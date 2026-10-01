@@ -218,6 +218,41 @@ func TestDeletePaths_RespectDeliveryForeignKey(t *testing.T) {
 	assert.Empty(t, deliveryIDs(t, db))
 }
 
+// A forward can record its delivery between a delete path removing the
+// deliveries and removing their requests. The constraint cascades, so the
+// late delivery goes with its request instead of failing the delete.
+func TestDeletePaths_RemoveDeliveriesRecordedMidDelete(t *testing.T) {
+	for name, del := range map[string]func(db *gorm.DB) error{
+		"delete request":  func(db *gorm.DB) error { return NewGormWebhookRequestRepo(db, testLogger()).DeleteByID("req-1") },
+		"clear requests":  func(db *gorm.DB) error { return NewGormWebhookRequestRepo(db, testLogger()).DeleteByWebhook("wh-1") },
+		"delete webhook":  func(db *gorm.DB) error { return NewGormWebookRepo(db, testLogger()).Delete("wh-1", 5) },
+		"clean guest one": func(db *gorm.DB) error { _, err := NewGormWebookRepo(db, testLogger()).CleanPublic(0); return err },
+	} {
+		t.Run(name, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(":memory:?_foreign_keys=on"), &gorm.Config{})
+			require.NoError(t, err)
+			webhookdb.AutoMigrate(db)
+			userID := 5
+			if name == "clean guest one" {
+				userID = 0
+			}
+			require.NoError(t, db.Create(&models.Webhook{ID: "wh-1", UserID: userID, CreatedAt: time.Now().Add(-time.Hour)}).Error)
+			require.NoError(t, db.Create(&models.WebhookRequest{ID: "req-1", WebhookID: "wh-1"}).Error)
+
+			// Records a delivery just before the requests are deleted.
+			require.NoError(t, db.Callback().Delete().Before("gorm:delete").Register("late_delivery", func(tx *gorm.DB) {
+				if tx.Statement.Table == "webhook_requests" {
+					late := models.Delivery{ID: "late", RequestID: "req-1", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto}
+					require.NoError(t, tx.Session(&gorm.Session{NewDB: true}).Create(&late).Error)
+				}
+			}))
+
+			require.NoError(t, del(db))
+			assert.Empty(t, deliveryIDs(t, db))
+		})
+	}
+}
+
 func TestGormWebhookRepo_CleanPublic_DeletesDeliveries(t *testing.T) {
 	db := newTestDB(t)
 	deliveries := NewGormDeliveryRepo(db, testLogger())
