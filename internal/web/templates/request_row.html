@@ -71,7 +71,7 @@
                 {{ range $key, $val := .Request.Headers }}
                   <tr>
                     <td>{{ $key }}</td>
-                    <td class="break-all">{{ $val }}</td>
+                    <td class="break-all">{{ fieldValue $val }}</td>
                   </tr>
                 {{ end }}
               </tbody>
@@ -88,7 +88,7 @@
                 {{ range $key, $val := .Request.Query }}
                   <tr>
                     <td>{{ $key }}</td>
-                    <td class="break-all">{{ $val }}</td>
+                    <td class="break-all">{{ fieldValue $val }}</td>
                   </tr>
                 {{ end }}
               </tbody>

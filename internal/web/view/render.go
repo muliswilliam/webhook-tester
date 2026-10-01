@@ -52,6 +52,7 @@ var funcMap = template.FuncMap{
 	"deliveryStatus":      deliveryStatus,
 	"deliveryBadge":       deliveryBadge,
 	"formatDuration":      formatDuration,
+	"fieldValue":          models.FieldValue,
 	"maxDeliveryBodyKiB":  func() int { return models.MaxDeliveryResponseBody >> 10 },
 }
 

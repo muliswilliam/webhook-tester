@@ -21,7 +21,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 	"github.com/starfederation/datastar-go/datastar"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -225,10 +224,7 @@ func backURL(r *http.Request) string {
 // webhook forwards, the captured request is also relayed to its forward URL.
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
-	var path string
-	if sub := chi.URLParam(r, "*"); sub != "" || strings.HasSuffix(r.URL.Path, "/") {
-		path = "/" + sub
-	}
+	path := capturedPath(r)
 	webhook, err := h.webhookSvc.GetWebhook(webhookID)
 
 	if err != nil {
@@ -250,24 +246,14 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		}
 	}(r.Body)
 
-	// Convert headers to a map[string]string
-	headers := datatypes.JSONMap{}
-	for k, v := range r.Header {
-		headers[k] = strings.Join(v, ",")
-	}
-
-	query := datatypes.JSONMap{}
-	for k, v := range r.URL.Query() {
-		query[k] = strings.Join(v, ",")
-	}
-
 	wr := models.WebhookRequest{
 		ID:        utils.GenerateID(),
 		WebhookID: webhookID,
 		Method:    r.Method,
 		Path:      path,
-		Headers:   headers,
-		Query:     query,
+		Headers:   models.CapturedValues(r.Header),
+		Query:     models.CapturedValues(r.URL.Query()),
+		RawQuery:  r.URL.RawQuery,
 		Body:      string(body),
 	}
 	if err := h.webhookSvc.RecordRequest(&wr); err != nil {
@@ -316,6 +302,24 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 			h.logger.Printf("error writing payload: %s", err)
 		}
 	}
+}
+
+// capturedPath is the subpath a request to /webhooks/{id}/* was sent to, as
+// sent: percent-encoded, e.g. "/orders/a%2Fb". It is "" for none, and "/"
+// for a bare trailing slash.
+func capturedPath(r *http.Request) string {
+	sub := chi.URLParam(r, "*")
+	if sub == "" && !strings.HasSuffix(r.URL.Path, "/") {
+		return ""
+	}
+	path := "/" + sub
+	// chi routes on RawPath when the path has escapes that its default
+	// encoding wouldn't produce, which leaves sub escaped. Otherwise sub is
+	// decoded, and its default encoding is what was sent.
+	if r.URL.RawPath == "" {
+		path = (&url.URL{Path: path}).EscapedPath()
+	}
+	return path
 }
 
 // StreamWebhookEvents streams a webhook's captured requests and their

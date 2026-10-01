@@ -335,47 +335,32 @@ func (f *Forwarder) record(d *models.Delivery, outcome metrics.DeliveryOutcome) 
 	f.publisher.PublishDelivery(*d)
 }
 
-// forwardTarget joins the forward URL with the captured request's subpath
-// and merges in its query parameters, keeping any the forward URL has.
+// forwardTarget is the captured request's URL under the forward URL: the
+// subpath appended to its path and the query string to its query, both
+// byte for byte.
 func forwardTarget(forwardURL string, wr models.WebhookRequest) (string, error) {
-	u, err := url.Parse(forwardURL)
-	if err != nil {
-		return "", err
-	}
-	if wr.Path != "" {
-		u.Path = strings.TrimSuffix(u.Path, "/") + wr.Path
-		u.RawPath = ""
-	}
-	if len(wr.Query) > 0 {
-		q := u.Query()
-		for k, v := range wr.Query {
-			if s, ok := v.(string); ok {
-				q.Add(k, s)
-			}
-		}
-		u.RawQuery = q.Encode()
-	}
-	return u.String(), nil
+	return wr.URLAt(forwardURL)
 }
 
-// forwardHeaders are the captured request's headers minus the hop-by-hop
-// ones, including any the Connection header names, plus RequestIDHeader.
+// forwardHeaders are the captured request's headers, every value of each,
+// minus the unforwarded ones and any the Connection header names, plus
+// RequestIDHeader.
 func forwardHeaders(wr models.WebhookRequest) http.Header {
+	captured := wr.HeaderValues()
 	drop := map[string]bool{}
-	if c, ok := wr.Headers["Connection"].(string); ok {
+	for _, c := range captured.Values("Connection") {
 		for _, name := range strings.Split(c, ",") {
 			drop[textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(name))] = true
 		}
 	}
 
 	h := http.Header{}
-	for k, v := range wr.Headers {
-		s, ok := v.(string)
+	for k, values := range captured {
 		key := textproto.CanonicalMIMEHeaderKey(k)
-		if !ok || unforwardedHeaders[key] || drop[key] {
+		if unforwardedHeaders[key] || drop[key] {
 			continue
 		}
-		h.Set(key, s)
+		h[key] = append(h[key], values...)
 	}
 	// Go adds its own User-Agent unless one is set; an empty value sends
 	// none, as the original request did.

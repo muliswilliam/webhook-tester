@@ -230,32 +230,26 @@ func statusLine(code int) string {
 // which captures it as a new request.
 func (h *WebhookRequestHandler) replayToEndpoint(w http.ResponseWriter, r *http.Request, reqEvent *models.WebhookRequest) {
 	domain := os.Getenv("DOMAIN")
-	target, err := url.JoinPath(domain, "webhooks", reqEvent.WebhookID, reqEvent.Path)
+	endpoint, err := url.JoinPath(domain, "webhooks", reqEvent.WebhookID)
+	if err == nil {
+		endpoint, err = reqEvent.URLAt(endpoint)
+	}
 	if err != nil {
 		h.logger.Printf("replay: invalid target URL: %v", err)
 		http.Error(w, "could not construct replay URL", http.StatusInternalServerError)
 		return
 	}
 
-	parsed, _ := url.Parse(target)
-	q := parsed.Query()
-	for k, v := range reqEvent.Query {
-		if s, ok := v.(string); ok {
-			q.Set(k, s)
-		}
-	}
-	parsed.RawQuery = q.Encode()
-
 	bodyReader := strings.NewReader(reqEvent.Body)
-	outReq, err := http.NewRequest(reqEvent.Method, parsed.String(), bodyReader)
+	outReq, err := http.NewRequest(reqEvent.Method, endpoint, bodyReader)
 	if err != nil {
 		h.logger.Printf("replay: error creating HTTP request: %v", err)
 		http.Error(w, "error creating request", http.StatusInternalServerError)
 		return
 	}
-	for k, v := range reqEvent.Headers {
-		if s, ok := v.(string); ok {
-			outReq.Header.Set(k, s)
+	for k, values := range reqEvent.HeaderValues() {
+		for _, v := range values {
+			outReq.Header.Add(k, v)
 		}
 	}
 

@@ -594,6 +594,41 @@ func TestWebhookHandler_HandleWebhookRequest_RecordsSubpath(t *testing.T) {
 	assert.Equal(t, "1", whRepo.insertedRequests[0].Query["x"])
 }
 
+// The capture keeps what was sent: the escaped subpath, the raw query, and
+// every value of a repeated header or query parameter.
+func TestWebhookHandler_HandleWebhookRequest_RecordsRequestFaithfully(t *testing.T) {
+	for name, tc := range map[string]struct {
+		target   string
+		wantPath string
+	}{
+		"escaped slash":         {target: "/webhooks/wh1/files/a%2Fb?b=x%20y&a=1&a=2", wantPath: "/files/a%2Fb"},
+		"default escapes":       {target: "/webhooks/wh1/files/a%20b?b=x%20y&a=1&a=2", wantPath: "/files/a%20b"},
+		"plain path":            {target: "/webhooks/wh1/files?b=x%20y&a=1&a=2", wantPath: "/files"},
+		"bare trailing slash":   {target: "/webhooks/wh1/?b=x%20y&a=1&a=2", wantPath: "/"},
+		"escaped and unescaped": {target: "/webhooks/wh1/a%2Fb/c%20d/%7Ee?b=x%20y&a=1&a=2", wantPath: "/a%2Fb/c%20d/%7Ee"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+			whRepo.put(&models.Webhook{ID: "wh1", ResponseCode: http.StatusOK})
+
+			req := httptest.NewRequest(http.MethodPost, tc.target, nil)
+			req.Header.Add("X-Multi", "one")
+			req.Header.Add("X-Multi", "two, three")
+			req.Header.Set("X-Single", "only")
+			serveWebhook(h, httptest.NewRecorder(), req)
+
+			require.Len(t, whRepo.insertedRequests, 1)
+			wr := whRepo.insertedRequests[0]
+			assert.Equal(t, tc.wantPath, wr.Path)
+			assert.Equal(t, "b=x%20y&a=1&a=2", wr.RawQuery)
+			assert.Equal(t, []string{"one", "two, three"}, wr.Headers["X-Multi"], "repeated values aren't joined")
+			assert.Equal(t, "only", wr.Headers["X-Single"])
+			assert.Equal(t, []string{"1", "2"}, wr.Query["a"])
+			assert.Equal(t, "x y", wr.Query["b"])
+		})
+	}
+}
+
 func TestWebhookHandler_HandleWebhookRequest_InvalidStoredResponseCode(t *testing.T) {
 	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
 	// Saved before validation existed; WriteHeader would panic on it.

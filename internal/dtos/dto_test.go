@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/datatypes"
 )
 
 func TestNewWebhookDTO(t *testing.T) {
@@ -58,6 +59,17 @@ func TestNewWebhookDTO(t *testing.T) {
 		Headers: map[string]string{}, Query: map[string]string{},
 	}}, dto.Requests)
 	assert.Equal(t, map[string]string{}, dto.ResponseHeaders)
+}
+
+// Repeated headers and query parameters keep the API's string values,
+// joined by commas as before they were stored separately.
+func TestNewWebhookRequestDTO_RepeatedValues(t *testing.T) {
+	dto := NewWebhookRequestDTO(models.WebhookRequest{
+		Headers: datatypes.JSONMap{"X-Multi": []any{"one", "two"}, "X-Single": "only"},
+		Query:   datatypes.JSONMap{"a": []any{"1", "2"}, "n": 5.0},
+	})
+	assert.Equal(t, map[string]string{"X-Multi": "one,two", "X-Single": "only"}, dto.Headers)
+	assert.Equal(t, map[string]string{"a": "1,2", "n": "5"}, dto.Query)
 }
 
 func TestNewWebhookDTO_NilFields(t *testing.T) {

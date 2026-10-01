@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"gorm.io/datatypes"
 
 	"webhook-tester/internal/models"
@@ -31,30 +30,6 @@ func TestIsPublicAddr(t *testing.T) {
 	}
 }
 
-func TestForwardTarget(t *testing.T) {
-	for name, tc := range map[string]struct {
-		forwardURL string
-		path       string
-		query      datatypes.JSONMap
-		want       string
-	}{
-		"no subpath":                  {forwardURL: "https://api.example.com/hooks", want: "https://api.example.com/hooks"},
-		"subpath":                     {forwardURL: "https://api.example.com/hooks", path: "/orders/42", want: "https://api.example.com/hooks/orders/42"},
-		"subpath, trailing slash":     {forwardURL: "https://api.example.com/hooks/", path: "/orders/42", want: "https://api.example.com/hooks/orders/42"},
-		"root subpath":                {forwardURL: "https://api.example.com/hooks", path: "/", want: "https://api.example.com/hooks/"},
-		"bare host":                   {forwardURL: "https://api.example.com", path: "/orders", want: "https://api.example.com/orders"},
-		"query merged":                {forwardURL: "https://api.example.com/hooks?token=abc", query: datatypes.JSONMap{"x": "1"}, want: "https://api.example.com/hooks?token=abc&x=1"},
-		"same query key keeps both":   {forwardURL: "https://api.example.com/hooks?x=0", query: datatypes.JSONMap{"x": "1"}, want: "https://api.example.com/hooks?x=0&x=1"},
-		"forward URL query untouched": {forwardURL: "https://api.example.com/hooks?b=2&a=1", want: "https://api.example.com/hooks?b=2&a=1"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			got, err := forwardTarget(tc.forwardURL, models.WebhookRequest{Path: tc.path, Query: tc.query})
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, got)
-		})
-	}
-}
-
 func TestForwardHeaders(t *testing.T) {
 	h := forwardHeaders(models.WebhookRequest{
 		ID: "req-1",
@@ -68,12 +43,16 @@ func TestForwardHeaders(t *testing.T) {
 			"Proxy-Authorization": "Basic xyz",
 			"Content-Length":      "12",
 			"User-Agent":          "GitHub-Hookshot/abc",
+			"X-Multi":             []any{"one", "two, three"},
+			"X-Number":            5.0,
 		},
 	})
 	assert.Equal(t, "application/json", h.Get("Content-Type"))
 	assert.Equal(t, "sha256=abc", h.Get("X-Hub-Signature-256"))
 	assert.Equal(t, "GitHub-Hookshot/abc", h.Get("User-Agent"))
 	assert.Equal(t, "req-1", h.Get(RequestIDHeader))
+	assert.Equal(t, []string{"one", "two, three"}, h.Values("X-Multi"), "repeated values stay separate")
+	assert.Equal(t, "5", h.Get("X-Number"), "a non-string value is formatted, not dropped")
 	for _, dropped := range []string{"Connection", "X-Hop", "Transfer-Encoding", "Te", "Proxy-Authorization", "Content-Length"} {
 		assert.NotContains(t, h, dropped)
 	}

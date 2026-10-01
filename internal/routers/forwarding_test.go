@@ -192,11 +192,12 @@ func flashOf(t *testing.T, rec *httptest.ResponseRecorder) *utils.Flash {
 
 // receivedRequest is what a forward target saw.
 type receivedRequest struct {
-	Method   string
-	Path     string
-	RawQuery string
-	Header   http.Header
-	Body     []byte
+	Method      string
+	Path        string
+	EscapedPath string
+	RawQuery    string
+	Header      http.Header
+	Body        []byte
 }
 
 // target is a forward target server recording what it receives.
@@ -213,7 +214,8 @@ func newTarget(t *testing.T, respond http.HandlerFunc) *target {
 		body, _ := io.ReadAll(r.Body)
 		tg.mu.Lock()
 		tg.received = append(tg.received, receivedRequest{
-			Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Header: r.Header.Clone(), Body: body,
+			Method: r.Method, Path: r.URL.Path, EscapedPath: r.URL.EscapedPath(), RawQuery: r.URL.RawQuery,
+			Header: r.Header.Clone(), Body: body,
 		})
 		tg.mu.Unlock()
 		if respond != nil {
@@ -294,6 +296,30 @@ func TestForwarding_RelaysCapturedRequestFaithfully(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("no delivery event published")
 	}
+}
+
+// The query string and path go out exactly as the provider sent them, after
+// the forward URL's own, and repeated headers keep each value.
+func TestForwarding_RelaysQueryPathAndRepeatedHeadersVerbatim(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, nil)
+	env.createWebhook(t, "wh1", tg.URL+"/my%2Fhooks?sig=a%2Bb&a=0", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/wh1/files/a%2Fb/c%20d?b=x%20y&a=1&a=2&empty=&flag", strings.NewReader("{}"))
+	req.Header.Add("X-Multi", "one")
+	req.Header.Add("X-Multi", "two, three")
+	rec := httptest.NewRecorder()
+	env.webhooks.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	captured := env.onlyRequest(t, "wh1")
+	d := env.awaitDelivery(t, captured.ID)
+	got := tg.requests()
+	require.Len(t, got, 1)
+	assert.Equal(t, "/my%2Fhooks/files/a%2Fb/c%20d", got[0].EscapedPath)
+	assert.Equal(t, "sig=a%2Bb&a=0&b=x%20y&a=1&a=2&empty=&flag", got[0].RawQuery)
+	assert.Equal(t, []string{"one", "two, three"}, got[0].Header.Values("X-Multi"))
+	assert.Equal(t, tg.URL+"/my%2Fhooks/files/a%2Fb/c%20d?sig=a%2Bb&a=0&b=x%20y&a=1&a=2&empty=&flag", d.TargetURL)
 }
 
 func TestForwarding_ProviderResponseNotDelayedBySlowTarget(t *testing.T) {
