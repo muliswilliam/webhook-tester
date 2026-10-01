@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -17,6 +19,7 @@ const (
 	MaxResponseDelay    = 30_000 // milliseconds
 	DefaultResponseCode = 200
 	DefaultContentType  = "application/json"
+	MaxForwardURLLength = 2048
 )
 
 // swagger:model [Webhook]
@@ -29,11 +32,43 @@ type Webhook struct {
 	Payload         *string           `json:"payload"`
 	ResponseHeaders datatypes.JSONMap `json:"response_headers"`
 	NotifyOnEvent   bool              `json:"notify_on_event"`
-	UserID          int               `json:"user_id"`
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at,omitempty"`
+	// ForwardURL is where captured requests are relayed; nil when
+	// forwarding is off. Only webhooks with an owner forward.
+	ForwardURL *string   `json:"forward_url"`
+	UserID     int       `json:"user_id"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at,omitempty"`
 
 	Requests []WebhookRequest `gorm:"foreignKey:WebhookID" json:"requests,omitempty"`
+}
+
+// ManagedBy reports whether userID, 0 for a guest, may change, clear or
+// delete the webhook and its requests: they own it, or it and they are both
+// guests. A signed-in user can view a guest webhook but not manage it.
+func (w Webhook) ManagedBy(userID uint) bool {
+	return uint(w.UserID) == userID
+}
+
+// CanForward reports whether the webhook may relay its captured requests:
+// it has an owner. Guest webhooks never forward, so they can't be used as
+// an open relay, and their settings offer no forward URL.
+func (w Webhook) CanForward() bool {
+	return w.UserID != 0
+}
+
+// Forwards reports whether the webhook relays its captured requests: it may
+// forward and has a forward URL.
+func (w Webhook) Forwards() bool {
+	return w.CanForward() && w.ForwardURL != nil
+}
+
+// ActiveForwardURL is the forward URL captured requests are relayed to, or
+// "" if the webhook doesn't forward.
+func (w Webhook) ActiveForwardURL() string {
+	if !w.Forwards() {
+		return ""
+	}
+	return *w.ForwardURL
 }
 
 // ValidateResponseCode reports whether code can be sent as an HTTP status.
@@ -86,11 +121,20 @@ func (w *Webhook) Normalize() {
 		empty := ""
 		w.Payload = &empty
 	}
+	if w.ForwardURL != nil {
+		if trimmed := strings.TrimSpace(*w.ForwardURL); trimmed == "" {
+			w.ForwardURL = nil
+		} else {
+			w.ForwardURL = &trimmed
+		}
+	}
 }
 
-// Validate checks the webhook's title and configured response, returning
-// the first problem found.
-func (w *Webhook) Validate() error {
+// Validate checks the webhook's title, configured response and forward URL,
+// returning the first problem found. domain is the public base URL of this
+// instance (the DOMAIN setting), which the forward URL's loop check compares
+// against; WebhookService.ValidateWebhook passes the one replay uses.
+func (w *Webhook) Validate(domain string) error {
 	if w.Title == "" {
 		return errors.New("title is required")
 	}
@@ -100,7 +144,74 @@ func (w *Webhook) Validate() error {
 	if w.ResponseDelay > MaxResponseDelay {
 		return fmt.Errorf("response delay must be between 0 and %d ms", MaxResponseDelay)
 	}
-	return validateResponseHeaders(w.ResponseHeaders)
+	if err := validateResponseHeaders(w.ResponseHeaders); err != nil {
+		return err
+	}
+	if w.ForwardURL != nil {
+		return ValidateForwardURL(*w.ForwardURL, domain)
+	}
+	return nil
+}
+
+// ValidateForwardURL reports whether raw can be used as a forward URL: an
+// absolute http or https URL with a host, which doesn't point back at the
+// webhook endpoints of the instance served at domain (the DOMAIN setting).
+// An empty domain skips that loop check.
+func ValidateForwardURL(raw, domain string) error {
+	if len(raw) > MaxForwardURLLength {
+		return fmt.Errorf("forward URL must be at most %d characters", MaxForwardURLLength)
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return errors.New("forward URL must be an absolute http or https URL")
+	}
+	if u.Hostname() == "" {
+		return errors.New("forward URL must include a host")
+	}
+	if pointsAtOwnWebhooks(u, domain) {
+		return errors.New("forward URL can't point at this Webhook Tester's own webhook endpoints, since that would loop")
+	}
+	return nil
+}
+
+// pointsAtOwnWebhooks reports whether u addresses a webhook endpoint of the
+// instance served at domain, i.e. the same host and port with a path under
+// <domain>/webhooks. The path is compared decoded and cleaned, so dot
+// segments, doubled slashes and percent-encoding don't slip past.
+func pointsAtOwnWebhooks(u *url.URL, domain string) bool {
+	self, err := url.Parse(domain)
+	if domain == "" || err != nil || self.Hostname() == "" {
+		return false
+	}
+	if canonicalHost(u.Hostname()) != canonicalHost(self.Hostname()) || !samePort(u, self) {
+		return false
+	}
+	base := path.Join("/", self.Path, "webhooks")
+	p := path.Clean("/" + u.Path)
+	return p == base || strings.HasPrefix(p, base+"/")
+}
+
+func canonicalHost(host string) string {
+	return strings.TrimSuffix(strings.ToLower(host), ".")
+}
+
+// samePort reports whether a and b are served on the same port. The default
+// http and https ports count as one, since an instance behind a TLS proxy
+// usually answers on both.
+func samePort(a, b *url.URL) bool {
+	pa, pb := effectivePort(a), effectivePort(b)
+	isDefault := func(p string) bool { return p == "80" || p == "443" }
+	return pa == pb || (isDefault(pa) && isDefault(pb))
+}
+
+func effectivePort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	if u.Scheme == "https" {
+		return "443"
+	}
+	return "80"
 }
 
 // isHeaderToken reports whether s is an RFC 9110 token, the syntax of a

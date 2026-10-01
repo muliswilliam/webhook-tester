@@ -6,6 +6,14 @@ definitions:
         description: Content-Type of the response. Defaults to application/json.
         example: application/json
         type: string
+      forward_url:
+        description: |-
+          Absolute http or https URL every captured request is also relayed to.
+          Omit it, or send "", to leave forwarding off. Private and local
+          addresses, such as localhost, are rejected unless the server allows
+          private networks; use a public tunnel URL to reach a local server.
+        example: https://example.ngrok-free.app/webhooks/stripe
+        type: string
       notify_on_event:
         type: boolean
       payload:
@@ -44,6 +52,15 @@ definitions:
       content_type:
         example: application/json
         type: string
+      forward_url:
+        description: |-
+          Absolute http or https URL every captured request is also relayed to.
+          null or "" turns forwarding off. Private and local addresses, such as
+          localhost, are rejected unless the server allows private networks; use
+          a public tunnel URL to reach a local server.
+        example: https://example.ngrok-free.app/webhooks/stripe
+        type: string
+        x-nullable: true
       notify_on_event:
         type: boolean
       payload:
@@ -70,6 +87,12 @@ definitions:
         type: string
       created_at:
         type: string
+      forward_url:
+        description: Where captured requests are relayed; null when forwarding is
+          off
+        example: https://example.ngrok-free.app/webhooks/stripe
+        type: string
+        x-nullable: true
       id:
         type: string
       notify_on_event:

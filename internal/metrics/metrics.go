@@ -30,14 +30,31 @@ var (
 			Help: "Total number of successful user logins.",
 		},
 	)
+
+	// deliveries of captured requests to forward targets, by outcome
+	DeliveriesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "webhook_deliveries_total",
+		Help: "Total number of forward attempts, including refused ones and those whose delivery could not be stored, by outcome (2xx, 3xx, 4xx, 5xx, error, blocked, dropped).",
+	}, []string{"outcome"})
+
+	// how long deliveries to forward targets take
+	DeliveryDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "webhook_delivery_duration_seconds",
+		Help:    "Duration of deliveries to forward targets, in seconds.",
+		Buckets: prometheus.DefBuckets,
+	})
 )
 
-// Register prometheus metrics
-func Register() {
-	prometheus.MustRegister(
+// Register registers the app's metrics with reg, panicking if any is already
+// registered there. Each server registers them with its own registry, so
+// several servers (as in tests) can coexist in one process.
+func Register(reg prometheus.Registerer) {
+	reg.MustRegister(
 		WebhooksCreated,
 		WebhookRequestsReceived,
 		SignupsTotal,
 		LoginsTotal,
+		DeliveriesTotal,
+		DeliveryDuration,
 	)
 }

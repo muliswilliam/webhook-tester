@@ -1,8 +1,13 @@
 {{ define "title" }}Request {{ .Request.ID }}{{ end }}
+{{/* This page shows one request of the webhook, so its stream only updates
+  that request's deliveries; see the "stream-scope" block in layout.html.
+*/}}
+{{ define "stream-scope" }}&request={{ .Request.ID }}{{ end }}
 {{ define "content" }}
   <div
     class="space-y-6"
     data-signals="{copiedId: false, copiedBody_{{ signalKey .Request.ID }}: false, rawBody_{{ signalKey .Request.ID }}: false}"
+    data-signals:forward-to="{{ jsString .Webhook.ActiveForwardURL }}"
   >
     <nav aria-label="Breadcrumb">
       <a
@@ -57,21 +62,20 @@
         </button>
       </div>
       <div class="flex flex-wrap gap-2">
-        <form method="POST" action="/requests/{{ .Request.ID }}/replay">
-          {{ .CSRFField }}
-          <button class="btn-primary">Replay request</button>
-        </form>
-        <form
-          method="POST"
-          action="/requests/{{ .Request.ID }}/delete"
-          onsubmit="return confirmSubmit(event, this)"
-          data-confirm-title="Delete this request?"
-          data-confirm-message="The captured request will be permanently deleted."
-          data-confirm-label="Delete request"
-        >
-          {{ .CSRFField }}
-          <button class="btn-danger">Delete request</button>
-        </form>
+        {{ template "replay-control" (replayControl .Request.ID .Webhook.ActiveForwardURL .CSRFField true) }}
+        {{ if .CanManage }}
+          <form
+            method="POST"
+            action="/requests/{{ .Request.ID }}/delete"
+            onsubmit="return confirmSubmit(event, this)"
+            data-confirm-title="Delete this request?"
+            data-confirm-message="The captured request will be permanently deleted."
+            data-confirm-label="Delete request"
+          >
+            {{ .CSRFField }}
+            <button class="btn-danger">Delete request</button>
+          </form>
+        {{ end }}
       </div>
     </header>
 
@@ -86,6 +90,28 @@
       <div class="request-detail-body">{{ template "request-body" .Request }}</div>
     </section>
 
+    {{ if or .Webhook.Forwards .Request.Deliveries }}
+      <section class="surface overflow-hidden" aria-labelledby="request-deliveries-title">
+        <div class="section-bar">
+          <div>
+            <p class="eyebrow">Forwarding</p>
+            <h2 id="request-deliveries-title" class="mt-1 text-base font-semibold">Deliveries</h2>
+          </div>
+          <span class="text-xs text-muted">Newest first</span>
+        </div>
+        {{ template "delivery-list" .Request }}
+        <p
+          class="delivery-placeholder border-t px-4 py-8 text-center text-sm text-muted sm:px-5"
+          data-text="$forwardTo ? 'Not forwarded yet. Replay it to the forward URL to send it to your server.' : 'Not forwarded. This endpoint has no forward URL.'"
+        >
+          {{ if .Webhook.Forwards }}
+            Not forwarded yet. Replay it to the forward URL to send it to your server.
+          {{ else }}
+            Not forwarded. This endpoint has no forward URL.
+          {{ end }}
+        </p>
+      </section>
+    {{ end }}
     <div class="grid gap-6 xl:grid-cols-2">
       <section class="surface overflow-hidden" aria-labelledby="request-headers-title">
         <div class="section-bar">
@@ -100,7 +126,11 @@
               {{ range $key, $val := .Request.Headers }}
                 <tr>
                   <td>{{ $key }}</td>
-                  <td class="break-all">{{ $val }}</td>
+                  <td class="break-all">
+                    <div class="space-y-1.5">
+                      {{ range fieldValues $val }}<span class="block">{{ . }}</span>{{ end }}
+                    </div>
+                  </td>
                 </tr>
               {{ else }}
                 <tr><td colspan="2">No headers captured</td></tr>
@@ -123,7 +153,11 @@
               {{ range $key, $val := .Request.Query }}
                 <tr>
                   <td>{{ $key }}</td>
-                  <td class="break-all">{{ $val }}</td>
+                  <td class="break-all">
+                    <div class="space-y-1.5">
+                      {{ range fieldValues $val }}<span class="block">{{ . }}</span>{{ end }}
+                    </div>
+                  </td>
                 </tr>
               {{ else }}
                 <tr><td colspan="2">No query parameters</td></tr>

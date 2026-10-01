@@ -120,6 +120,32 @@ func TestGormWebhookRequestRepo_Insert_DuplicateIDErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// Dropping the deliveries table makes the first step of each delete path
+// fail, which must abort the transaction and leave the requests and webhooks
+// in place.
+func TestDeletePaths_DeliveriesDeleteFails(t *testing.T) {
+	db := newTestDB(t)
+	webhooks := NewGormWebookRepo(db, testLogger())
+	requests := NewGormWebhookRequestRepo(db, testLogger())
+	require.NoError(t, db.Create(&models.Webhook{ID: "owned", Title: "a", UserID: 5}).Error)
+	require.NoError(t, db.Create(&models.Webhook{ID: "pub", Title: "b", CreatedAt: time.Now().UTC().Add(-2 * time.Hour)}).Error)
+	require.NoError(t, db.Create(&models.WebhookRequest{ID: "req-1", WebhookID: "owned"}).Error)
+	require.NoError(t, db.Migrator().DropTable(&models.Delivery{}))
+
+	assert.Error(t, requests.DeleteByID("req-1"))
+	assert.Error(t, requests.DeleteByWebhook("owned"))
+	assert.Error(t, webhooks.Delete("owned", 5))
+	ids, err := webhooks.CleanPublic(time.Hour)
+	assert.Error(t, err)
+	assert.Nil(t, ids)
+
+	var reqCount, whCount int64
+	require.NoError(t, db.Model(&models.WebhookRequest{}).Count(&reqCount).Error)
+	require.NoError(t, db.Model(&models.Webhook{}).Count(&whCount).Error)
+	assert.Equal(t, int64(1), reqCount)
+	assert.Equal(t, int64(2), whCount)
+}
+
 func TestGormWebhookRequestRepo_ErrorsAfterConnectionClosed(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewGormWebhookRequestRepo(db, testLogger())

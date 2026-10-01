@@ -44,9 +44,11 @@ func newTestWebhook() models.Webhook {
 
 // testRequestRow and testRequestCounter mirror the handlers package's views.
 type testRequestRow struct {
-	Request   models.WebhookRequest
-	CSRFField template.HTML
-	IsNew     bool
+	Request    models.WebhookRequest
+	CSRFField  template.HTML
+	IsNew      bool
+	ForwardURL string
+	CanManage  bool
 }
 
 type testRequestCounter struct {
@@ -65,6 +67,7 @@ func TestRenderHTMLHomeHappyPath(t *testing.T) {
 		User           models.User
 		Webhooks       []models.Webhook
 		Webhook        models.Webhook
+		CanManage      bool
 		ContentType    string
 		RequestRows    []testRequestRow
 		RequestCounter testRequestCounter
@@ -106,6 +109,7 @@ func TestRenderHTMLHomeWebhookStreamDataInit(t *testing.T) {
 		User           models.User
 		Webhooks       []models.Webhook
 		Webhook        models.Webhook
+		CanManage      bool
 		ContentType    string
 		RequestRows    []testRequestRow
 		RequestCounter testRequestCounter
@@ -218,6 +222,7 @@ func TestRenderHTMLRequestHappyPath(t *testing.T) {
 		Webhooks  []models.Webhook
 		Webhook   *models.Webhook
 		Request   *models.WebhookRequest
+		CanManage bool
 		CSRFField template.HTML
 	}{
 		ID:        req.ID,

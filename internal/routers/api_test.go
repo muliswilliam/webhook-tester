@@ -2,17 +2,23 @@ package routers_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"webhook-tester/config"
 	webhookdb "webhook-tester/internal/db"
 	"webhook-tester/internal/dtos"
 	appMetrics "webhook-tester/internal/metrics"
@@ -23,10 +29,53 @@ import (
 
 func newAPITestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	// Foreign keys on, as Postgres enforces them in production. One
+	// connection, since each new connection to ":memory:" would open a
+	// fresh, empty database - and forwards write from other goroutines.
+	db, err := gorm.Open(sqlite.Open(":memory:?_foreign_keys=on"), &gorm.Config{})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	webhookdb.AutoMigrate(db)
 	return db
+}
+
+// newTestForwarder returns a forwarder recording through webhookSvc. It
+// waits for its in-flight forwards when the test ends, before the DB closes.
+func newTestForwarder(t *testing.T, webhookSvc *service.WebhookService, cfg config.Forwarding) *service.Forwarder {
+	t.Helper()
+	f := service.NewForwarder(cfg, webhookSvc, &appMetrics.PrometheusRecorder{}, testLogger())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		require.NoError(t, f.Shutdown(ctx), "in-flight forwards didn't finish")
+	})
+	return f
+}
+
+// testDomain is the DOMAIN the routers under test are served at.
+const testDomain = "https://tester.example.com"
+
+// testResolver resolves the hosts it lists and fails every other lookup,
+// as for an unknown host, so tests never query real DNS.
+type testResolver map[string][]netip.Addr
+
+func (r testResolver) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, error) {
+	if addrs, ok := r[host]; ok {
+		return addrs, nil
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+}
+
+// privateHost is a hostname testForwardPolicy resolves to a private address.
+const privateHost = "db.internal.example.com"
+
+// testForwardPolicy is the default forwarding policy (private networks not
+// allowed) over testResolver.
+var testForwardPolicy = service.ForwardPolicy{
+	Resolver: testResolver{privateHost: {netip.MustParseAddr("10.0.0.7")}},
 }
 
 func testLogger() *log.Logger {
@@ -37,6 +86,13 @@ func testLogger() *log.Logger {
 // returns the router plus the API key of a freshly-registered user.
 func setupAPIRouter(t *testing.T) (http.Handler, string) {
 	t.Helper()
+	return setupAPIRouterWith(t, testForwardPolicy)
+}
+
+// setupAPIRouterWith is setupAPIRouter for an instance with the given
+// forwarding policy.
+func setupAPIRouterWith(t *testing.T, policy service.ForwardPolicy) (http.Handler, string) {
+	t.Helper()
 
 	db := newAPITestDB(t)
 	logger := testLogger()
@@ -45,7 +101,7 @@ func setupAPIRouter(t *testing.T) (http.Handler, string) {
 	webhookRepo := store.NewGormWebookRepo(db, logger)
 
 	authSvc := service.NewAuthService(userRepo, db, "test-auth-secret")
-	webhookSvc := service.NewWebhookService(webhookRepo)
+	webhookSvc := service.NewWebhookService(webhookRepo, store.NewGormDeliveryRepo(db, logger), testDomain, policy)
 
 	user, err := authSvc.Register("api-user@example.com", "Passw0rd!", "API User")
 	require.NoError(t, err)
@@ -181,6 +237,182 @@ func TestNewApiRouter_JSONErrors(t *testing.T) {
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body), c.path)
 		require.NotEmpty(t, body.Error, c.path)
 	}
+}
+
+func TestNewApiRouter_ForwardURLRoundTrip(t *testing.T) {
+	r, apiKey := setupAPIRouter(t)
+	do := func(method, path, body string) (int, dtos.Webhook, string) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("X-API-Key", apiKey)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		var wh dtos.Webhook
+		if rec.Code < 300 && method != http.MethodDelete {
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &wh), rec.Body.String())
+		}
+		return rec.Code, wh, rec.Body.String()
+	}
+	getForwardURL := func(id string) *string {
+		t.Helper()
+		code, wh, _ := do(http.MethodGet, "/webhooks/"+id+"/", "")
+		require.Equal(t, http.StatusOK, code)
+		return wh.ForwardURL
+	}
+
+	// Create with a forward URL; surrounding whitespace is trimmed.
+	code, created, _ := do(http.MethodPost, "/webhooks/", `{"title":"fwd","forward_url":"  https://api.example.com/hooks  "}`)
+	require.Equal(t, http.StatusCreated, code)
+	require.NotNil(t, created.ForwardURL)
+	require.Equal(t, "https://api.example.com/hooks", *created.ForwardURL)
+	require.Equal(t, "https://api.example.com/hooks", *getForwardURL(created.ID))
+
+	// List includes it.
+	req := httptest.NewRequest(http.MethodGet, "/webhooks/", nil)
+	req.Header.Set("X-API-Key", apiKey)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var listed []dtos.Webhook
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+	require.Len(t, listed, 1)
+	require.Equal(t, "https://api.example.com/hooks", *listed[0].ForwardURL)
+
+	path := "/webhooks/" + created.ID + "/"
+
+	// An update that leaves forward_url out keeps it.
+	code, _, _ = do(http.MethodPatch, path, `{"title":"renamed"}`)
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, "https://api.example.com/hooks", *getForwardURL(created.ID))
+
+	// Change it.
+	code, updated, _ := do(http.MethodPatch, path, `{"forward_url":"https://abc.ngrok-free.app/stripe"}`)
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, "https://abc.ngrok-free.app/stripe", *updated.ForwardURL)
+
+	// Invalid values are rejected and change nothing.
+	for bad, wantErr := range map[string]string{
+		`"ftp://files.example.com"`: "absolute http or https URL",
+		`"/relative"`:               "absolute http or https URL",
+		`"https://tester.example.com/webhooks/` + created.ID + `"`: "own webhook endpoints",
+		`42`:            "expected a string or null, got a number",
+		`{"url":"x"}`:   "expected a string or null, got an object",
+		`["https://x"]`: "expected a string or null, got an array",
+	} {
+		code, _, body := do(http.MethodPatch, path, `{"forward_url":`+bad+`}`)
+		require.Equal(t, http.StatusBadRequest, code, bad)
+		require.Contains(t, body, wantErr, bad)
+		require.Equal(t, "https://abc.ngrok-free.app/stripe", *getForwardURL(created.ID), bad)
+	}
+
+	// An explicit null clears it, and so does an empty string.
+	code, updated, _ = do(http.MethodPatch, path, `{"forward_url":null}`)
+	require.Equal(t, http.StatusOK, code)
+	require.Nil(t, updated.ForwardURL)
+	require.Nil(t, getForwardURL(created.ID))
+
+	code, _, _ = do(http.MethodPatch, path, `{"forward_url":"https://api.example.com/hooks"}`)
+	require.Equal(t, http.StatusOK, code)
+	code, updated, _ = do(http.MethodPut, path, `{"forward_url":""}`)
+	require.Equal(t, http.StatusOK, code)
+	require.Nil(t, updated.ForwardURL)
+
+	// A webhook created without one reports null.
+	code, plain, body := do(http.MethodPost, "/webhooks/", `{"title":"plain"}`)
+	require.Equal(t, http.StatusCreated, code)
+	require.Nil(t, plain.ForwardURL)
+	require.Contains(t, body, `"forward_url":null`)
+
+	// Create rejects a forward URL that loops back to this instance.
+	code, _, body = do(http.MethodPost, "/webhooks/", `{"title":"loop","forward_url":"https://tester.example.com/webhooks/abc"}`)
+	require.Equal(t, http.StatusBadRequest, code)
+	require.Contains(t, body, "own webhook endpoints")
+}
+
+// With private networks not allowed, create, update and PATCH reject a
+// forward URL the forwarder could never reach. A self-hosted instance that
+// allows them accepts it.
+func TestNewApiRouter_PrivateForwardURL(t *testing.T) {
+	privateURLs := []string{
+		"http://localhost:8080/hooks",
+		"http://app.localhost/hooks",
+		"http://127.0.0.1:3000/hooks",
+		"http://[::1]/hooks",
+		"http://169.254.169.254/latest/meta-data",
+		"http://" + privateHost + "/hooks",
+	}
+	for _, allow := range []bool{false, true} {
+		r, apiKey := setupAPIRouterWith(t, service.ForwardPolicy{AllowPrivateNetworks: allow, Resolver: testForwardPolicy.Resolver})
+		do := func(method, path, body string) (int, string) {
+			t.Helper()
+			req := httptest.NewRequest(method, path, strings.NewReader(body))
+			req.Header.Set("X-API-Key", apiKey)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			return rec.Code, rec.Body.String()
+		}
+		code, body := do(http.MethodPost, "/webhooks/", `{"title":"plain"}`)
+		require.Equal(t, http.StatusCreated, code)
+		var created dtos.Webhook
+		require.NoError(t, json.Unmarshal([]byte(body), &created))
+		path := "/webhooks/" + created.ID + "/"
+
+		for _, forwardURL := range privateURLs {
+			requests := map[string]struct{ method, path, body string }{
+				"create": {http.MethodPost, "/webhooks/", `{"title":"fwd","forward_url":"` + forwardURL + `"}`},
+				"update": {http.MethodPut, path, `{"title":"plain","forward_url":"` + forwardURL + `"}`},
+				"patch":  {http.MethodPatch, path, `{"forward_url":"` + forwardURL + `"}`},
+			}
+			for name, req := range requests {
+				code, body := do(req.method, req.path, req.body)
+				if allow {
+					require.Less(t, code, 300, "%s %s: %s", name, forwardURL, body)
+					continue
+				}
+				require.Equal(t, http.StatusBadRequest, code, "%s %s", name, forwardURL)
+				require.Contains(t, body, "forward URL points to a private or local address", name)
+				require.Contains(t, body, "use a public tunnel URL (ngrok, cloudflared)", name)
+			}
+		}
+		if !allow {
+			code, body := do(http.MethodGet, path, "")
+			require.Equal(t, http.StatusOK, code)
+			require.Contains(t, body, `"forward_url":null`, "rejected updates change nothing")
+		}
+	}
+}
+
+// The destination check applies to forward URLs as they are set, not on
+// every save: a saved forward URL whose host now resolves to a private
+// address doesn't stop the owner editing the webhook's other settings.
+func TestNewApiRouter_UnchangedForwardURLNotRechecked(t *testing.T) {
+	resolver := testResolver{"rebound.example.com": {netip.MustParseAddr("93.184.215.14")}}
+	r, apiKey := setupAPIRouterWith(t, service.ForwardPolicy{Resolver: resolver})
+	do := func(method, path, body string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("X-API-Key", apiKey)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	code, body := do(http.MethodPost, "/webhooks/", `{"title":"fwd","forward_url":"https://rebound.example.com/hooks"}`)
+	require.Equal(t, http.StatusCreated, code, body)
+	var created dtos.Webhook
+	require.NoError(t, json.Unmarshal([]byte(body), &created))
+	path := "/webhooks/" + created.ID + "/"
+
+	resolver["rebound.example.com"] = []netip.Addr{netip.MustParseAddr("10.0.0.7")}
+
+	code, body = do(http.MethodPatch, path, `{"title":"renamed"}`)
+	require.Equal(t, http.StatusOK, code, body)
+	code, body = do(http.MethodPut, path, `{"title":"renamed again","forward_url":"https://rebound.example.com/hooks"}`)
+	require.Equal(t, http.StatusOK, code, body)
+	require.Contains(t, body, `"title":"renamed again"`)
+
+	code, body = do(http.MethodPatch, path, `{"forward_url":"https://rebound.example.com/other"}`)
+	require.Equal(t, http.StatusBadRequest, code, "a changed forward URL is checked")
+	require.Contains(t, body, "forward URL points to a private or local address")
 }
 
 func TestNewApiRouter_InvalidKey(t *testing.T) {

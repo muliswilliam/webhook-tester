@@ -2,10 +2,13 @@ package metrics
 
 import (
 	"testing"
+	"time"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"webhook-tester/internal/models"
 )
 
 func counterValue(t *testing.T, c interface{ Write(*dto.Metric) error }) float64 {
@@ -53,6 +56,43 @@ func TestPrometheusRecorderIncLogin(t *testing.T) {
 
 	after := counterValue(t, LoginsTotal)
 	assert.Equal(t, before+1, after)
+}
+
+func histogramSnapshot(t *testing.T, h interface{ Write(*dto.Metric) error }) (count uint64, sum float64) {
+	t.Helper()
+	m := &dto.Metric{}
+	require.NoError(t, h.Write(m))
+	return m.GetHistogram().GetSampleCount(), m.GetHistogram().GetSampleSum()
+}
+
+func TestPrometheusRecorderObserveDelivery(t *testing.T) {
+	r := &PrometheusRecorder{}
+	outcomes := []models.DeliveryOutcome{
+		models.DeliveryOutcome2xx, models.DeliveryOutcome3xx, models.DeliveryOutcome4xx,
+		models.DeliveryOutcome5xx, models.DeliveryOutcomeError, models.DeliveryOutcomeBlocked, models.DeliveryOutcomeDropped,
+	}
+	for _, outcome := range outcomes {
+		t.Run(string(outcome), func(t *testing.T) {
+			before := make(map[models.DeliveryOutcome]float64)
+			for _, o := range outcomes {
+				before[o] = counterValue(t, DeliveriesTotal.WithLabelValues(string(o)))
+			}
+			countBefore, sumBefore := histogramSnapshot(t, DeliveryDuration)
+
+			r.ObserveDelivery(outcome, 1500*time.Millisecond)
+
+			for _, o := range outcomes {
+				want := before[o]
+				if o == outcome {
+					want++
+				}
+				assert.Equal(t, want, counterValue(t, DeliveriesTotal.WithLabelValues(string(o))), "outcome %s", o)
+			}
+			countAfter, sumAfter := histogramSnapshot(t, DeliveryDuration)
+			assert.Equal(t, countBefore+1, countAfter)
+			assert.InDelta(t, sumBefore+1.5, sumAfter, 1e-9)
+		})
+	}
 }
 
 func TestPrometheusRecorderImplementsRecorder(t *testing.T) {

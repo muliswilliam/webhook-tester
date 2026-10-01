@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 	"webhook-tester/cmd/server"
-	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/service"
 )
 
@@ -44,7 +43,6 @@ func scheduleCleanup(webhookSvc *service.WebhookService, logger *log.Logger, c *
 func main() {
 	s := server.NewServer()
 	s.MountHandlers()
-	metrics.Register()
 
 	for _, srv := range []*http.Server{s.Srv, s.MetricsSrv} {
 		go func() {
@@ -75,6 +73,11 @@ func main() {
 		if err := srv.Shutdown(ctx); err != nil {
 			s.Logger.Printf("graceful shutdown of %s failed: %s", srv.Addr, err)
 		}
+	}
+	// Let in-flight forwards record their deliveries. Captures still being
+	// handled, if the server's shutdown timed out, record refused ones.
+	if err := s.Forwarder.Shutdown(ctx); err != nil {
+		s.Logger.Printf("in-flight forwards didn't finish: %s", err)
 	}
 
 	s.Logger.Printf("server stopped")

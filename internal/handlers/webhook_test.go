@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -24,16 +25,24 @@ import (
 
 func newTestWebhookHandler(t *testing.T) (*WebhookHandler, *testWebhookRepo, *testWebhookRequestRepo, *testUserRepo, *testMetricsRecorder, *service.AuthService) {
 	t.Helper()
+	return newTestWebhookHandlerWith(t, testForwardPolicy)
+}
+
+// newTestWebhookHandlerWith is newTestWebhookHandler for an instance with
+// the given forwarding policy.
+func newTestWebhookHandlerWith(t *testing.T, policy service.ForwardPolicy) (*WebhookHandler, *testWebhookRepo, *testWebhookRequestRepo, *testUserRepo, *testMetricsRecorder, *service.AuthService) {
+	t.Helper()
 	whRepo := newTestWebhookRepo()
 	reqRepo := newTestWebhookRequestRepo()
 	userRepo := newTestUserRepo()
 	metricsRec := &testMetricsRecorder{}
 	authSvc := newTestAuthService(t, userRepo)
 
-	whSvc := service.NewWebhookService(whRepo)
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{}, testDomain, policy)
 	reqSvc := service.NewWebhookRequestService(reqRepo)
 
-	h := NewWebhookHandler(whSvc, reqSvc, authSvc, newTestLogger(), metricsRec)
+	forwarder := newTestForwarder(whSvc, metricsRec)
+	h := NewWebhookHandler(whSvc, reqSvc, authSvc, forwarder, newTestLogger(), metricsRec)
 	return h, whRepo, reqRepo, userRepo, metricsRec, authSvc
 }
 
@@ -78,7 +87,6 @@ func TestWebhookHandler_Create_Success(t *testing.T) {
 		"content_type":     {"application/json"},
 		"response_delay":   {"0"},
 		"payload":          {`{"ok":true}`},
-		"notify_on_event":  {"true"},
 		"response_headers": {`{"X-Test":"1"}`},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
@@ -338,7 +346,6 @@ func TestWebhookHandler_UpdateWebhook_Success(t *testing.T) {
 		"response_code":    {"201"},
 		"response_delay":   {"5"},
 		"payload":          {"new-payload"},
-		"notify_on_event":  {"true"},
 		"response_headers": {`{"X-A":"1"}`},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/update-webhook/wh1", strings.NewReader(form.Encode()))
@@ -356,7 +363,60 @@ func TestWebhookHandler_UpdateWebhook_Success(t *testing.T) {
 	assert.Equal(t, 201, w.ResponseCode)
 	assert.Equal(t, uint(5), w.ResponseDelay)
 	assert.Equal(t, "new-payload", *w.Payload)
-	assert.True(t, w.NotifyOnEvent)
+}
+
+// The forms don't offer notify_on_event, so saving one keeps the stored value
+// rather than resetting it, and ignores a value posted anyway.
+func TestWebhookHandler_UpdateWebhook_KeepsNotifyOnEvent(t *testing.T) {
+	cases := map[string]struct {
+		stored bool
+		form   url.Values
+	}{
+		"stored true, not posted":   {stored: true, form: url.Values{"title": {"t"}}},
+		"stored false, not posted":  {stored: false, form: url.Values{"title": {"t"}}},
+		"stored true, posted false": {stored: true, form: url.Values{"title": {"t"}, "notify_on_event": {"false"}}},
+		"stored false, posted true": {stored: false, form: url.Values{"title": {"t"}, "notify_on_event": {"true"}}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+			whRepo.put(&models.Webhook{ID: "wh1", Title: "old", NotifyOnEvent: tc.stored})
+
+			router := routerWithParam("/update-webhook/{id}", http.MethodPost, h.UpdateWebhook)
+			req := httptest.NewRequest(http.MethodPost, "/update-webhook/wh1", strings.NewReader(tc.form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusSeeOther, rec.Code)
+			require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+			w := whRepo.webhooks["wh1"]
+			assert.Equal(t, "t", w.Title)
+			assert.Equal(t, tc.stored, w.NotifyOnEvent)
+		})
+	}
+}
+
+// A webhook created from the form doesn't opt in to notifications, even when
+// notify_on_event is posted.
+func TestWebhookHandler_Create_IgnoresNotifyOnEvent(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+
+	form := url.Values{"title": {"hook"}, "notify_on_event": {"true"}}
+	req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Create(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	require.Len(t, whRepo.webhooks, 1)
+	for _, w := range whRepo.webhooks {
+		assert.False(t, w.NotifyOnEvent)
+	}
 }
 
 func TestWebhookHandler_UpdateWebhook_RejectsInvalidInput(t *testing.T) {
@@ -437,6 +497,165 @@ func TestWebhookHandler_UpdateWebhook_ServiceError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+// postUpdateForm submits the edit form for wh1, signed in when cookie is set.
+func postUpdateForm(h *WebhookHandler, form url.Values, cookie *http.Cookie) *httptest.ResponseRecorder {
+	router := routerWithParam("/update-webhook/{id}", http.MethodPost, h.UpdateWebhook)
+	req := httptest.NewRequest(http.MethodPost, "/update-webhook/wh1", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestWebhookHandler_UpdateWebhook_ForwardURL(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+	cookie := sessionCookieFor(t, authSvc, user)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200, UserID: int(user.ID)})
+	forwardURL := func() *string { return whRepo.webhooks["wh1"].ForwardURL }
+
+	// Set it; surrounding whitespace is trimmed.
+	rec := postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {" https://api.example.com/hooks "}}, cookie)
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+	require.NotNil(t, forwardURL())
+	assert.Equal(t, "https://api.example.com/hooks", *forwardURL())
+
+	// Invalid values are rejected with the reason and change nothing.
+	for bad, wantErr := range map[string]string{
+		"ftp://files.example.com":               "absolute http or https URL",
+		"api.example.com/hooks":                 "absolute http or https URL",
+		"https://tester.example.com/webhooks/x": "own webhook endpoints",
+	} {
+		rec = postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {bad}}, cookie)
+		flash := flashFrom(t, rec)
+		assert.Equal(t, utils.FlashError, flash.Kind, bad)
+		assert.Contains(t, flash.Message, wantErr, bad)
+		assert.Equal(t, "https://api.example.com/hooks", *forwardURL(), bad)
+	}
+
+	// Submitting it blank clears it.
+	rec = postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {""}}, cookie)
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+	assert.Nil(t, forwardURL())
+}
+
+// With private networks not allowed, the edit and create forms reject a
+// forward URL the forwarder could never reach, saying how to reach a local
+// server instead.
+func TestWebhookHandler_Forms_RejectPrivateForwardURL(t *testing.T) {
+	for _, forwardURL := range []string{
+		"http://localhost:8080/hooks",
+		"http://127.0.0.1:3000/hooks",
+		"http://" + privateHost + "/hooks",
+	} {
+		t.Run(forwardURL, func(t *testing.T) {
+			h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+			user := &models.User{Email: "a@b.com"}
+			userRepo.addUser(user)
+			cookie := sessionCookieFor(t, authSvc, user)
+			whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200, UserID: int(user.ID)})
+
+			rec := postUpdateForm(h, url.Values{"title": {"renamed"}, "forward_url": {forwardURL}}, cookie)
+			flash := flashFrom(t, rec)
+			assert.Equal(t, utils.FlashError, flash.Kind)
+			assert.Contains(t, flash.Message, "Changes not saved: forward URL points to a private or local address")
+			assert.Contains(t, flash.Message, "use a public tunnel URL (ngrok, cloudflared)")
+			assert.Equal(t, "t", whRepo.webhooks["wh1"].Title, "nothing is saved")
+			assert.Nil(t, whRepo.webhooks["wh1"].ForwardURL)
+
+			form := url.Values{"title": {"fwd"}, "forward_url": {forwardURL}}
+			req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.AddCookie(cookie)
+			rec = httptest.NewRecorder()
+			h.Create(rec, req)
+			flash = flashFrom(t, rec)
+			assert.Equal(t, utils.FlashError, flash.Kind)
+			assert.Contains(t, flash.Message, "Couldn't create the endpoint: forward URL points to a private or local address")
+			assert.Len(t, whRepo.webhooks, 1, "no webhook is created")
+		})
+	}
+}
+
+// The edit form checks a forward URL's destination as it is set, not on
+// every save: a saved forward URL whose host now resolves to a private
+// address doesn't stop the owner editing the webhook's other settings.
+func TestWebhookHandler_UpdateWebhook_UnchangedForwardURLNotRechecked(t *testing.T) {
+	resolver := testResolver{"rebound.example.com": {netip.MustParseAddr("93.184.215.14")}}
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandlerWith(t, service.ForwardPolicy{Resolver: resolver})
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+	cookie := sessionCookieFor(t, authSvc, user)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200, UserID: int(user.ID)})
+
+	rec := postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {"https://rebound.example.com/hooks"}}, cookie)
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+
+	resolver["rebound.example.com"] = []netip.Addr{netip.MustParseAddr("10.0.0.7")}
+
+	rec = postUpdateForm(h, url.Values{"title": {"renamed"}, "forward_url": {"https://rebound.example.com/hooks"}}, cookie)
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind, flashFrom(t, rec).Message)
+	assert.Equal(t, "renamed", whRepo.webhooks["wh1"].Title)
+	assert.Equal(t, "https://rebound.example.com/hooks", *whRepo.webhooks["wh1"].ForwardURL)
+
+	rec = postUpdateForm(h, url.Values{"title": {"renamed"}, "forward_url": {"https://rebound.example.com/other"}}, cookie)
+	flash := flashFrom(t, rec)
+	assert.Equal(t, utils.FlashError, flash.Kind, "a changed forward URL is checked")
+	assert.Contains(t, flash.Message, "forward URL points to a private or local address")
+	assert.Equal(t, "https://rebound.example.com/hooks", *whRepo.webhooks["wh1"].ForwardURL)
+}
+
+// A self-hosted instance that allows private networks accepts them.
+func TestWebhookHandler_UpdateWebhook_PrivateForwardURLAllowedByPolicy(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandlerWith(t,
+		service.ForwardPolicy{AllowPrivateNetworks: true, Resolver: testForwardPolicy.Resolver})
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200, UserID: int(user.ID)})
+
+	rec := postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {"http://localhost:8080/hooks"}}, sessionCookieFor(t, authSvc, user))
+
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+	require.NotNil(t, whRepo.webhooks["wh1"].ForwardURL)
+	assert.Equal(t, "http://localhost:8080/hooks", *whRepo.webhooks["wh1"].ForwardURL)
+}
+
+func TestWebhookHandler_UpdateWebhook_GuestCantSetForwardURL(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200})
+
+	rec := postUpdateForm(h, url.Values{"title": {"renamed"}, "forward_url": {"https://api.example.com/hooks"}}, nil)
+
+	assert.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind, "the rest of the form still saves")
+	assert.Equal(t, "renamed", whRepo.webhooks["wh1"].Title)
+	assert.Nil(t, whRepo.webhooks["wh1"].ForwardURL, "a guest webhook never gets a forward URL")
+}
+
+func TestWebhookHandler_Create_WithForwardURL(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+
+	form := url.Values{"title": {"fwd"}, "forward_url": {"https://api.example.com/hooks"}}
+	req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Create(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	require.Len(t, whRepo.webhooks, 1)
+	for _, w := range whRepo.webhooks {
+		require.NotNil(t, w.ForwardURL)
+		assert.Equal(t, "https://api.example.com/hooks", *w.ForwardURL)
+	}
+}
+
 func TestWebhookHandler_HandleWebhookRequest_NotFound(t *testing.T) {
 	h, _, _, _, _, _ := newTestWebhookHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/webhooks/missing", nil)
@@ -512,6 +731,41 @@ func TestWebhookHandler_HandleWebhookRequest_RecordsSubpath(t *testing.T) {
 	require.Len(t, whRepo.insertedRequests, 1)
 	assert.Equal(t, "/orders/42", whRepo.insertedRequests[0].Path)
 	assert.Equal(t, "1", whRepo.insertedRequests[0].Query["x"])
+}
+
+// The capture keeps what was sent: the escaped subpath, the raw query, and
+// every value of a repeated header or query parameter.
+func TestWebhookHandler_HandleWebhookRequest_RecordsRequestFaithfully(t *testing.T) {
+	for name, tc := range map[string]struct {
+		target   string
+		wantPath string
+	}{
+		"escaped slash":         {target: "/webhooks/wh1/files/a%2Fb?b=x%20y&a=1&a=2", wantPath: "/files/a%2Fb"},
+		"default escapes":       {target: "/webhooks/wh1/files/a%20b?b=x%20y&a=1&a=2", wantPath: "/files/a%20b"},
+		"plain path":            {target: "/webhooks/wh1/files?b=x%20y&a=1&a=2", wantPath: "/files"},
+		"bare trailing slash":   {target: "/webhooks/wh1/?b=x%20y&a=1&a=2", wantPath: "/"},
+		"escaped and unescaped": {target: "/webhooks/wh1/a%2Fb/c%20d/%7Ee?b=x%20y&a=1&a=2", wantPath: "/a%2Fb/c%20d/%7Ee"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+			whRepo.put(&models.Webhook{ID: "wh1", ResponseCode: http.StatusOK})
+
+			req := httptest.NewRequest(http.MethodPost, tc.target, nil)
+			req.Header.Add("X-Multi", "one")
+			req.Header.Add("X-Multi", "two, three")
+			req.Header.Set("X-Single", "only")
+			serveWebhook(h, httptest.NewRecorder(), req)
+
+			require.Len(t, whRepo.insertedRequests, 1)
+			wr := whRepo.insertedRequests[0]
+			assert.Equal(t, tc.wantPath, wr.Path)
+			assert.Equal(t, "b=x%20y&a=1&a=2", wr.RawQuery)
+			assert.Equal(t, []string{"one", "two, three"}, wr.Headers["X-Multi"], "repeated values aren't joined")
+			assert.Equal(t, "only", wr.Headers["X-Single"])
+			assert.Equal(t, []string{"1", "2"}, wr.Query["a"])
+			assert.Equal(t, "x y", wr.Query["b"])
+		})
+	}
 }
 
 func TestWebhookHandler_HandleWebhookRequest_InvalidStoredResponseCode(t *testing.T) {
@@ -736,6 +990,192 @@ func TestWebhookHandler_StreamWebhookEvents_ReplaysMissedRequests(t *testing.T) 
 			run.waitFor(t, "req-live", "3 captured requests")
 		})
 	}
+}
+
+// recordDelivery records a delivery the target answered with status, started
+// at startedAt, as the forwarder does.
+func recordDelivery(t *testing.T, h *WebhookHandler, webhookID, requestID, id string, status int, startedAt time.Time) models.Delivery {
+	t.Helper()
+	d := models.Delivery{
+		ID: id, RequestID: requestID, WebhookID: webhookID, Trigger: models.DeliveryTriggerAuto,
+		TargetURL: "https://hooks.example.com/in", Outcome: models.DeliveryOutcomeForStatus(status), StatusCode: &status, StartedAt: startedAt,
+	}
+	require.NoError(t, h.webhookSvc.RecordDelivery(&d))
+	return d
+}
+
+func TestWebhookHandler_StreamWebhookEvents_ActivePatchesDeliveries(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	owner := &models.User{Email: "owner@example.com"}
+	userRepo.addUser(owner)
+	forwardURL := "https://hooks.example.com/in"
+	whRepo.put(&models.Webhook{ID: "wh", UserID: int(owner.ID), ForwardURL: &forwardURL})
+
+	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, owner))
+	run := startStream(t, h, req)
+	recordRequest(t, h, "wh", "req-1")
+	// The streamed row offers the replay to the forward URL.
+	run.waitFor(t, "selector #request-log-list-wh", "Replay to forward URL")
+
+	recordDelivery(t, h, "wh", "req-1", "del-1", http.StatusBadGateway, time.Now().UTC())
+	run.waitFor(t,
+		`id="delivery-badge-req-1"`, "Last delivery: 502 Bad Gateway",
+		`id="delivery-list-req-1"`, `id="delivery-del-1"`)
+}
+
+// Saving the webhook's settings updates the replay targets of the page's
+// rows: the forwardTo signal they follow is patched, and rows streamed later
+// are rendered for the new forward URL. Other pages' streams get nothing.
+func TestWebhookHandler_StreamWebhookEvents_SettingsUpdateReplayTargets(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	owner := &models.User{Email: "owner@example.com"}
+	userRepo.addUser(owner)
+	forwardURL := "https://hooks.example.com/in"
+	whRepo.put(&models.Webhook{ID: "wh", UserID: int(owner.ID), ForwardURL: &forwardURL})
+	cookie := sessionCookieFor(t, authSvc, owner)
+
+	stream := func(query string) *streamRun {
+		req := httptest.NewRequest(http.MethodGet, "/webhook-stream/wh"+query, nil)
+		req.AddCookie(cookie)
+		return startStream(t, h, req)
+	}
+	page, requestPage, sidebar := stream("?active"), stream("?request=req-0"), stream("")
+
+	cleared, err := h.webhookSvc.GetWebhook("wh")
+	require.NoError(t, err)
+	cleared.ForwardURL = nil
+	require.NoError(t, h.webhookSvc.UpdateWebhook(cleared))
+
+	for _, run := range []*streamRun{page, requestPage} {
+		run.waitFor(t, "event: datastar-patch-signals", `"forwardTo":""`)
+	}
+	recordRequest(t, h, "wh", "req-1")
+	page.waitFor(t, "req-1")
+	row := page.rec.body()[strings.Index(page.rec.body(), "req-1"):]
+	assert.Contains(t, row, `style="display: none"`, "the new row's forward replay starts hidden")
+
+	sidebar.waitFor(t, "req-1")
+	assert.NotContains(t, sidebar.rec.body(), "datastar-patch-signals")
+}
+
+// A guest webhook claimed while its page is open forwards once a forward URL
+// is set, so the page's replay controls offer the forward URL without a
+// reload, those of rows streamed later included.
+func TestWebhookHandler_StreamWebhookEvents_ClaimedGuestWebhookOffersForwardReplay(t *testing.T) {
+	h, whRepo, _, userRepo, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+	page := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil))
+
+	owner := &models.User{Email: "owner@example.com"}
+	userRepo.addUser(owner)
+	require.NoError(t, h.webhookSvc.ClaimGuestWebhook("wh", owner.ID))
+	claimed, err := h.webhookSvc.GetWebhook("wh")
+	require.NoError(t, err)
+	forwardURL := "https://hooks.example.com/in"
+	claimed.ForwardURL = &forwardURL
+	require.NoError(t, h.webhookSvc.UpdateWebhook(claimed))
+
+	page.waitFor(t, "event: datastar-patch-signals", `"forwardTo":"https://hooks.example.com/in"`)
+	recordRequest(t, h, "wh", "req-1")
+	page.waitFor(t, "req-1")
+	row := page.rec.body()[strings.Index(page.rec.body(), "req-1"):]
+	assert.Contains(t, row, `value="forward"`)
+	assert.Contains(t, row, `data-show="!!$forwardTo"`)
+}
+
+// Streamed rows offer Delete only to viewers who can manage the webhook: not
+// to a signed-in user viewing a guest webhook.
+func TestWebhookHandler_StreamWebhookEvents_DeleteOnlyForManagers(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	user := &models.User{Email: "jane@example.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	guest := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil))
+	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	signedIn := startStream(t, h, req)
+
+	recordRequest(t, h, "wh", "req-1")
+	guest.waitFor(t, `action="/requests/req-1/replay"`, `action="/requests/req-1/delete"`)
+	signedIn.waitFor(t, `action="/requests/req-1/replay"`)
+	assert.NotContains(t, signedIn.rec.body(), `action="/requests/req-1/delete"`)
+}
+
+// Deliveries are listed by when they started, however they finish: an
+// automatic delivery that outlasts a later replay stays below it, and the
+// badge keeps showing the replay.
+func TestWebhookHandler_StreamWebhookEvents_DeliveriesInStartOrder(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil))
+	recordRequest(t, h, "wh", "req-1")
+	started := time.Now().UTC()
+	recordDelivery(t, h, "wh", "req-1", "del-replay", http.StatusOK, started.Add(time.Second))
+	recordDelivery(t, h, "wh", "req-1", "del-auto", http.StatusInternalServerError, started)
+
+	// The last list patch has both deliveries, newest started first.
+	run.waitFor(t, `id="delivery-del-auto"`)
+	body := run.rec.body()
+	lastList := body[strings.LastIndex(body, `id="delivery-list-req-1"`):]
+	replay, auto := strings.Index(lastList, `id="delivery-del-replay"`), strings.Index(lastList, `id="delivery-del-auto"`)
+	require.NotEqual(t, -1, replay, "the replay is still listed")
+	assert.Less(t, replay, auto, "the replay started last, so it stays on top")
+
+	lastBadge := body[strings.LastIndex(body, `id="delivery-badge-req-1"`):]
+	lastBadge = lastBadge[:strings.Index(lastBadge, `id="delivery-list-req-1"`)] // the badge is patched before the list
+	assert.Contains(t, lastBadge, "Last delivery: 200 OK")
+}
+
+func TestWebhookHandler_StreamWebhookEvents_RequestPagePatchesOnlyItsDeliveries(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?request=req-shown", nil))
+	recordDelivery(t, h, "wh", "req-other", "del-other", http.StatusOK, time.Now().UTC())
+	recordDelivery(t, h, "wh", "req-shown", "del-shown", http.StatusOK, time.Now().UTC())
+
+	run.waitFor(t, `id="delivery-list-req-shown"`, `id="delivery-del-shown"`)
+	body := run.rec.body()
+	assert.NotContains(t, body, "del-other")
+	assert.NotContains(t, body, "delivery-badge-", "the request page has no request list")
+
+	// New captures still reach the sidebar, but not a main request list.
+	recordRequest(t, h, "wh", "req-new")
+	run.waitFor(t, "selector #request-log-wh", "req-new")
+	assert.NotContains(t, run.rec.body(), "request-log-list-wh")
+}
+
+func TestWebhookHandler_StreamWebhookEvents_SidebarSkipsDeliveries(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh", nil))
+	recordDelivery(t, h, "wh", "req-1", "del-1", http.StatusOK, time.Now().UTC())
+	// Events are handled in order, so once the capture is streamed the
+	// delivery before it has been skipped.
+	recordRequest(t, h, "wh", "req-2")
+	run.waitFor(t, "req-2")
+	assert.NotContains(t, run.rec.body(), "del-1")
+}
+
+// Missed requests are replayed with their deliveries.
+func TestWebhookHandler_StreamWebhookEvents_ReplaysMissedDeliveries(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	status := http.StatusOK
+	missed := models.WebhookRequest{
+		ID: "req-missed", WebhookID: "wh", ReceivedAt: time.Now().UTC(),
+		Deliveries: []models.Delivery{{ID: "del-missed", RequestID: "req-missed", WebhookID: "wh", Outcome: models.DeliveryOutcomeForStatus(status), StatusCode: &status}},
+	}
+	whRepo.put(&models.Webhook{ID: "wh", Requests: []models.WebhookRequest{missed}})
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active&since=", nil))
+	run.waitFor(t, "req-missed", `id="delivery-del-missed"`, "Last delivery: 200 OK")
+
+	recordRequest(t, h, "wh", "req-live")
+	run.waitFor(t, "req-live")
 }
 
 func TestWebhookHandler_StreamWebhookEvents_ReplayErrorEndsStream(t *testing.T) {

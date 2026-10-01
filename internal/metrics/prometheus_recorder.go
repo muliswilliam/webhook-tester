@@ -1,5 +1,11 @@
 package metrics
 
+import (
+	"time"
+
+	"webhook-tester/internal/models"
+)
+
 type PrometheusRecorder struct{}
 
 func (r *PrometheusRecorder) IncWebhooksCreated() {
@@ -16,4 +22,9 @@ func (r *PrometheusRecorder) IncSignUp() {
 
 func (r *PrometheusRecorder) IncLogin() {
 	LoginsTotal.Inc()
+}
+
+func (r *PrometheusRecorder) ObserveDelivery(outcome models.DeliveryOutcome, duration time.Duration) {
+	DeliveriesTotal.WithLabelValues(string(outcome)).Inc()
+	DeliveryDuration.Observe(duration.Seconds())
 }

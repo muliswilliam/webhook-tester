@@ -150,6 +150,10 @@
         </div>
 
         {{ $activeID := .Webhook.ID }}
+        {{/* The stream of the page's webhook also updates the main panel:
+          "stream-scope" is the query that says how. By default it is the
+          workspace's request log; pages showing something else override it.
+        */}}
         <div class="flex-1 space-y-2 overflow-y-auto px-3 py-2">
           {{ range .Webhooks }}
             <div
@@ -209,7 +213,7 @@
                 style="display: none"
                 data-show="$cardOpen_{{ signalKey .ID }} && !$railCollapsed"
                 data-init="@get('/webhook-stream/{{ .ID }}?since={{ streamCursor .Requests }}{{- if eq .ID $activeID -}}
-                  &active
+                  {{ block "stream-scope" $ }}&active{{ end }}
                 {{- end -}}', {retry: 'always', retryMaxCount: Infinity, openWhenHidden: true, filterSignals: {include: /^$/}})"
                 class="request-log mt-2 space-y-1 border-t pt-2"
                 id="request-log-{{ .ID }}"
@@ -291,62 +295,7 @@
           onsubmit="return serializeHeaderRows(this)"
         >
           {{ .CSRFField }}
-          <div>
-            <label for="create_title" class="field-label">Title</label>
-            <input
-              id="create_title"
-              type="text"
-              name="title"
-              class="field"
-              placeholder="Payment events"
-              required
-            />
-          </div>
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label for="create_response_code" class="field-label">Response code</label>
-              <input
-                id="create_response_code"
-                type="number"
-                inputmode="numeric"
-                name="response_code"
-                class="field"
-                value="200"
-                min="{{ minResponseCode }}"
-                max="{{ maxResponseCode }}"
-                required
-              />
-            </div>
-            <div>
-              <label for="create_content_type" class="field-label">Content type</label>
-              <select id="create_content_type" name="content_type" class="field">
-                {{ template "content-type-options" "application/json" }}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label for="create_response_delay" class="field-label">Response delay (ms)</label>
-            <input
-              id="create_response_delay"
-              type="number"
-              inputmode="numeric"
-              name="response_delay"
-              class="field"
-              value="0"
-              min="0"
-              max="{{ maxResponseDelay }}"
-            />
-          </div>
-          <div>
-            <label for="create_payload" class="field-label">Response payload</label>
-            <textarea id="create_payload" name="payload" rows="4" class="field font-mono">
-{"message":"ok"}</textarea>
-          </div>
-          {{ template "header-editor" }}
-          <label class="check-row">
-            <input type="checkbox" id="create_notify" name="notify_on_event" value="true" />
-            <span>Notify me when a request arrives</span>
-          </label>
+          {{ template "webhook-fields" (newWebhookFields .User.ID) }}
           <div class="flex justify-end gap-3 pt-2">
             <button type="button" data-on:click="$showModal = false" class="btn-secondary">
               Cancel
@@ -378,30 +327,179 @@
   </div>
 {{ end }}
 
-{{/* Key/value editor for a webhook's response headers, prefilled from the
-  headers map passed in (nil for none). serializeHeaderRows turns the rows into
-  the hidden response_headers field when the form submits.
+{{/* The fields of the create and edit webhook forms, which describe them
+  the same way. A webhook that can't forward gets a sign-in prompt instead
+  of the forward URL input. Expects a view.WebhookFields.
+*/}}
+{{ define "webhook-fields" }}
+  {{ $p := .IDPrefix }}
+  <div>
+    <label for="{{ $p }}title" class="field-label">Title</label>
+    <input
+      id="{{ $p }}title"
+      type="text"
+      name="title"
+      class="field"
+      value="{{ .Webhook.Title }}"
+      placeholder="Payment events"
+      required
+      aria-describedby="{{ $p }}title_hint"
+    />
+    <p id="{{ $p }}title_hint" class="mt-1.5 text-xs leading-5 text-muted">
+      A name to help you find this endpoint later.
+    </p>
+  </div>
+  <div class="grid gap-4 sm:grid-cols-2">
+    <div>
+      <label for="{{ $p }}response_code" class="field-label">Response code</label>
+      <input
+        id="{{ $p }}response_code"
+        type="number"
+        inputmode="numeric"
+        name="response_code"
+        class="field"
+        value="{{ .Webhook.ResponseCode }}"
+        min="{{ minResponseCode }}"
+        max="{{ maxResponseCode }}"
+        required
+        aria-describedby="{{ $p }}response_code_hint"
+      />
+      <p id="{{ $p }}response_code_hint" class="mt-1.5 text-xs leading-5 text-muted">
+        The HTTP status sent back, {{ minResponseCode }} to {{ maxResponseCode }}.
+      </p>
+    </div>
+    <div>
+      <label for="{{ $p }}content_type" class="field-label">Content type</label>
+      <select
+        id="{{ $p }}content_type"
+        name="content_type"
+        class="field"
+        aria-describedby="{{ $p }}content_type_hint"
+      >
+        {{ template "content-type-options" .ContentType }}
+      </select>
+      <p id="{{ $p }}content_type_hint" class="mt-1.5 text-xs leading-5 text-muted">
+        The Content-Type of the response.
+      </p>
+    </div>
+  </div>
+  <div>
+    <label for="{{ $p }}response_delay" class="field-label">Response delay (ms)</label>
+    <input
+      id="{{ $p }}response_delay"
+      type="number"
+      inputmode="numeric"
+      name="response_delay"
+      class="field"
+      value="{{ .Webhook.ResponseDelay }}"
+      min="0"
+      max="{{ maxResponseDelay }}"
+      aria-describedby="{{ $p }}response_delay_hint"
+    />
+    <p id="{{ $p }}response_delay_hint" class="mt-1.5 text-xs leading-5 text-muted">
+      How long to wait before responding, up to {{ maxResponseDelay }} ms. Useful for testing
+      timeouts.
+    </p>
+  </div>
+  <div>
+    <label for="{{ $p }}payload" class="field-label">Response payload</label>
+    <textarea
+      id="{{ $p }}payload"
+      name="payload"
+      rows="4"
+      class="field block font-mono"
+      aria-describedby="{{ $p }}payload_hint"
+    >
+{{ .Payload }}</textarea>
+    <p id="{{ $p }}payload_hint" class="mt-1.5 text-xs leading-5 text-muted">
+      The body sent back to every request. Leave blank for an empty body.
+    </p>
+  </div>
+  {{ template "header-editor" (headerEditor (print $p "response_headers") .Webhook.ResponseHeaders) }}
+  {{ if .Webhook.CanForward }}
+    {{ template "forward-url-field" (forwardURLField (print $p "forward_url") .Webhook.ForwardURL) }}
+  {{ else }}
+    {{ template "forward-url-signin" }}
+  {{ end }}
+{{ end }}
+
+{{/* Key/value editor for a webhook's response headers; expects a
+  headerEditor, prefilled from its headers (nil for none). serializeHeaderRows
+  turns the rows into the hidden response_headers field when the form submits.
 */}}
 {{ define "header-editor" }}
-  <div class="space-y-2" data-header-editor>
+  <div
+    id="{{ .ID }}"
+    role="group"
+    aria-labelledby="{{ .ID }}_label"
+    aria-describedby="{{ .ID }}_hint"
+    data-header-editor
+  >
     <div class="flex items-center justify-between">
-      <span class="field-label mb-0">Response headers</span>
+      <span id="{{ .ID }}_label" class="field-label mb-0">Response headers</span>
       <button type="button" onclick="addHeaderRow(this)" class="text-link text-sm">
         Add header
       </button>
     </div>
-    <div class="header-rows space-y-2">
-      {{ range $name, $value := . }}
+    <div class="header-rows">
+      {{ range $name, $value := .Headers }}
         {{ template "header-row" (headerRow $name $value) }}
       {{ end }}
     </div>
+    <p id="{{ .ID }}_hint" class="mt-1.5 text-xs leading-5 text-muted">
+      Extra headers added to every response.
+    </p>
     <input type="hidden" name="response_headers" />
+  </div>
+{{ end }}
+
+{{/* Forward URL input of a webhook form; expects a forwardURLField. The
+  server validates it too, and a blank value turns forwarding off.
+*/}}
+{{ define "forward-url-field" }}
+  <div>
+    <label for="{{ .ID }}" class="field-label">Forward URL</label>
+    <input
+      id="{{ .ID }}"
+      type="url"
+      name="forward_url"
+      class="field font-mono"
+      value="{{ .Value }}"
+      placeholder="https://your-tunnel.ngrok-free.app/webhooks"
+      pattern="[hH][tT][tT][pP][sS]?://.+"
+      title="An http:// or https:// URL"
+      maxlength="{{ maxForwardURLLength }}"
+      autocomplete="off"
+      spellcheck="false"
+      aria-describedby="{{ .ID }}_hint"
+    />
+    <p id="{{ .ID }}_hint" class="mt-1.5 text-xs leading-5 text-muted">
+      Every captured request is also sent here, with the same method, path, headers and body. To
+      reach a server on your own machine, use a public tunnel URL (ngrok, cloudflared). Leave blank
+      to turn forwarding off.
+    </p>
+  </div>
+{{ end }}
+
+{{/* Shown instead of the forward URL input on webhooks without an owner,
+  which don't forward.
+*/}}
+{{ define "forward-url-signin" }}
+  <div class="rounded-lg border px-3.5 py-3">
+    <p class="field-label mb-0">Forward URL</p>
+    <p class="mt-1 text-sm leading-6 text-muted">
+      Send every captured request on to your own server.
+      <a href="/register" class="text-link font-semibold">Create an account</a>
+      or
+      <a href="/login" class="text-link font-semibold">sign in</a>
+      to set a forward URL.
+    </p>
   </div>
 {{ end }}
 
 {{/* One header editor row; expects a headerRow, or nil for a blank row. */}}
 {{ define "header-row" }}
-  <div class="header-row flex gap-2">
+  <div class="header-row mt-2 flex gap-2">
     <input
       type="text"
       class="field"

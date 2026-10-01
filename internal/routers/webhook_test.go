@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"webhook-tester/config"
 	appMetrics "webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/routers"
@@ -20,9 +21,10 @@ func newTestWebhookRouter(t *testing.T) (http.Handler, *gorm.DB) {
 	db := newAPITestDB(t)
 	logger := testLogger()
 	authSvc := service.NewAuthService(store.NewGormUserRepo(db, logger), db, "test-auth-secret")
-	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger))
+	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger), store.NewGormDeliveryRepo(db, logger), testDomain, testForwardPolicy)
 	webhookReqSvc := service.NewWebhookRequestService(store.NewGormWebhookRequestRepo(db, logger))
-	return routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, logger, &appMetrics.PrometheusRecorder{}), db
+	forwarder := newTestForwarder(t, webhookSvc, config.Forwarding{})
+	return routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, forwarder, logger, &appMetrics.PrometheusRecorder{}), db
 }
 
 func TestNewWebhookRouter_CapturesSubpaths(t *testing.T) {
@@ -61,12 +63,13 @@ func TestNewWebhookRouter_UnknownWebhookReturnsNotFound(t *testing.T) {
 	webhookReqRepo := store.NewGormWebhookRequestRepo(db, logger)
 
 	authSvc := service.NewAuthService(userRepo, db, "test-auth-secret")
-	webhookSvc := service.NewWebhookService(webhookRepo)
+	webhookSvc := service.NewWebhookService(webhookRepo, store.NewGormDeliveryRepo(db, logger), testDomain, testForwardPolicy)
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
 
 	metricsRec := &appMetrics.PrometheusRecorder{}
 
-	r := routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, logger, metricsRec)
+	forwarder := newTestForwarder(t, webhookSvc, config.Forwarding{})
+	r := routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, forwarder, logger, metricsRec)
 
 	req := httptest.NewRequest(http.MethodGet, "/some-webhook-id", nil)
 	rec := httptest.NewRecorder()

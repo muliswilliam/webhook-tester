@@ -31,7 +31,10 @@ func (r *GormWebhookRequestRepo) Insert(req *models.WebhookRequest) error {
 
 func (r *GormWebhookRequestRepo) GetByID(id string) (*models.WebhookRequest, error) {
 	var wr models.WebhookRequest
-	if err := r.DB.First(&wr, "id = ?", id).Error; err != nil {
+	err := r.DB.Preload("Deliveries", func(db *gorm.DB) *gorm.DB {
+		return db.Order(newestDeliveriesFirst)
+	}).First(&wr, "id = ?", id).Error
+	if err != nil {
 		r.logger.Printf("get request %s failed: %v", id, err)
 		return nil, err
 	}
@@ -50,18 +53,31 @@ func (r *GormWebhookRequestRepo) ListByWebhook(webhookID string) ([]models.Webho
 	return list, nil
 }
 
+// DeleteByID removes one request together with its deliveries.
 func (r *GormWebhookRequestRepo) DeleteByID(id string) error {
-	if err := r.DB.Delete(&models.WebhookRequest{}, "id = ?", id).Error; err != nil {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := deleteDeliveriesByRequest(tx, id); err != nil {
+			return err
+		}
+		return tx.Delete(&models.WebhookRequest{}, "id = ?", id).Error
+	})
+	if err != nil {
 		r.logger.Printf("delete request %s failed: %v", id, err)
 		return err
 	}
 	return nil
 }
 
+// DeleteByWebhook removes all requests for a webhook together with their
+// deliveries.
 func (r *GormWebhookRequestRepo) DeleteByWebhook(webhookID string) error {
-	if err := r.DB.
-		Where("webhook_id = ?", webhookID).
-		Delete(&models.WebhookRequest{}).Error; err != nil {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := deleteDeliveriesByWebhooks(tx, webhookID); err != nil {
+			return err
+		}
+		return tx.Where("webhook_id = ?", webhookID).Delete(&models.WebhookRequest{}).Error
+	})
+	if err != nil {
 		r.logger.Printf("delete all requests for %s failed: %v", webhookID, err)
 		return err
 	}

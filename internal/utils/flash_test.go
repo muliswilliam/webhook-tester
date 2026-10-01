@@ -3,9 +3,11 @@ package utils
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func requestWithCookies(rec *httptest.ResponseRecorder) *http.Request {
@@ -40,5 +42,24 @@ func TestPopFlash_RejectsTamperedCookies(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "/", nil)
 		r.AddCookie(&http.Cookie{Name: flashCookieName, Value: value})
 		assert.Nil(t, PopFlash(httptest.NewRecorder(), r), value)
+	}
+}
+
+// A browser drops a cookie over 4096 bytes, and with it the notice, so a
+// long message is cut short instead.
+func TestSetFlash_KeepsCookieUnderBrowserLimit(t *testing.T) {
+	for _, message := range []string{strings.Repeat("a", 5000), strings.Repeat("é", 5000)} {
+		rec := httptest.NewRecorder()
+		SetFlashError(rec, message)
+
+		header := rec.Result().Header.Get("Set-Cookie")
+		name, value, _ := strings.Cut(strings.SplitN(header, ";", 2)[0], "=")
+		assert.Less(t, len(name)+len(value), 4096)
+
+		got := PopFlash(httptest.NewRecorder(), requestWithCookies(rec))
+		require.NotNil(t, got)
+		assert.Equal(t, FlashError, got.Kind)
+		assert.True(t, strings.HasSuffix(got.Message, "..."), got.Message)
+		assert.True(t, strings.HasPrefix(message, strings.TrimSuffix(got.Message, "...")))
 	}
 }

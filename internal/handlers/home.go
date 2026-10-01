@@ -37,11 +37,13 @@ func NewHomeHandler(
 }
 
 type HomePageData struct {
-	CSRFField      template.HTML
-	User           models.User
-	Webhooks       []models.Webhook
-	Webhook        models.Webhook
-	ContentType    string
+	CSRFField template.HTML
+	User      models.User
+	Webhooks  []models.Webhook
+	Webhook   models.Webhook
+	// CanManage is set when the viewer may change, clear or delete Webhook
+	// and its requests; see models.Webhook.ManagedBy.
+	CanManage      bool
 	RequestRows    []requestRowView
 	RequestCounter requestCounterView
 	Domain         string
@@ -145,15 +147,12 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		user = &models.User{}
 	}
 
-	var contentType string
-	if activeWebhook.ContentType != nil {
-		contentType = *activeWebhook.ContentType
-	}
-
 	csrfField := csrf.TemplateField(r)
+	forwardURL := activeWebhook.ActiveForwardURL()
+	canManage := activeWebhook.ManagedBy(userID)
 	rows := make([]requestRowView, len(activeWebhook.Requests))
 	for i, wr := range activeWebhook.Requests {
-		rows[i] = requestRowView{Request: wr, CSRFField: csrfField}
+		rows[i] = requestRowView{Request: wr, CSRFField: csrfField, ForwardURL: forwardURL, CanManage: canManage}
 	}
 
 	// RenderHTML the home page
@@ -162,7 +161,7 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		User:           *user,
 		Webhooks:       webhooks,
 		Webhook:        activeWebhook,
-		ContentType:    contentType,
+		CanManage:      canManage,
 		RequestRows:    rows,
 		RequestCounter: requestCounterView{WebhookID: activeWebhook.ID, Count: int64(len(activeWebhook.Requests))},
 		Domain:         os.Getenv("DOMAIN"),

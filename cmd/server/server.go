@@ -5,6 +5,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	metrics "github.com/slok/go-http-metrics/metrics/prometheus"
 	metricsMiddleware "github.com/slok/go-http-metrics/middleware"
@@ -40,8 +42,18 @@ type Server struct {
 	// MetricsSrv serves Prometheus metrics on a separate, internal-only
 	// address, so they aren't exposed on the public port.
 	MetricsSrv *http.Server
+	// Forwarding configures the relay of captured requests to forward URLs.
+	Forwarding config.Forwarding
+	// Domain is the public base URL of this instance (the DOMAIN setting).
+	// Webhook endpoints are served under it, so replays target it and
+	// forward URLs may not point back at it.
+	Domain string
+
 	// WebhookSvc is set by MountHandlers.
 	WebhookSvc *service.WebhookService
+	// Forwarder is set by MountHandlers. Wait on it during shutdown so
+	// in-flight forwards are recorded.
+	Forwarder *service.Forwarder
 }
 
 func (srv *Server) MountHandlers() {
@@ -50,12 +62,25 @@ func (srv *Server) MountHandlers() {
 	repo := store.NewGormWebookRepo(srv.DB, srv.Logger)
 	userRepo := store.NewGormUserRepo(srv.DB, srv.Logger)
 	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
-	webhookSvc := service.NewWebhookService(repo)
+	webhookSvc := service.NewWebhookService(repo, store.NewGormDeliveryRepo(srv.DB, srv.Logger), srv.Domain,
+		service.ForwardPolicy{AllowPrivateNetworks: srv.Forwarding.AllowPrivateNetworks})
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
 	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
 	srv.WebhookSvc = webhookSvc
 	metricsRec := appMetrics.PrometheusRecorder{}
+	forwarder := service.NewForwarder(srv.Forwarding, webhookSvc, &metricsRec, srv.Logger)
+	srv.Forwarder = forwarder
 	view.SetLogger(srv.Logger)
+
+	// The server's own registry rather than the global one, so mounting
+	// a second server in one process (as tests do) doesn't register the
+	// same collectors twice.
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+	appMetrics.Register(registry)
 	// Basic CORS
 	// for more ideas, see: https://developer.github.com/v3/#cross-origin-resource-sharing
 	r.Use(cors.Handler(cors.Options{
@@ -74,7 +99,7 @@ func (srv *Server) MountHandlers() {
 	r.NotFound(view.RenderNotFound)
 
 	mdlw := metricsMiddleware.New(metricsMiddleware.Config{
-		Recorder: metrics.NewRecorder(metrics.Config{}),
+		Recorder: metrics.NewRecorder(metrics.Config{Registry: registry}),
 	})
 
 	// Instrument all routes
@@ -84,14 +109,14 @@ func (srv *Server) MountHandlers() {
 	fs := http.FileServer(http.Dir("static"))
 	r.Handle("/static/*", http.StripPrefix("/static/", fs))
 
-	r.Mount("/", routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, mailer.FromEnv(srv.Logger), &metricsRec, srv.Logger))
+	r.Mount("/", routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, forwarder, mailer.FromEnv(srv.Logger), &metricsRec, srv.Logger))
 
 	r.Mount("/api", routers.NewApiRouter(webhookSvc, authSvc, srv.Logger, &metricsRec))
-	r.Mount("/webhooks", routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, srv.Logger, &metricsRec))
+	r.Mount("/webhooks", routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, forwarder, srv.Logger, &metricsRec))
 
 	if srv.MetricsSrv != nil {
 		metricsMux := http.NewServeMux()
-		metricsMux.Handle("/metrics", promhttp.Handler())
+		metricsMux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{Registry: registry}))
 		srv.MetricsSrv.Handler = metricsMux
 	}
 
@@ -109,6 +134,10 @@ func (srv *Server) MountHandlers() {
 
 func NewServer() *Server {
 	config.LoadEnv()
+	forwarding, err := config.ForwardingFromEnv()
+	if err != nil {
+		log.Fatalf("invalid forwarding settings: %v", err)
+	}
 	conn := db.Connect()
 	db.AutoMigrate(conn)
 
@@ -135,5 +164,7 @@ func NewServer() *Server {
 		Logger:     log.New(os.Stdout, "[server] ", log.LstdFlags),
 		Srv:        &srv,
 		MetricsSrv: &http.Server{Addr: metricsAddr, ReadHeaderTimeout: 10 * time.Second},
+		Forwarding: forwarding,
+		Domain:     os.Getenv("DOMAIN"),
 	}
 }

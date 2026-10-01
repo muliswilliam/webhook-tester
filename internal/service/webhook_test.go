@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -194,7 +196,7 @@ func (f *fakeWebhookRepo) CountRequests(webhookID string) (int64, error) {
 
 func TestWebhookService_CreateWebhook(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 
 	w := &models.Webhook{ID: "abc"}
 	err := svc.CreateWebhook(w)
@@ -208,7 +210,7 @@ func TestWebhookService_CreateWebhook(t *testing.T) {
 
 func TestWebhookService_GetWebhook(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["abc"] = &models.Webhook{ID: "abc"}
 
 	w, err := svc.GetWebhook("abc")
@@ -221,7 +223,7 @@ func TestWebhookService_GetWebhook(t *testing.T) {
 
 func TestWebhookService_GetUserWebhook(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["abc"] = &models.Webhook{ID: "abc", UserID: 5}
 
 	w, err := svc.GetUserWebhook("abc", 5)
@@ -238,7 +240,7 @@ func TestWebhookService_GetUserWebhook(t *testing.T) {
 
 func TestWebhookService_ListWebhooks_Public(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["abc"] = &models.Webhook{ID: "abc"}
 
 	list, err := svc.ListWebhooks(0)
@@ -250,7 +252,7 @@ func TestWebhookService_ListWebhooks_Public(t *testing.T) {
 
 func TestWebhookService_ListWebhooks_ByUser(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["abc"] = &models.Webhook{ID: "abc", UserID: 7}
 
 	list, err := svc.ListWebhooks(7)
@@ -263,7 +265,7 @@ func TestWebhookService_ListWebhooks_ByUser(t *testing.T) {
 
 func TestWebhookService_ListWebhooks_Errors(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 
 	repo.getAllErr = assert.AnError
 	_, err := svc.ListWebhooks(0)
@@ -276,7 +278,7 @@ func TestWebhookService_ListWebhooks_Errors(t *testing.T) {
 
 func TestWebhookService_UpdateWebhook(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	w := &models.Webhook{ID: "abc"}
 
 	err := svc.UpdateWebhook(w)
@@ -289,7 +291,7 @@ func TestWebhookService_UpdateWebhook(t *testing.T) {
 }
 
 // receive returns the next event on sub, failing the test if none arrives.
-func receive(t *testing.T, sub *Subscription) RequestEvent {
+func receive(t *testing.T, sub *Subscription) Event {
 	t.Helper()
 	select {
 	case evt, ok := <-sub.Events:
@@ -297,7 +299,7 @@ func receive(t *testing.T, sub *Subscription) RequestEvent {
 		return evt
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for an event")
-		return RequestEvent{}
+		return Event{}
 	}
 }
 
@@ -314,7 +316,7 @@ func requireClosed(t *testing.T, sub *Subscription) {
 
 func TestWebhookService_RecordRequest_StoresStampsAndPublishes(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["abc"] = &models.Webhook{ID: "abc"}
 	sub := svc.Subscribe("abc")
 	defer sub.Close()
@@ -330,15 +332,170 @@ func TestWebhookService_RecordRequest_StoresStampsAndPublishes(t *testing.T) {
 	assert.Equal(t, wr.ReceivedAt, wr.ReceivedAt.Truncate(time.Microsecond), "stamped at DB precision")
 
 	evt := receive(t, sub)
+	assert.Equal(t, EventRequestCaptured, evt.Kind)
 	assert.Equal(t, "r1", evt.Request.ID)
 	require.NotNil(t, evt.Count)
 	assert.Equal(t, int64(1), *evt.Count)
 	assert.Empty(t, other.Events, "other webhooks' subscribers get nothing")
 }
 
+// fakeDeliveryRepo is an in-memory repository.DeliveryRepository.
+type fakeDeliveryRepo struct {
+	mu         sync.Mutex
+	deliveries []models.Delivery
+	insertErr  error
+	listErr    error
+}
+
+func (f *fakeDeliveryRepo) Insert(d *models.Delivery) error {
+	if f.insertErr != nil {
+		return f.insertErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deliveries = append(f.deliveries, *d)
+	return nil
+}
+
+// ListByRequest returns the request's deliveries, newest started first.
+func (f *fakeDeliveryRepo) ListByRequest(requestID string) ([]models.Delivery, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var list []models.Delivery
+	for _, d := range f.deliveries {
+		if d.RequestID == requestID {
+			list = append(list, d)
+		}
+	}
+	slices.SortFunc(list, func(a, b models.Delivery) int { return b.StartedAt.Compare(a.StartedAt) })
+	return list, nil
+}
+
+func TestWebhookService_RecordDelivery_StoresAndPublishesTheList(t *testing.T) {
+	deliveries := &fakeDeliveryRepo{}
+	svc := NewWebhookService(newFakeWebhookRepo(), deliveries, "", offlinePolicy)
+	sub := svc.Subscribe("abc")
+	defer sub.Close()
+	other := svc.Subscribe("other")
+	defer other.Close()
+
+	started := time.Now().UTC()
+	require.NoError(t, svc.RecordDelivery(&models.Delivery{ID: "d-new", RequestID: "r1", WebhookID: "abc", StartedAt: started.Add(time.Second)}))
+	// Started earlier, but finished later.
+	require.NoError(t, svc.RecordDelivery(&models.Delivery{ID: "d-old", RequestID: "r1", WebhookID: "abc", StartedAt: started}))
+
+	assert.Len(t, deliveries.deliveries, 2)
+	evt := receive(t, sub)
+	assert.Equal(t, EventDeliveryRecorded, evt.Kind)
+	assert.Equal(t, "d-new", evt.Delivery.ID)
+	assert.Equal(t, []string{"d-new"}, deliveryIDs(evt.Deliveries))
+	evt = receive(t, sub)
+	assert.Equal(t, "d-old", evt.Delivery.ID)
+	assert.Equal(t, "r1", evt.Delivery.RequestID)
+	assert.Equal(t, []string{"d-new", "d-old"}, deliveryIDs(evt.Deliveries), "newest started first")
+	assert.Empty(t, other.Events, "other webhooks' subscribers get nothing")
+}
+
+func TestWebhookService_RecordDelivery_Errors(t *testing.T) {
+	for name, repo := range map[string]*fakeDeliveryRepo{
+		"insert fails": {insertErr: assert.AnError},
+		"list fails":   {listErr: assert.AnError},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc := NewWebhookService(newFakeWebhookRepo(), repo, "", offlinePolicy)
+			sub := svc.Subscribe("abc")
+			defer sub.Close()
+
+			err := svc.RecordDelivery(&models.Delivery{ID: "d1", RequestID: "r1", WebhookID: "abc"})
+			assert.ErrorIs(t, err, assert.AnError)
+			assert.Empty(t, sub.Events, "nothing is published")
+		})
+	}
+}
+
+// Concurrent deliveries of a request are recorded one at a time, so the
+// last event's list always holds every delivery.
+func TestWebhookService_RecordDelivery_ConcurrentListsComplete(t *testing.T) {
+	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
+	sub := svc.Subscribe("abc")
+	defer sub.Close()
+
+	const n = 20
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			assert.NoError(t, svc.RecordDelivery(&models.Delivery{ID: fmt.Sprint(i), RequestID: "r1", WebhookID: "abc"}))
+		}()
+	}
+	wg.Wait()
+
+	for i := 1; i <= n; i++ {
+		assert.Len(t, receive(t, sub).Deliveries, i, "each event lists every delivery recorded before it")
+	}
+}
+
+func deliveryIDs(list []models.Delivery) []string {
+	ids := make([]string, len(list))
+	for i, d := range list {
+		ids[i] = d.ID
+	}
+	return ids
+}
+
+// The forward URL loop check and the replay target come from the same
+// domain.
+func TestWebhookService_Domain(t *testing.T) {
+	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "https://tester.example.com/base", offlinePolicy)
+
+	endpoint, err := svc.EndpointURL("abc")
+	require.NoError(t, err)
+	assert.Equal(t, "https://tester.example.com/base/webhooks/abc", endpoint)
+
+	loop := endpoint + "/orders"
+	err = svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &loop}, nil)
+	assert.ErrorContains(t, err, "own webhook endpoints")
+	elsewhere := "https://api.example.com/hooks"
+	assert.NoError(t, svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &elsewhere}, nil))
+
+	_, err = NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "://bad", offlinePolicy).EndpointURL("abc")
+	assert.Error(t, err)
+}
+
+// Saving a webhook tells its subscribers the forward URL replays now go to.
+func TestWebhookService_UpdateWebhook_PublishesForwardURL(t *testing.T) {
+	repo := newFakeWebhookRepo()
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
+	sub := svc.Subscribe("abc")
+	defer sub.Close()
+	forwardURL := "https://hooks.example.com/in"
+
+	require.NoError(t, svc.UpdateWebhook(&models.Webhook{ID: "abc", UserID: 1, ForwardURL: &forwardURL}))
+	require.NoError(t, svc.UpdateWebhook(&models.Webhook{ID: "abc", UserID: 1}))
+	require.NoError(t, svc.UpdateWebhook(&models.Webhook{ID: "abc", ForwardURL: &forwardURL}))
+
+	evt := receive(t, sub)
+	assert.Equal(t, EventWebhookUpdated, evt.Kind)
+	assert.Equal(t, forwardURL, evt.ForwardURL)
+	assert.Empty(t, receive(t, sub).ForwardURL, "cleared")
+	assert.Empty(t, receive(t, sub).ForwardURL, "a guest webhook doesn't forward")
+
+	repo.updateErr = assert.AnError
+	require.ErrorIs(t, svc.UpdateWebhook(&models.Webhook{ID: "abc", UserID: 1, ForwardURL: &forwardURL}), assert.AnError)
+	select {
+	case evt := <-sub.Events:
+		t.Fatalf("a failed save published %+v", evt)
+	default:
+	}
+}
+
 func TestWebhookService_RecordRequest_CountErrorStillPublishes(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.countRequestsErr = assert.AnError
 	sub := svc.Subscribe("abc")
 	defer sub.Close()
@@ -352,7 +509,7 @@ func TestWebhookService_RecordRequest_CountErrorStillPublishes(t *testing.T) {
 
 func TestWebhookService_RecordRequest_InsertErrorPublishesNothing(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.insertRequestErr = assert.AnError
 	sub := svc.Subscribe("abc")
 	defer sub.Close()
@@ -365,7 +522,7 @@ func TestWebhookService_RecordRequest_InsertErrorPublishesNothing(t *testing.T) 
 // Concurrent captures for one webhook publish in ReceivedAt order, which is
 // what makes the last delivered event a gap-free resume cursor.
 func TestWebhookService_RecordRequest_PublishesInCursorOrder(t *testing.T) {
-	svc := NewWebhookService(newFakeWebhookRepo())
+	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
 	sub := svc.Subscribe("abc")
 	defer sub.Close()
 
@@ -389,7 +546,7 @@ func TestWebhookService_RecordRequest_PublishesInCursorOrder(t *testing.T) {
 }
 
 func TestWebhookService_RecordRequest_ReleasesWebhookLocks(t *testing.T) {
-	svc := NewWebhookService(newFakeWebhookRepo())
+	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
 	for i := 0; i < 3; i++ {
 		require.NoError(t, svc.RecordRequest(&models.WebhookRequest{ID: fmt.Sprint(i), WebhookID: fmt.Sprint("wh", i)}))
 	}
@@ -399,7 +556,7 @@ func TestWebhookService_RecordRequest_ReleasesWebhookLocks(t *testing.T) {
 // A subscriber that stops reading is evicted rather than blocking capture;
 // it resumes from its cursor on reconnect.
 func TestWebhookService_Subscribe_EvictsSlowSubscriber(t *testing.T) {
-	svc := NewWebhookService(newFakeWebhookRepo())
+	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
 	slow := svc.Subscribe("abc")
 	defer slow.Close()
 
@@ -415,7 +572,7 @@ func TestWebhookService_Subscribe_EvictsSlowSubscriber(t *testing.T) {
 }
 
 func TestWebhookService_Subscription_CloseIsIdempotent(t *testing.T) {
-	svc := NewWebhookService(newFakeWebhookRepo())
+	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
 	sub := svc.Subscribe("abc")
 	sub.Close()
 	sub.Close()
@@ -425,7 +582,7 @@ func TestWebhookService_Subscription_CloseIsIdempotent(t *testing.T) {
 
 func TestWebhookService_GetRequestsAfter(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	t0 := time.Now().UTC()
 	repo.webhooks["abc"] = &models.Webhook{ID: "abc", Requests: []models.WebhookRequest{
 		{ID: "r1", ReceivedAt: t0},
@@ -440,7 +597,7 @@ func TestWebhookService_GetRequestsAfter(t *testing.T) {
 
 func TestWebhookService_GetAccessibleWebhook(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["public"] = &models.Webhook{ID: "public"}
 	repo.webhooks["owned"] = &models.Webhook{ID: "owned", UserID: 7}
 
@@ -476,7 +633,7 @@ func TestWebhookService_GetAccessibleWebhook(t *testing.T) {
 
 func TestWebhookService_DeleteWebhook(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["abc"] = &models.Webhook{ID: "abc"}
 
 	sub := svc.Subscribe("abc")
@@ -496,7 +653,7 @@ func TestWebhookService_DeleteWebhook(t *testing.T) {
 
 func TestWebhookService_CountRequests(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["abc"] = &models.Webhook{
 		ID:       "abc",
 		Requests: []models.WebhookRequest{{ID: "r1"}, {ID: "r2"}},
@@ -513,7 +670,7 @@ func TestWebhookService_CountRequests(t *testing.T) {
 
 func TestWebhookService_CleanPublicWebhooks(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 
 	deleted := svc.Subscribe("old")
 	kept := svc.Subscribe("new")
@@ -533,7 +690,7 @@ func TestWebhookService_CleanPublicWebhooks(t *testing.T) {
 
 func TestWebhookService_ClaimGuestWebhook(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["guest"] = &models.Webhook{ID: "guest"}
 	repo.webhooks["owned"] = &models.Webhook{ID: "owned", UserID: 3}
 
@@ -547,7 +704,7 @@ func TestWebhookService_ClaimGuestWebhook(t *testing.T) {
 
 func TestWebhookService_GetUserWebhookWithRequests(t *testing.T) {
 	repo := newFakeWebhookRepo()
-	svc := NewWebhookService(repo)
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	repo.webhooks["mine"] = &models.Webhook{ID: "mine", UserID: 7, Requests: []models.WebhookRequest{{ID: "r1"}}}
 	repo.webhooks["guest"] = &models.Webhook{ID: "guest"}
 

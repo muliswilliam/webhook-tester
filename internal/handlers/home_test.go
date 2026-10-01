@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,7 +20,7 @@ func newTestHomeHandler(t *testing.T) (*HomeHandler, *testWebhookRepo, *testUser
 	userRepo := newTestUserRepo()
 	metricsRec := &testMetricsRecorder{}
 	authSvc := newTestAuthService(t, userRepo)
-	whSvc := service.NewWebhookService(whRepo)
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{}, testDomain, testForwardPolicy)
 
 	h := NewHomeHandler(whSvc, authSvc, newTestLogger(), metricsRec)
 	return h, whRepo, userRepo, metricsRec, authSvc
@@ -253,4 +254,95 @@ func TestHomeHandler_EditModalSelectsContentType(t *testing.T) {
 	h.Home(rec, req)
 
 	assert.Regexp(t, `<option value="text/plain"\s+selected`, rec.Body.String())
+}
+
+func TestHomeHandler_EditModalForwardURL_Owner(t *testing.T) {
+	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	forwardURL := "https://api.example.com/hooks?a=1&b=2"
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "Mine", UserID: int(user.ID), ForwardURL: &forwardURL})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=wh1", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	body := rec.Body.String()
+	assert.Regexp(t, `<input\s+id="edit_forward_url"\s+type="url"\s+name="forward_url"[^>]*value="https://api.example.com/hooks\?a=1&amp;b=2"`, body)
+	assert.Regexp(t, `id="create_forward_url"[^>]*value=""`, body, "the create form starts blank")
+	assert.NotContains(t, body, "to set a forward URL")
+}
+
+func TestHomeHandler_EditModalForwardURL_GuestSeesSignInPrompt(t *testing.T) {
+	h, whRepo, _, _, _ := newTestHomeHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "Guest"})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=wh1", nil)
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	body := rec.Body.String()
+	assert.NotContains(t, body, `name="forward_url"`)
+	assert.Equal(t, 2, strings.Count(body, "to set a forward URL"), "the create and edit forms both prompt")
+	assert.Contains(t, body, `href="/login"`)
+}
+
+// A signed-in user can view a guest webhook but not manage it, so its page
+// offers no settings, clear or delete controls, which would answer 404, and
+// no prompt to sign in.
+func TestHomeHandler_SignedInUserViewingGuestWebhook(t *testing.T) {
+	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "guest1", Title: "Guest hook", Requests: []models.WebhookRequest{{ID: "r1", WebhookID: "guest1", Method: "POST"}}})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=guest1", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "Guest hook")
+	assert.Contains(t, body, "Guest endpoint. Its settings can't be changed from an account.")
+	assert.NotContains(t, body, "Edit response")
+	assert.NotContains(t, body, `action="/update-webhook/guest1"`)
+	assert.NotContains(t, body, `action="/delete-requests/guest1"`)
+	assert.NotContains(t, body, `action="/delete-webhook/guest1"`)
+	assert.Contains(t, body, `action="/requests/r1/replay"`)
+	assert.NotContains(t, body, `action="/requests/r1/delete"`)
+	assert.NotContains(t, body, "to set a forward URL")
+	assert.Regexp(t, `id="create_forward_url"`, body, "the create form still offers forwarding")
+}
+
+// The create and edit forms share their fields, under their own IDs.
+func TestHomeHandler_WebhookFormsShareFields(t *testing.T) {
+	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	payload := `{"edited":true}`
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "Mine", UserID: int(user.ID), ResponseCode: 201, ResponseDelay: 250, Payload: &payload})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=wh1", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+	h.Home(rec, req)
+	body := rec.Body.String()
+
+	for _, field := range []string{"title", "response_code", "content_type", "response_delay", "payload", "response_headers", "forward_url"} {
+		assert.Contains(t, body, `id="create_`+field+`"`)
+		assert.Contains(t, body, `id="edit_`+field+`"`)
+	}
+	// Notifications aren't sent yet, so neither form offers them.
+	assert.NotContains(t, body, `name="notify_on_event"`)
+	assert.NotContains(t, body, "Notify me")
+	assert.Regexp(t, `id="create_response_code"[^>]*value="200"`, body)
+	assert.Regexp(t, `id="edit_response_code"[^>]*value="201"`, body)
+	assert.Regexp(t, `id="edit_response_delay"[^>]*value="250"`, body)
+	assert.Contains(t, body, "{&#34;message&#34;:&#34;ok&#34;}</textarea>")
+	assert.Contains(t, body, "{&#34;edited&#34;:true}</textarea>")
 }

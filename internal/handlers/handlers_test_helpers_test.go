@@ -4,9 +4,13 @@ import (
 	"context"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +20,8 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"webhook-tester/config"
+	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
 )
@@ -45,6 +51,14 @@ func newTestWebhookRepo() *testWebhookRepo {
 	return &testWebhookRepo{webhooks: make(map[string]*models.Webhook)}
 }
 
+// copyOf returns a copy of a stored webhook, as a DB read would, so callers
+// never share it with later writes such as InsertRequest.
+func copyOf(w *models.Webhook) *models.Webhook {
+	c := *w
+	c.Requests = append([]models.WebhookRequest(nil), w.Requests...)
+	return &c
+}
+
 func (f *testWebhookRepo) put(w *models.Webhook) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -69,7 +83,7 @@ func (f *testWebhookRepo) Get(id string) (*models.Webhook, error) {
 	if !ok {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return w, nil
+	return copyOf(w), nil
 }
 
 func (f *testWebhookRepo) GetByUser(id string, userID uint) (*models.Webhook, error) {
@@ -82,7 +96,7 @@ func (f *testWebhookRepo) GetByUser(id string, userID uint) (*models.Webhook, er
 	if !ok || uint(w.UserID) != userID {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return w, nil
+	return copyOf(w), nil
 }
 
 func (f *testWebhookRepo) GetAll() ([]models.Webhook, error) {
@@ -161,7 +175,7 @@ func (f *testWebhookRepo) GetWithRequests(id string) (*models.Webhook, error) {
 	if !ok {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return w, nil
+	return copyOf(w), nil
 }
 
 func (f *testWebhookRepo) AssignOwner(id string, userID uint) error {
@@ -424,6 +438,13 @@ type testMetricsRecorder struct {
 	signUps         int
 	logins          int
 	webhookRequests []string
+	deliveries      []models.DeliveryOutcome
+}
+
+func (m *testMetricsRecorder) ObserveDelivery(outcome models.DeliveryOutcome, _ time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.deliveries = append(m.deliveries, outcome)
 }
 
 func (m *testMetricsRecorder) IncWebhooksCreated() {
@@ -450,8 +471,71 @@ func (m *testMetricsRecorder) IncLogin() {
 	m.logins++
 }
 
+// testDomain is the DOMAIN of the handlers under test.
+const testDomain = "https://tester.example.com"
+
+// testResolver resolves the hosts it lists and fails every other lookup,
+// as for an unknown host, so tests never query real DNS.
+type testResolver map[string][]netip.Addr
+
+func (r testResolver) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, error) {
+	if addrs, ok := r[host]; ok {
+		return addrs, nil
+	}
+	return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+}
+
+// privateHost is a hostname testForwardPolicy resolves to a private address.
+const privateHost = "db.internal.example.com"
+
+// testForwardPolicy is the default forwarding policy (private networks not
+// allowed) over testResolver.
+var testForwardPolicy = service.ForwardPolicy{
+	Resolver: testResolver{privateHost: {netip.MustParseAddr("10.0.0.7")}},
+}
+
 func newTestLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
+}
+
+// testDeliveryRepo is an in-memory implementation of
+// repository.DeliveryRepository.
+type testDeliveryRepo struct {
+	mu         sync.Mutex
+	deliveries []models.Delivery
+}
+
+func (f *testDeliveryRepo) Insert(d *models.Delivery) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deliveries = append(f.deliveries, *d)
+	return nil
+}
+
+func (f *testDeliveryRepo) ListByRequest(requestID string) ([]models.Delivery, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var list []models.Delivery
+	for _, d := range f.deliveries {
+		if d.RequestID == requestID {
+			list = append(list, d)
+		}
+	}
+	// Newest first, as the store orders them.
+	slices.SortFunc(list, func(a, b models.Delivery) int {
+		if c := b.StartedAt.Compare(a.StartedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
+	return list, nil
+}
+
+// newTestForwarder returns a forwarder allowed to reach loopback test
+// servers, recording through whSvc.
+func newTestForwarder(whSvc *service.WebhookService, rec metrics.Recorder) *service.Forwarder {
+	cfg := config.Forwarding{AllowPrivateNetworks: true, Timeout: 5 * time.Second, MaxConcurrent: 4}
+	return service.NewForwarder(cfg, whSvc, rec, newTestLogger())
 }
 
 func newTestAuthService(t *testing.T, repo *testUserRepo) *service.AuthService {

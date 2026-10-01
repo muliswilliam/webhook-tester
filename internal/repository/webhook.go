@@ -15,19 +15,19 @@ type WebhookRepository interface {
 	GetByUser(id string, userID uint) (*models.Webhook, error)
 	// GetAll Retrieves all webhooks (public)
 	GetAll() ([]models.Webhook, error)
-	// GetAllByUser Retrieve webhooks for a specific user
+	// GetAllByUser Retrieve webhooks for a specific user, with their newest requests and those requests' deliveries
 	GetAllByUser(userID uint) ([]models.Webhook, error)
 	// Update Updates an existing webhook
 	Update(webhook *models.Webhook) error
 	// InsertRequest Inserts request for a webhook
 	InsertRequest(wr *models.WebhookRequest) error
-	// Delete a webhook and its requests, ensuring ownership if userID > 0
+	// Delete a webhook with its requests and deliveries, ensuring ownership if userID > 0
 	Delete(id string, userID uint) error
-	// GetWithRequests Get a webhook with its requests, ordered newest first
+	// GetWithRequests Get a webhook with its requests, ordered newest first, and their deliveries
 	GetWithRequests(id string) (*models.Webhook, error)
 	// CountRequests Count the number of requests captured for a webhook
 	CountRequests(webhookID string) (int64, error)
-	// GetRequestsAfter Get a webhook's requests positioned after the cursor, oldest first
+	// GetRequestsAfter Get a webhook's requests positioned after the cursor, oldest first, with their deliveries
 	GetRequestsAfter(webhookID string, after models.RequestCursor) ([]models.WebhookRequest, error)
 	// CleanPublic Clean up public webhooks older than duration d, returning the deleted IDs
 	CleanPublic(d time.Duration) ([]string, error)

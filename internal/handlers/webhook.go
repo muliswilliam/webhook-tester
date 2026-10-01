@@ -21,7 +21,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/csrf"
 	"github.com/starfederation/datastar-go/datastar"
-	"gorm.io/datatypes"
 	"gorm.io/gorm"
 )
 
@@ -29,6 +28,7 @@ type WebhookHandler struct {
 	webhookSvc    *service.WebhookService
 	webhookReqSvc *service.WebhookRequestService
 	authSvc       *service.AuthService
+	forwarder     *service.Forwarder
 	logger        *log.Logger
 	metrics       metrics.Recorder
 }
@@ -37,12 +37,14 @@ func NewWebhookHandler(
 	webhookSvc *service.WebhookService,
 	webhookReqSvc *service.WebhookRequestService,
 	authSvc *service.AuthService,
+	forwarder *service.Forwarder,
 	logger *log.Logger,
 	metrics metrics.Recorder) *WebhookHandler {
 	return &WebhookHandler{
 		webhookSvc:    webhookSvc,
 		webhookReqSvc: webhookReqSvc,
 		authSvc:       authSvc,
+		forwarder:     forwarder,
 		logger:        logger,
 		metrics:       metrics,
 	}
@@ -56,7 +58,7 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wh := models.Webhook{ID: utils.GenerateID(), UserID: int(userID)}
-	if err := applyWebhookForm(r, &wh); err != nil {
+	if err := h.applyWebhookForm(r, &wh, true); err != nil {
 		utils.SetFlashError(w, "Couldn't create the endpoint: "+err.Error())
 		http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 		return
@@ -141,7 +143,7 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := applyWebhookForm(r, wh); err != nil {
+	if err := h.applyWebhookForm(r, wh, false); err != nil {
 		utils.SetFlashError(w, "Changes not saved: "+err.Error())
 		http.Redirect(w, r, webhookPageURL(webhookID), http.StatusSeeOther)
 		return
@@ -157,9 +159,10 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyWebhookForm sets wh's title and response settings from the submitted
-// create/edit form. The result goes through the same Normalize and Validate
-// as the API; invalid input is rejected without modifying wh.
-func applyWebhookForm(r *http.Request, wh *models.Webhook) error {
+// create/edit form; isNew is set for the create form, and otherwise wh is the
+// stored webhook. The result goes through the same Normalize and Validate as
+// the API; invalid input is rejected without modifying wh.
+func (h *WebhookHandler) applyWebhookForm(r *http.Request, wh *models.Webhook, isNew bool) error {
 	if err := r.ParseForm(); err != nil {
 		return errors.New("the form couldn't be read")
 	}
@@ -192,10 +195,21 @@ func applyWebhookForm(r *http.Request, wh *models.Webhook) error {
 	payload := r.FormValue("payload")
 	next.ContentType = &contentType
 	next.Payload = &payload
-	next.NotifyOnEvent = r.FormValue("notify_on_event") == "true"
+	// The form doesn't offer notify_on_event until notifications are sent, so
+	// the stored value is kept as is.
+	// The form offers the field only on webhooks that can forward; a guest
+	// webhook ignores it. A blank value clears it.
+	if next.CanForward() && r.PostForm.Has("forward_url") {
+		forwardURL := r.PostForm.Get("forward_url")
+		next.ForwardURL = &forwardURL
+	}
 
 	next.Normalize()
-	if err := next.Validate(); err != nil {
+	saved := wh
+	if isNew {
+		saved = nil
+	}
+	if err := h.webhookSvc.ValidateWebhook(r.Context(), &next, saved); err != nil {
 		return err
 	}
 	*wh = next
@@ -212,13 +226,12 @@ func backURL(r *http.Request) string {
 }
 
 // HandleWebhookRequest captures a request sent to /webhooks/{id}, or to any
-// subpath of it, and answers with the webhook's configured response.
+// subpath of it, and answers with the webhook's configured response. If the
+// webhook forwards, the captured request is also relayed to its forward URL,
+// unless it is a forwarded request itself.
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
-	var path string
-	if sub := chi.URLParam(r, "*"); sub != "" || strings.HasSuffix(r.URL.Path, "/") {
-		path = "/" + sub
-	}
+	path := capturedPath(r)
 	webhook, err := h.webhookSvc.GetWebhook(webhookID)
 
 	if err != nil {
@@ -240,24 +253,14 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		}
 	}(r.Body)
 
-	// Convert headers to a map[string]string
-	headers := datatypes.JSONMap{}
-	for k, v := range r.Header {
-		headers[k] = strings.Join(v, ",")
-	}
-
-	query := datatypes.JSONMap{}
-	for k, v := range r.URL.Query() {
-		query[k] = strings.Join(v, ",")
-	}
-
 	wr := models.WebhookRequest{
 		ID:        utils.GenerateID(),
 		WebhookID: webhookID,
 		Method:    r.Method,
 		Path:      path,
-		Headers:   headers,
-		Query:     query,
+		Headers:   models.CapturedValues(r.Header),
+		Query:     models.CapturedValues(r.URL.Query()),
+		RawQuery:  r.URL.RawQuery,
 		Body:      string(body),
 	}
 	if err := h.webhookSvc.RecordRequest(&wr); err != nil {
@@ -267,6 +270,14 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	}
 
 	h.metrics.IncWebhookRequest(webhookID)
+
+	// Relay in the background: the provider's response never waits on the
+	// forward target. A request that is itself a forward, which reached a
+	// webhook again through a tunnel, proxy or alias of this instance, isn't
+	// relayed again, so such a forward URL can't loop.
+	if webhook.Forwards() && r.Header.Get(service.RequestIDHeader) == "" {
+		h.forwarder.ForwardAsync(*webhook, wr)
+	}
 
 	// Delay response
 	if webhook.ResponseDelay > 0 {
@@ -302,22 +313,38 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	}
 }
 
-// StreamWebhookEvents streams a webhook's captured requests as Datastar
-// element patches. A connection first replays the requests after its cursor -
-// the Last-Event-ID of a reconnect, else the ?since= cursor the page was
-// rendered with - and then streams new ones live, so reconnects never lose
-// requests. The ?active flag marks the connection of the webhook shown in the
-// main panel, which also patches the main request list and counter.
+// capturedPath is the subpath a request to /webhooks/{id}/* was sent to, as
+// sent: percent-encoded, e.g. "/orders/a%2Fb". It is "" for none, and "/"
+// for a bare trailing slash.
+func capturedPath(r *http.Request) string {
+	sub := chi.URLParam(r, "*")
+	if sub == "" && !strings.HasSuffix(r.URL.Path, "/") {
+		return ""
+	}
+	path := "/" + sub
+	// chi routes on RawPath when the path has escapes that its default
+	// encoding wouldn't produce, which leaves sub escaped. Otherwise sub is
+	// decoded, and its default encoding is what was sent.
+	if r.URL.RawPath == "" {
+		path = (&url.URL{Path: path}).EscapedPath()
+	}
+	return path
+}
+
+// StreamWebhookEvents streams a webhook's captured requests and their
+// deliveries as Datastar element patches. A connection first replays the
+// requests after its cursor - the Last-Event-ID of a reconnect, else the
+// ?since= cursor the page was rendered with - with their deliveries, and
+// then streams new ones live, so reconnects never lose requests. Every
+// connection patches the sidebar's request list. The connection of the page's
+// own webhook also patches its main panel: with ?active, the workspace's
+// request list, counter and delivery badges and lists; with ?request=<id>,
+// the request page's delivery list of that request.
 //
 // The client retries whenever the stream ends; a 204 tells it to stop.
 func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	userID, _ := h.authSvc.Authorize(r) // 0 for guests
-
-	if _, err := h.webhookSvc.GetAccessibleWebhook(webhookID, userID); err != nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
 
 	rawCursor := r.Header.Get("Last-Event-ID")
 	if rawCursor == "" {
@@ -330,10 +357,17 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Subscribe before querying the backlog so nothing captured in between
-	// is missed; live events already replayed are skipped.
+	// Subscribe before loading the webhook and querying the backlog, so no
+	// settings change or capture in between is missed; live events already
+	// replayed are skipped.
 	sub := h.webhookSvc.Subscribe(webhookID)
 	defer sub.Close()
+
+	webhook, err := h.webhookSvc.GetAccessibleWebhook(webhookID, userID)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	missed, err := h.webhookSvc.GetRequestsAfter(webhookID, cursor)
 	if err != nil {
@@ -342,11 +376,14 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 	}
 
 	stream := &requestStream{
-		sse:       datastar.NewSSE(w, r),
-		webhookID: webhookID,
-		mainPanel: r.URL.Query().Has("active"),
-		csrfField: csrf.TemplateField(r),
-		replayed:  make(map[string]bool, len(missed)),
+		sse:           datastar.NewSSE(w, r),
+		webhookID:     webhookID,
+		forwardURL:    webhook.ActiveForwardURL(),
+		canManage:     webhook.ManagedBy(userID),
+		mainPanel:     r.URL.Query().Has("active"),
+		pageRequestID: r.URL.Query().Get("request"),
+		csrfField:     csrf.TemplateField(r),
+		replayed:      make(map[string]bool, len(missed)),
 	}
 
 	for _, wr := range missed {
@@ -372,12 +409,25 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 				h.logger.Printf("stream for %s closed by broker", webhookID)
 				return
 			}
-			if stream.replayed[evt.Request.ID] {
-				continue
-			}
-			if err := stream.send([]models.WebhookRequest{evt.Request}, evt.Count); err != nil {
-				h.logger.Printf("error streaming request %s: %s", evt.Request.ID, err)
-				return
+			switch evt.Kind {
+			case service.EventRequestCaptured:
+				if stream.replayed[evt.Request.ID] {
+					continue
+				}
+				if err := stream.send([]models.WebhookRequest{evt.Request}, evt.Count); err != nil {
+					h.logger.Printf("error streaming request %s: %s", evt.Request.ID, err)
+					return
+				}
+			case service.EventDeliveryRecorded:
+				if err := stream.sendDeliveries(evt.Delivery.RequestID, evt.Deliveries); err != nil {
+					h.logger.Printf("error streaming delivery %s: %s", evt.Delivery.ID, err)
+					return
+				}
+			case service.EventWebhookUpdated:
+				if err := stream.sendForwardURL(evt.ForwardURL); err != nil {
+					h.logger.Printf("error streaming settings of %s: %s", webhookID, err)
+					return
+				}
 			}
 		case <-r.Context().Done():
 			return
@@ -390,6 +440,11 @@ type requestRowView struct {
 	Request   models.WebhookRequest
 	CSRFField template.HTML
 	IsNew     bool
+	// ForwardURL decides the replay targets first shown; see
+	// view.ReplayControl.
+	ForwardURL string
+	// CanManage offers Delete; see HomePageData.CanManage.
+	CanManage bool
 }
 
 // requestCounterView is the data for the "request-counter" template.
@@ -398,13 +453,18 @@ type requestCounterView struct {
 	Count     int64
 }
 
-// requestStream renders captured requests into one SSE connection.
+// requestStream renders captured requests and their deliveries into one SSE
+// connection.
 type requestStream struct {
-	sse       *datastar.ServerSentEventGenerator
-	webhookID string
-	mainPanel bool
-	csrfField template.HTML
-	replayed  map[string]bool // IDs of requests sent from the backlog
+	sse        *datastar.ServerSentEventGenerator
+	webhookID  string
+	forwardURL string // see requestRowView; kept current by settings events
+	canManage  bool   // see requestRowView
+	mainPanel  bool   // the page shows the webhook's request list
+	// pageRequestID is the request whose page the stream is on, if any.
+	pageRequestID string
+	csrfField     template.HTML
+	replayed      map[string]bool // IDs of requests sent from the backlog
 }
 
 // send prepends each request, oldest first, and then patches the counter if
@@ -427,7 +487,7 @@ func (s *requestStream) send(requests []models.WebhookRequest, count *int64) err
 		}
 
 		if s.mainPanel {
-			row := requestRowView{Request: wr, CSRFField: s.csrfField, IsNew: true}
+			row := requestRowView{Request: wr, CSRFField: s.csrfField, IsNew: true, ForwardURL: s.forwardURL, CanManage: s.canManage}
 			if err := s.patch("main-request-row", row,
 				datastar.WithSelectorID("request-log-list-"+s.webhookID),
 				datastar.WithModePrepend(),
@@ -440,6 +500,39 @@ func (s *requestStream) send(requests []models.WebhookRequest, count *int64) err
 
 	if s.mainPanel && count != nil {
 		return s.patch("request-counter", requestCounterView{WebhookID: s.webhookID, Count: *count})
+	}
+	return nil
+}
+
+// sendDeliveries shows a request's deliveries, newest first, wherever the
+// page shows the request: its delivery list is morphed into the given one
+// and, in the request list, its badge shows the newest. Re-rendering the
+// whole list keeps it in start order however deliveries finish, and picks
+// up any the page missed. Pages that don't show the request get nothing.
+func (s *requestStream) sendDeliveries(requestID string, deliveries []models.Delivery) error {
+	if !s.mainPanel && s.pageRequestID != requestID {
+		return nil
+	}
+	wr := models.WebhookRequest{ID: requestID, Deliveries: deliveries}
+	if s.mainPanel {
+		if err := s.patch("delivery-badge", view.NewDeliveryBadge(wr)); err != nil {
+			return err
+		}
+	}
+	return s.patch("delivery-list", wr)
+}
+
+// sendForwardURL updates the forward URL the page offers replays to, after
+// the webhook's settings were saved: the replay controls already shown
+// follow the forwardTo signal, and rows streamed later are rendered with it.
+// Pages that don't show the webhook's requests get nothing.
+func (s *requestStream) sendForwardURL(forwardURL string) error {
+	s.forwardURL = forwardURL
+	if !s.mainPanel && s.pageRequestID == "" {
+		return nil
+	}
+	if err := s.sse.MarshalAndPatchSignals(map[string]string{view.ForwardToSignal: forwardURL}); err != nil {
+		return fmt.Errorf("patching the forward URL: %w", err)
 	}
 	return nil
 }
