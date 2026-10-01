@@ -220,6 +220,58 @@ func TestWebhookRequestHandler_DeleteRequest_RedirectsToWebhook(t *testing.T) {
 	}
 }
 
+// A signed-in user can view a guest webhook but not manage it, so they can't
+// delete its requests one by one either, as they can't clear them all.
+func TestWebhookRequestHandler_DeleteRequest_SignedInUserOnGuestWebhook(t *testing.T) {
+	h, reqRepo, whRepo, userRepo, authSvc := newTestWebhookRequestHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "wh1"})
+	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1"})
+
+	router := chi.NewRouter()
+	router.Post("/requests/{id}/delete", h.DeleteRequest)
+
+	req := httptest.NewRequest(http.MethodPost, "/requests/r1/delete", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	_, ok := reqRepo.requests["r1"]
+	assert.True(t, ok, "the request is kept")
+}
+
+// The request page offers Delete only to viewers who can manage its webhook.
+func TestWebhookRequestHandler_GetRequest_DeleteOnlyForManagers(t *testing.T) {
+	h, reqRepo, whRepo, userRepo, authSvc := newTestWebhookRequestHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "guest1"})
+	whRepo.put(&models.Webhook{ID: "own1", UserID: int(user.ID)})
+	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "guest1", Method: "GET", Headers: datatypes.JSONMap{}})
+	reqRepo.put(&models.WebhookRequest{ID: "r2", WebhookID: "own1", Method: "GET", Headers: datatypes.JSONMap{}})
+
+	router := chi.NewRouter()
+	router.Get("/requests/{id}", h.GetRequest)
+	page := func(target string, signedIn bool) string {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if signedIn {
+			req.AddCookie(sessionCookieFor(t, authSvc, user))
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Body.String()
+	}
+
+	assert.Contains(t, page("/requests/r1?address=guest1", false), `action="/requests/r1/delete"`, "a guest on a guest webhook")
+	assert.Contains(t, page("/requests/r2?address=own1", true), `action="/requests/r2/delete"`, "the owner")
+	body := page("/requests/r1?address=guest1", true)
+	assert.NotContains(t, body, `action="/requests/r1/delete"`, "a signed-in user on a guest webhook")
+	assert.Contains(t, body, `action="/requests/r1/replay"`, "replaying to the endpoint is still offered")
+}
+
 func TestWebhookRequestHandler_DeleteRequest_ServiceError(t *testing.T) {
 	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
 	whRepo.put(&models.Webhook{ID: "wh1"})

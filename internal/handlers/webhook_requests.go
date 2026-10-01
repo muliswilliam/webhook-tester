@@ -113,6 +113,7 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 		Webhooks  []models.Webhook
 		Webhook   *models.Webhook
 		Request   *models.WebhookRequest
+		CanManage bool
 		CSRFField template.HTML
 	}{
 		ID:        reqID,
@@ -121,6 +122,7 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 		Webhooks:  list,
 		Webhook:   wh,
 		Request:   reqEvent,
+		CanManage: wh.ManagedBy(userID),
 		CSRFField: csrf.TemplateField(r),
 	}
 
@@ -145,9 +147,15 @@ func (h *WebhookRequestHandler) accessibleRequest(r *http.Request, id string) (*
 func (h *WebhookRequestHandler) DeleteRequest(w http.ResponseWriter, r *http.Request) {
 	requestId := chi.URLParam(r, "id")
 
-	wr, _, err := h.accessibleRequest(r, requestId)
+	// Only a viewer who can manage the webhook, as for clearing all its
+	// requests: a signed-in user can view a guest webhook but not manage it.
+	userID, _ := h.authSvc.Authorize(r) // 0 for guests
+	wr, err := h.reqService.Get(requestId)
+	if err == nil {
+		_, err = h.webhookService.GetUserWebhook(wr.WebhookID, userID)
+	}
 	if err != nil {
-		h.logger.Printf("delete: request %s not accessible: %v", requestId, err)
+		h.logger.Printf("delete: request %s not manageable: %v", requestId, err)
 		view.RenderNotFound(w, r)
 		return
 	}

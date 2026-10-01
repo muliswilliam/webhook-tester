@@ -48,6 +48,7 @@ type testRequestRow struct {
 	CSRFField  template.HTML
 	IsNew      bool
 	ForwardURL string
+	CanManage  bool
 }
 
 type testRequestCounter struct {
@@ -221,6 +222,7 @@ func TestRenderHTMLRequestHappyPath(t *testing.T) {
 		Webhooks  []models.Webhook
 		Webhook   *models.Webhook
 		Request   *models.WebhookRequest
+		CanManage bool
 		CSRFField template.HTML
 	}{
 		ID:        req.ID,

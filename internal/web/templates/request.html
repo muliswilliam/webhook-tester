@@ -63,17 +63,19 @@
       </div>
       <div class="flex flex-wrap gap-2">
         {{ template "replay-control" (replayControl .Request.ID .Webhook.ActiveForwardURL .CSRFField true) }}
-        <form
-          method="POST"
-          action="/requests/{{ .Request.ID }}/delete"
-          onsubmit="return confirmSubmit(event, this)"
-          data-confirm-title="Delete this request?"
-          data-confirm-message="The captured request will be permanently deleted."
-          data-confirm-label="Delete request"
-        >
-          {{ .CSRFField }}
-          <button class="btn-danger">Delete request</button>
-        </form>
+        {{ if .CanManage }}
+          <form
+            method="POST"
+            action="/requests/{{ .Request.ID }}/delete"
+            onsubmit="return confirmSubmit(event, this)"
+            data-confirm-title="Delete this request?"
+            data-confirm-message="The captured request will be permanently deleted."
+            data-confirm-label="Delete request"
+          >
+            {{ .CSRFField }}
+            <button class="btn-danger">Delete request</button>
+          </form>
+        {{ end }}
       </div>
     </header>
 

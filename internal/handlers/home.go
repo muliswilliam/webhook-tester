@@ -41,9 +41,8 @@ type HomePageData struct {
 	User      models.User
 	Webhooks  []models.Webhook
 	Webhook   models.Webhook
-	// CanManage is set when the viewer may change, clear or delete Webhook:
-	// they own it, or it and they are both guests. A signed-in user can
-	// view a guest webhook but not manage it.
+	// CanManage is set when the viewer may change, clear or delete Webhook
+	// and its requests; see models.Webhook.ManagedBy.
 	CanManage      bool
 	RequestRows    []requestRowView
 	RequestCounter requestCounterView
@@ -150,9 +149,10 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 
 	csrfField := csrf.TemplateField(r)
 	forwardURL := activeWebhook.ActiveForwardURL()
+	canManage := activeWebhook.ManagedBy(userID)
 	rows := make([]requestRowView, len(activeWebhook.Requests))
 	for i, wr := range activeWebhook.Requests {
-		rows[i] = requestRowView{Request: wr, CSRFField: csrfField, ForwardURL: forwardURL}
+		rows[i] = requestRowView{Request: wr, CSRFField: csrfField, ForwardURL: forwardURL, CanManage: canManage}
 	}
 
 	// RenderHTML the home page
@@ -161,7 +161,7 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		User:           *user,
 		Webhooks:       webhooks,
 		Webhook:        activeWebhook,
-		CanManage:      uint(activeWebhook.UserID) == userID,
+		CanManage:      canManage,
 		RequestRows:    rows,
 		RequestCounter: requestCounterView{WebhookID: activeWebhook.ID, Count: int64(len(activeWebhook.Requests))},
 		Domain:         os.Getenv("DOMAIN"),

@@ -297,7 +297,7 @@ func TestHomeHandler_SignedInUserViewingGuestWebhook(t *testing.T) {
 	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
 	user := &models.User{Email: "jane@x.com"}
 	userRepo.addUser(user)
-	whRepo.put(&models.Webhook{ID: "guest1", Title: "Guest hook"})
+	whRepo.put(&models.Webhook{ID: "guest1", Title: "Guest hook", Requests: []models.WebhookRequest{{ID: "r1", WebhookID: "guest1", Method: "POST"}}})
 
 	req := httptest.NewRequest(http.MethodGet, "/?address=guest1", nil)
 	req.AddCookie(sessionCookieFor(t, authSvc, user))
@@ -313,6 +313,8 @@ func TestHomeHandler_SignedInUserViewingGuestWebhook(t *testing.T) {
 	assert.NotContains(t, body, `action="/update-webhook/guest1"`)
 	assert.NotContains(t, body, `action="/delete-requests/guest1"`)
 	assert.NotContains(t, body, `action="/delete-webhook/guest1"`)
+	assert.Contains(t, body, `action="/requests/r1/replay"`)
+	assert.NotContains(t, body, `action="/requests/r1/delete"`)
 	assert.NotContains(t, body, "to set a forward URL")
 	assert.Regexp(t, `id="create_forward_url"`, body, "the create form still offers forwarding")
 }

@@ -42,6 +42,13 @@ type Webhook struct {
 	Requests []WebhookRequest `gorm:"foreignKey:WebhookID" json:"requests,omitempty"`
 }
 
+// ManagedBy reports whether userID, 0 for a guest, may change, clear or
+// delete the webhook and its requests: they own it, or it and they are both
+// guests. A signed-in user can view a guest webhook but not manage it.
+func (w Webhook) ManagedBy(userID uint) bool {
+	return uint(w.UserID) == userID
+}
+
 // CanForward reports whether the webhook may relay its captured requests:
 // it has an owner. Guest webhooks never forward, so they can't be used as
 // an open relay, and their settings offer no forward URL.

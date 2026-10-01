@@ -120,17 +120,19 @@
           Open details
         </a>
         {{ template "replay-control" (replayControl .Request.ID .ForwardURL .CSRFField false) }}
-        <form
-          method="POST"
-          action="/requests/{{ .Request.ID }}/delete"
-          onsubmit="return confirmSubmit(event, this)"
-          data-confirm-title="Delete this request?"
-          data-confirm-message="The captured request will be permanently deleted."
-          data-confirm-label="Delete"
-        >
-          {{ .CSRFField }}
-          <button class="btn-danger">Delete</button>
-        </form>
+        {{ if .CanManage }}
+          <form
+            method="POST"
+            action="/requests/{{ .Request.ID }}/delete"
+            onsubmit="return confirmSubmit(event, this)"
+            data-confirm-title="Delete this request?"
+            data-confirm-message="The captured request will be permanently deleted."
+            data-confirm-label="Delete"
+          >
+            {{ .CSRFField }}
+            <button class="btn-danger">Delete</button>
+          </form>
+        {{ end }}
       </div>
     </div>
   </article>

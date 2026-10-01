@@ -1033,6 +1033,25 @@ func TestWebhookHandler_StreamWebhookEvents_ClaimedGuestWebhookOffersForwardRepl
 	assert.Contains(t, row, `data-show="!!$forwardTo"`)
 }
 
+// Streamed rows offer Delete only to viewers who can manage the webhook: not
+// to a signed-in user viewing a guest webhook.
+func TestWebhookHandler_StreamWebhookEvents_DeleteOnlyForManagers(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	user := &models.User{Email: "jane@example.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	guest := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil))
+	req := httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	signedIn := startStream(t, h, req)
+
+	recordRequest(t, h, "wh", "req-1")
+	guest.waitFor(t, `action="/requests/req-1/replay"`, `action="/requests/req-1/delete"`)
+	signedIn.waitFor(t, `action="/requests/req-1/replay"`)
+	assert.NotContains(t, signedIn.rec.body(), `action="/requests/req-1/delete"`)
+}
+
 // Deliveries are listed by when they started, however they finish: an
 // automatic delivery that outlasts a later replay stays below it, and the
 // badge keeps showing the replay.

@@ -157,6 +157,7 @@ func renderRequestPage(t *testing.T, webhook models.Webhook, req models.WebhookR
 		Webhooks  []models.Webhook
 		Webhook   *models.Webhook
 		Request   *models.WebhookRequest
+		CanManage bool
 		CSRFField template.HTML
 	}{
 		ID:        req.ID,
