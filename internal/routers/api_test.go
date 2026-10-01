@@ -382,6 +382,39 @@ func TestNewApiRouter_PrivateForwardURL(t *testing.T) {
 	}
 }
 
+// The destination check applies to forward URLs as they are set, not on
+// every save: a saved forward URL whose host now resolves to a private
+// address doesn't stop the owner editing the webhook's other settings.
+func TestNewApiRouter_UnchangedForwardURLNotRechecked(t *testing.T) {
+	resolver := testResolver{"rebound.example.com": {netip.MustParseAddr("93.184.215.14")}}
+	r, apiKey := setupAPIRouterWith(t, service.ForwardPolicy{Resolver: resolver})
+	do := func(method, path, body string) (int, string) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("X-API-Key", apiKey)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String()
+	}
+	code, body := do(http.MethodPost, "/webhooks/", `{"title":"fwd","forward_url":"https://rebound.example.com/hooks"}`)
+	require.Equal(t, http.StatusCreated, code, body)
+	var created dtos.Webhook
+	require.NoError(t, json.Unmarshal([]byte(body), &created))
+	path := "/webhooks/" + created.ID + "/"
+
+	resolver["rebound.example.com"] = []netip.Addr{netip.MustParseAddr("10.0.0.7")}
+
+	code, body = do(http.MethodPatch, path, `{"title":"renamed"}`)
+	require.Equal(t, http.StatusOK, code, body)
+	code, body = do(http.MethodPut, path, `{"title":"renamed again","forward_url":"https://rebound.example.com/hooks"}`)
+	require.Equal(t, http.StatusOK, code, body)
+	require.Contains(t, body, `"title":"renamed again"`)
+
+	code, body = do(http.MethodPatch, path, `{"forward_url":"https://rebound.example.com/other"}`)
+	require.Equal(t, http.StatusBadRequest, code, "a changed forward URL is checked")
+	require.Contains(t, body, "forward URL points to a private or local address")
+}
+
 func TestNewApiRouter_InvalidKey(t *testing.T) {
 	r, _ := setupAPIRouter(t)
 

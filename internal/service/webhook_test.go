@@ -457,10 +457,10 @@ func TestWebhookService_Domain(t *testing.T) {
 	assert.Equal(t, "https://tester.example.com/base/webhooks/abc", endpoint)
 
 	loop := endpoint + "/orders"
-	err = svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &loop})
+	err = svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &loop}, nil)
 	assert.ErrorContains(t, err, "own webhook endpoints")
 	elsewhere := "https://api.example.com/hooks"
-	assert.NoError(t, svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &elsewhere}))
+	assert.NoError(t, svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &elsewhere}, nil))
 
 	_, err = NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "://bad", offlinePolicy).EndpointURL("abc")
 	assert.Error(t, err)

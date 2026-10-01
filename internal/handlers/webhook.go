@@ -58,7 +58,7 @@ func (h *WebhookHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wh := models.Webhook{ID: utils.GenerateID(), UserID: int(userID)}
-	if err := h.applyWebhookForm(r, &wh); err != nil {
+	if err := h.applyWebhookForm(r, &wh, true); err != nil {
 		utils.SetFlashError(w, "Couldn't create the endpoint: "+err.Error())
 		http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 		return
@@ -143,7 +143,7 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.applyWebhookForm(r, wh); err != nil {
+	if err := h.applyWebhookForm(r, wh, false); err != nil {
 		utils.SetFlashError(w, "Changes not saved: "+err.Error())
 		http.Redirect(w, r, webhookPageURL(webhookID), http.StatusSeeOther)
 		return
@@ -159,9 +159,10 @@ func (h *WebhookHandler) UpdateWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 // applyWebhookForm sets wh's title and response settings from the submitted
-// create/edit form. The result goes through the same Normalize and Validate
-// as the API; invalid input is rejected without modifying wh.
-func (h *WebhookHandler) applyWebhookForm(r *http.Request, wh *models.Webhook) error {
+// create/edit form; isNew is set for the create form, and otherwise wh is the
+// stored webhook. The result goes through the same Normalize and Validate as
+// the API; invalid input is rejected without modifying wh.
+func (h *WebhookHandler) applyWebhookForm(r *http.Request, wh *models.Webhook, isNew bool) error {
 	if err := r.ParseForm(); err != nil {
 		return errors.New("the form couldn't be read")
 	}
@@ -203,7 +204,11 @@ func (h *WebhookHandler) applyWebhookForm(r *http.Request, wh *models.Webhook) e
 	}
 
 	next.Normalize()
-	if err := h.webhookSvc.ValidateWebhook(r.Context(), &next); err != nil {
+	saved := wh
+	if isNew {
+		saved = nil
+	}
+	if err := h.webhookSvc.ValidateWebhook(r.Context(), &next, saved); err != nil {
 		return err
 	}
 	*wh = next

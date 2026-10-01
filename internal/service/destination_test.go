@@ -79,7 +79,7 @@ func TestWebhookService_ValidateWebhook_PrivateForwardURLs(t *testing.T) {
 			wh := &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &c.url}
 
 			deny := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", ForwardPolicy{Resolver: resolver})
-			err := deny.ValidateWebhook(context.Background(), wh)
+			err := deny.ValidateWebhook(context.Background(), wh, nil)
 			if c.private {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "forward URL points to a private or local address")
@@ -90,7 +90,7 @@ func TestWebhookService_ValidateWebhook_PrivateForwardURLs(t *testing.T) {
 
 			allow := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "",
 				ForwardPolicy{AllowPrivateNetworks: true, Resolver: resolver})
-			assert.NoError(t, allow.ValidateWebhook(context.Background(), wh), "allowed by the policy")
+			assert.NoError(t, allow.ValidateWebhook(context.Background(), wh, nil), "allowed by the policy")
 		})
 	}
 }
@@ -99,7 +99,7 @@ func TestWebhookService_ValidateWebhook_PrivateForwardURLs(t *testing.T) {
 func TestWebhookService_ValidateWebhook_PrivateForwardURLMessage(t *testing.T) {
 	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
 	forwardURL := "http://localhost:8080/hooks"
-	err := svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &forwardURL})
+	err := svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &forwardURL}, nil)
 	assert.EqualError(t, err, "forward URL points to a private or local address (localhost), which this server can't reach. "+
 		"To reach a local server, use a public tunnel URL (ngrok, cloudflared)")
 }
@@ -112,7 +112,7 @@ func TestWebhookService_ValidateWebhook_SlowLookupAccepts(t *testing.T) {
 	forwardURL := "https://slow.example.com/hooks"
 
 	start := time.Now()
-	err := svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &forwardURL})
+	err := svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200, ForwardURL: &forwardURL}, nil)
 	assert.NoError(t, err)
 	assert.Less(t, time.Since(start), time.Second)
 }
@@ -121,7 +121,7 @@ func TestWebhookService_ValidateWebhook_SlowLookupAccepts(t *testing.T) {
 func TestWebhookService_ValidateWebhook_ModelErrorsFirst(t *testing.T) {
 	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
 	forwardURL := "http://localhost/hooks"
-	err := svc.ValidateWebhook(context.Background(), &models.Webhook{ResponseCode: 200, ForwardURL: &forwardURL})
+	err := svc.ValidateWebhook(context.Background(), &models.Webhook{ResponseCode: 200, ForwardURL: &forwardURL}, nil)
 	assert.EqualError(t, err, "title is required")
-	assert.NoError(t, svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200}), "no forward URL")
+	assert.NoError(t, svc.ValidateWebhook(context.Background(), &models.Webhook{Title: "t", ResponseCode: 200}, nil), "no forward URL")
 }

@@ -37,15 +37,19 @@ func NewWebhookService(
 // ValidateWebhook validates w against this instance: its forward URL can't
 // point back at the endpoints EndpointURL builds, nor, unless private
 // networks are allowed, at a private or local address the forwarder won't
-// reach. Checking the latter may look up the forward URL's host.
-func (s *WebhookService) ValidateWebhook(ctx context.Context, w *models.Webhook) error {
+// reach. saved is the stored webhook w updates, or nil when w is new. The
+// address is only checked for a forward URL being set or changed, which may
+// look up its host: one saved earlier, whose host may resolve differently
+// now, doesn't block editing the rest, and the dial-time guard still covers
+// every forward.
+func (s *WebhookService) ValidateWebhook(ctx context.Context, w, saved *models.Webhook) error {
 	if err := w.Validate(s.domain); err != nil {
 		return err
 	}
-	if w.ForwardURL != nil {
-		return s.forwarding.checkDestination(ctx, *w.ForwardURL)
+	if w.ForwardURL == nil || (saved != nil && saved.ForwardURL != nil && *saved.ForwardURL == *w.ForwardURL) {
+		return nil
 	}
-	return nil
+	return s.forwarding.checkDestination(ctx, *w.ForwardURL)
 }
 
 // EndpointURL is the URL of the webhook's endpoint on this instance, which
