@@ -50,75 +50,82 @@
             <p class="mt-2 max-w-2xl text-sm text-muted">
               Send a request to the endpoint below. Captured payloads appear here automatically.
             </p>
+            {{ if not .CanManage }}
+              <p class="mt-1 max-w-2xl text-sm text-muted">
+                Guest endpoint. Its settings can't be changed from an account.
+              </p>
+            {{ end }}
           </div>
-          <div class="flex items-center gap-2">
-            <button class="btn-secondary" data-on:click__stop="$showEditModal = true">
-              <svg
-                class="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
-              </svg>
-              Edit response
-            </button>
-            <div class="relative" data-on:click__outside="$actionsOpen = false">
-              <button
-                class="icon-btn"
-                data-on:click="$actionsOpen = !$actionsOpen"
-                data-attr:aria-expanded="$actionsOpen.toString()"
-                aria-haspopup="menu"
-                aria-label="More endpoint actions"
-              >
-                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <circle cx="5" cy="12" r="1.5" />
-                  <circle cx="12" cy="12" r="1.5" />
-                  <circle cx="19" cy="12" r="1.5" />
+          {{ if .CanManage }}
+            <div class="flex items-center gap-2">
+              <button class="btn-secondary" data-on:click__stop="$showEditModal = true">
+                <svg
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
                 </svg>
+                Edit response
               </button>
-              <div style="display: none" data-show="$actionsOpen" class="action-menu" role="menu">
-                <form
-                  method="POST"
-                  action="/delete-requests/{{ .Webhook.ID }}"
-                  onsubmit="return confirmSubmit(event, this)"
-                  data-confirm-title="Clear all requests?"
-                  data-confirm-message="Every captured request for this endpoint will be deleted. The endpoint URL keeps working."
-                  data-confirm-label="Clear requests"
+              <div class="relative" data-on:click__outside="$actionsOpen = false">
+                <button
+                  class="icon-btn"
+                  data-on:click="$actionsOpen = !$actionsOpen"
+                  data-attr:aria-expanded="$actionsOpen.toString()"
+                  aria-haspopup="menu"
+                  aria-label="More endpoint actions"
                 >
-                  {{ .CSRFField }}
-                  <button
-                    type="submit"
-                    class="action-menu-item"
-                    role="menuitem"
-                    data-on:click="$actionsOpen = false"
+                  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="12" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="19" cy="12" r="1.5" />
+                  </svg>
+                </button>
+                <div style="display: none" data-show="$actionsOpen" class="action-menu" role="menu">
+                  <form
+                    method="POST"
+                    action="/delete-requests/{{ .Webhook.ID }}"
+                    onsubmit="return confirmSubmit(event, this)"
+                    data-confirm-title="Clear all requests?"
+                    data-confirm-message="Every captured request for this endpoint will be deleted. The endpoint URL keeps working."
+                    data-confirm-label="Clear requests"
                   >
-                    Clear requests
-                  </button>
-                </form>
-                <form
-                  method="POST"
-                  action="/delete-webhook/{{ .Webhook.ID }}"
-                  onsubmit="return confirmSubmit(event, this)"
-                  data-confirm-title="Delete this endpoint?"
-                  data-confirm-message="The endpoint and all of its captured requests will be deleted. Requests sent to its URL will fail. This can't be undone."
-                  data-confirm-label="Delete endpoint"
-                >
-                  {{ .CSRFField }}
-                  <button
-                    type="submit"
-                    class="action-menu-item action-menu-danger"
-                    role="menuitem"
-                    data-on:click="$actionsOpen = false"
+                    {{ .CSRFField }}
+                    <button
+                      type="submit"
+                      class="action-menu-item"
+                      role="menuitem"
+                      data-on:click="$actionsOpen = false"
+                    >
+                      Clear requests
+                    </button>
+                  </form>
+                  <form
+                    method="POST"
+                    action="/delete-webhook/{{ .Webhook.ID }}"
+                    onsubmit="return confirmSubmit(event, this)"
+                    data-confirm-title="Delete this endpoint?"
+                    data-confirm-message="The endpoint and all of its captured requests will be deleted. Requests sent to its URL will fail. This can't be undone."
+                    data-confirm-label="Delete endpoint"
                   >
-                    Delete endpoint
-                  </button>
-                </form>
+                    {{ .CSRFField }}
+                    <button
+                      type="submit"
+                      class="action-menu-item action-menu-danger"
+                      role="menuitem"
+                      data-on:click="$actionsOpen = false"
+                    >
+                      Delete endpoint
+                    </button>
+                  </form>
+                </div>
               </div>
             </div>
-          </div>
+          {{ end }}
         </div>
 
         <div class="surface p-5 sm:p-6" data-signals:copied-url="false">
@@ -316,49 +323,54 @@
       </details>
     {{ end }}
 
-
-    <dialog
-      class="modal"
-      aria-labelledby="edit-webhook-title"
-      data-effect="$showEditModal ? el.open || el.showModal() : el.close()"
-      data-on:close="$showEditModal = false"
-      data-on:click="evt.target === el && ($showEditModal = false)"
-    >
-      <div class="modal-panel">
-        <div class="mb-6 flex items-start justify-between">
-          <div>
-            <p class="eyebrow">Response settings</p>
-            <h2 id="edit-webhook-title" class="mt-2 text-xl font-semibold">Edit webhook</h2>
-          </div>
-          <button class="icon-btn" data-on:click="$showEditModal = false" aria-label="Close dialog">
-            <svg
-              class="h-5 w-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              aria-hidden="true"
+    {{ if .CanManage }}
+      <dialog
+        class="modal"
+        aria-labelledby="edit-webhook-title"
+        data-effect="$showEditModal ? el.open || el.showModal() : el.close()"
+        data-on:close="$showEditModal = false"
+        data-on:click="evt.target === el && ($showEditModal = false)"
+      >
+        <div class="modal-panel">
+          <div class="mb-6 flex items-start justify-between">
+            <div>
+              <p class="eyebrow">Response settings</p>
+              <h2 id="edit-webhook-title" class="mt-2 text-xl font-semibold">Edit webhook</h2>
+            </div>
+            <button
+              class="icon-btn"
+              data-on:click="$showEditModal = false"
+              aria-label="Close dialog"
             >
-              <path d="m6 6 12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </div>
-        <form
-          method="POST"
-          action="/update-webhook/{{ .Webhook.ID }}"
-          class="space-y-5"
-          onsubmit="return serializeHeaderRows(this)"
-        >
-          {{ .CSRFField }}
-          {{ template "webhook-fields" (editWebhookFields .Webhook) }}
-          <div class="flex justify-end gap-3 pt-2">
-            <button type="button" data-on:click="$showEditModal = false" class="btn-secondary">
-              Cancel
+              <svg
+                class="h-5 w-5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <path d="m6 6 12 12M18 6 6 18" />
+              </svg>
             </button>
-            <button type="submit" class="btn-primary">Save changes</button>
           </div>
-        </form>
-      </div>
-    </dialog>
+          <form
+            method="POST"
+            action="/update-webhook/{{ .Webhook.ID }}"
+            class="space-y-5"
+            onsubmit="return serializeHeaderRows(this)"
+          >
+            {{ .CSRFField }}
+            {{ template "webhook-fields" (editWebhookFields .Webhook) }}
+            <div class="flex justify-end gap-3 pt-2">
+              <button type="button" data-on:click="$showEditModal = false" class="btn-secondary">
+                Cancel
+              </button>
+              <button type="submit" class="btn-primary">Save changes</button>
+            </div>
+          </form>
+        </div>
+      </dialog>
+    {{ end }}
   </div>
 {{ end }}

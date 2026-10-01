@@ -37,10 +37,14 @@ func NewHomeHandler(
 }
 
 type HomePageData struct {
-	CSRFField      template.HTML
-	User           models.User
-	Webhooks       []models.Webhook
-	Webhook        models.Webhook
+	CSRFField template.HTML
+	User      models.User
+	Webhooks  []models.Webhook
+	Webhook   models.Webhook
+	// CanManage is set when the viewer may change, clear or delete Webhook:
+	// they own it, or it and they are both guests. A signed-in user can
+	// view a guest webhook but not manage it.
+	CanManage      bool
 	RequestRows    []requestRowView
 	RequestCounter requestCounterView
 	Domain         string
@@ -157,6 +161,7 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		User:           *user,
 		Webhooks:       webhooks,
 		Webhook:        activeWebhook,
+		CanManage:      uint(activeWebhook.UserID) == userID,
 		RequestRows:    rows,
 		RequestCounter: requestCounterView{WebhookID: activeWebhook.ID, Count: int64(len(activeWebhook.Requests))},
 		Domain:         os.Getenv("DOMAIN"),

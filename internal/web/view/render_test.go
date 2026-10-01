@@ -67,6 +67,7 @@ func TestRenderHTMLHomeHappyPath(t *testing.T) {
 		User           models.User
 		Webhooks       []models.Webhook
 		Webhook        models.Webhook
+		CanManage      bool
 		ContentType    string
 		RequestRows    []testRequestRow
 		RequestCounter testRequestCounter
@@ -108,6 +109,7 @@ func TestRenderHTMLHomeWebhookStreamDataInit(t *testing.T) {
 		User           models.User
 		Webhooks       []models.Webhook
 		Webhook        models.Webhook
+		CanManage      bool
 		ContentType    string
 		RequestRows    []testRequestRow
 		RequestCounter testRequestCounter

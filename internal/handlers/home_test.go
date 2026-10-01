@@ -290,6 +290,33 @@ func TestHomeHandler_EditModalForwardURL_GuestSeesSignInPrompt(t *testing.T) {
 	assert.Contains(t, body, `href="/login"`)
 }
 
+// A signed-in user can view a guest webhook but not manage it, so its page
+// offers no settings, clear or delete controls, which would answer 404, and
+// no prompt to sign in.
+func TestHomeHandler_SignedInUserViewingGuestWebhook(t *testing.T) {
+	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "guest1", Title: "Guest hook"})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=guest1", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "Guest hook")
+	assert.Contains(t, body, "Guest endpoint. Its settings can't be changed from an account.")
+	assert.NotContains(t, body, "Edit response")
+	assert.NotContains(t, body, `action="/update-webhook/guest1"`)
+	assert.NotContains(t, body, `action="/delete-requests/guest1"`)
+	assert.NotContains(t, body, `action="/delete-webhook/guest1"`)
+	assert.NotContains(t, body, "to set a forward URL")
+	assert.Regexp(t, `id="create_forward_url"`, body, "the create form still offers forwarding")
+}
+
 // The create and edit forms share their fields, under their own IDs.
 func TestHomeHandler_WebhookFormsShareFields(t *testing.T) {
 	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
