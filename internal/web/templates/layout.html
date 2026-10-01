@@ -150,6 +150,10 @@
         </div>
 
         {{ $activeID := .Webhook.ID }}
+        {{/* The stream of the page's webhook also updates the main panel:
+          "stream-scope" is the query that says how. By default it is the
+          workspace's request log; pages showing something else override it.
+        */}}
         <div class="flex-1 space-y-2 overflow-y-auto px-3 py-2">
           {{ range .Webhooks }}
             <div
@@ -209,7 +213,7 @@
                 style="display: none"
                 data-show="$cardOpen_{{ signalKey .ID }} && !$railCollapsed"
                 data-init="@get('/webhook-stream/{{ .ID }}?since={{ streamCursor .Requests }}{{- if eq .ID $activeID -}}
-                  &active
+                  {{ block "stream-scope" $ }}&active{{ end }}
                 {{- end -}}', {retry: 'always', retryMaxCount: Infinity, openWhenHidden: true, filterSignals: {include: /^$/}})"
                 class="request-log mt-2 space-y-1 border-t pt-2"
                 id="request-log-{{ .ID }}"

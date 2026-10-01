@@ -1,4 +1,8 @@
 {{ define "title" }}Request {{ .Request.ID }}{{ end }}
+{{/* This page shows one request of the webhook, so its stream only updates
+  that request's deliveries; see the "stream-scope" block in layout.html.
+*/}}
+{{ define "stream-scope" }}&request={{ .Request.ID }}{{ end }}
 {{ define "content" }}
   <div
     class="space-y-6"
@@ -57,10 +61,25 @@
         </button>
       </div>
       <div class="flex flex-wrap gap-2">
-        <form method="POST" action="/requests/{{ .Request.ID }}/replay">
-          {{ .CSRFField }}
-          <button class="btn-primary">Replay request</button>
-        </form>
+        {{ if .Webhook.Forwards }}
+          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+            {{ .CSRFField }}
+            <input type="hidden" name="target" value="endpoint" />
+            <button class="btn-secondary">Replay to endpoint</button>
+          </form>
+          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+            {{ .CSRFField }}
+            <input type="hidden" name="target" value="forward" />
+            <button class="btn-primary" title="Send to {{ .Webhook.ForwardURL }}">
+              Replay to forward URL
+            </button>
+          </form>
+        {{ else }}
+          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+            {{ .CSRFField }}
+            <button class="btn-primary">Replay request</button>
+          </form>
+        {{ end }}
         <form
           method="POST"
           action="/requests/{{ .Request.ID }}/delete"
@@ -86,6 +105,21 @@
       <div class="request-detail-body">{{ template "request-body" .Request }}</div>
     </section>
 
+    {{ if or .Webhook.Forwards .Request.Deliveries }}
+      <section class="surface overflow-hidden" aria-labelledby="request-deliveries-title">
+        <div class="section-bar">
+          <div>
+            <p class="eyebrow">Forwarding</p>
+            <h2 id="request-deliveries-title" class="mt-1 text-base font-semibold">Deliveries</h2>
+          </div>
+          <span class="text-xs text-muted">Newest first</span>
+        </div>
+        {{ template "delivery-list" .Request }}
+        <p class="delivery-placeholder border-t px-4 py-8 text-center text-sm text-muted sm:px-5">
+          Not forwarded yet. Replay it to the forward URL to send it to your server.
+        </p>
+      </section>
+    {{ end }}
     <div class="grid gap-6 xl:grid-cols-2">
       <section class="surface overflow-hidden" aria-labelledby="request-headers-title">
         <div class="section-bar">

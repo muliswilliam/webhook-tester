@@ -617,3 +617,46 @@ func TestForwarding_DeletesRemoveDeliveries(t *testing.T) {
 		})
 	}
 }
+
+// getPage renders a web page as the signed-in owner.
+func (e *forwardingEnv) getPage(t *testing.T, path string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(e.session)
+	rec := httptest.NewRecorder()
+	e.web.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	return rec.Body.String()
+}
+
+func TestForwarding_PagesShowDeliveries(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Handler", "orders")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, "signature mismatch")
+	})
+	env.createWebhook(t, "wh1", tg.URL, false)
+	env.capture(t, http.MethodPost, "/wh1/orders", "{}", nil)
+	env.waitForwards(t)
+	captured := env.onlyRequest(t, "wh1")
+	referer := "http://example.com/requests/" + captured.ID + "?address=wh1"
+	require.Equal(t, http.StatusSeeOther, env.postForm(t, "/requests/"+captured.ID+"/replay", url.Values{"target": {"forward"}}, referer).Code)
+	deliveries := env.deliveries(t, captured.ID)
+	require.Len(t, deliveries, 2)
+
+	for _, path := range []string{"/?address=wh1", "/", "/requests/" + captured.ID + "?address=wh1"} {
+		t.Run(path, func(t *testing.T) {
+			page := env.getPage(t, path)
+			replay := strings.Index(page, `id="delivery-`+deliveries[0].ID+`"`)
+			auto := strings.Index(page, `id="delivery-`+deliveries[1].ID+`"`)
+			require.NotEqual(t, -1, replay, "replay delivery shown")
+			assert.Less(t, replay, auto, "newest first")
+			assert.Contains(t, page, tg.URL+"/orders")
+			assert.Contains(t, page, "signature mismatch")
+			assert.Contains(t, page, "X-Handler")
+			assert.Contains(t, page, "Replay to forward URL")
+		})
+	}
+	assert.Contains(t, env.getPage(t, "/?address=wh1"), "Last delivery: 500 Internal Server Error", "the row's badge")
+}

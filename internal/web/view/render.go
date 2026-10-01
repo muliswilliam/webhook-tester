@@ -49,6 +49,10 @@ var funcMap = template.FuncMap{
 		return f
 	},
 	"maxForwardURLLength": func() int { return models.MaxForwardURLLength },
+	"deliveryStatus":      deliveryStatus,
+	"deliveryBadge":       deliveryBadge,
+	"formatDuration":      formatDuration,
+	"maxDeliveryBodyKiB":  func() int { return models.MaxDeliveryResponseBody >> 10 },
 }
 
 // HeaderRow is one row of the response header editor.

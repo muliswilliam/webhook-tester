@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -273,4 +274,111 @@ func TestGormWebhookRepo_CleanPublic_DeletesDeliveries(t *testing.T) {
 	assert.Equal(t, []string{"old-public"}, ids)
 
 	assert.Equal(t, []string{"d-new"}, deliveryIDs(t, db))
+}
+
+// Captured requests loaded for display come with their deliveries, newest
+// first.
+
+func deliveryIDsOf(wr models.WebhookRequest) []string {
+	ids := []string{}
+	for _, d := range wr.Deliveries {
+		ids = append(ids, d.ID)
+	}
+	return ids
+}
+
+func deliveryIDsByRequest(list []models.WebhookRequest) map[string][]string {
+	out := map[string][]string{}
+	for _, wr := range list {
+		out[wr.ID] = deliveryIDsOf(wr)
+	}
+	return out
+}
+
+func TestRequestsLoadWithTheirDeliveries(t *testing.T) {
+	db := newTestDB(t)
+	webhooks := NewGormWebookRepo(db, testLogger())
+	requests := NewGormWebhookRequestRepo(db, testLogger())
+	deliveries := NewGormDeliveryRepo(db, testLogger())
+	require.NoError(t, webhooks.Insert(&models.Webhook{ID: "wh-1", Title: "a", UserID: 5}))
+	require.NoError(t, webhooks.Insert(&models.Webhook{ID: "wh-2", Title: "b", UserID: 5}))
+	seedRequest(t, db, "wh-1", "req-1")
+	seedRequest(t, db, "wh-2", "req-2")
+	seedRequest(t, db, "wh-2", "req-none")
+	now := time.Now().UTC()
+	for _, d := range []models.Delivery{
+		{ID: "d-old", RequestID: "req-1", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto, StartedAt: now.Add(-time.Minute)},
+		{ID: "d-new", RequestID: "req-1", WebhookID: "wh-1", Trigger: models.DeliveryTriggerReplay, StartedAt: now},
+		{ID: "d-other", RequestID: "req-2", WebhookID: "wh-2", Trigger: models.DeliveryTriggerAuto, StartedAt: now},
+	} {
+		require.NoError(t, deliveries.Insert(&d))
+	}
+
+	t.Run("GetWithRequests", func(t *testing.T) {
+		wh, err := webhooks.GetWithRequests("wh-1")
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]string{"req-1": {"d-new", "d-old"}}, deliveryIDsByRequest(wh.Requests))
+	})
+	t.Run("GetAllByUser", func(t *testing.T) {
+		list, err := webhooks.GetAllByUser(5)
+		require.NoError(t, err)
+		got := map[string][]string{}
+		for _, wh := range list {
+			for id, ds := range deliveryIDsByRequest(wh.Requests) {
+				got[id] = ds
+			}
+		}
+		assert.Equal(t, map[string][]string{"req-1": {"d-new", "d-old"}, "req-2": {"d-other"}, "req-none": {}}, got)
+	})
+	t.Run("GetRequestsAfter", func(t *testing.T) {
+		list, err := webhooks.GetRequestsAfter("wh-2", models.RequestCursor{})
+		require.NoError(t, err)
+		assert.Equal(t, map[string][]string{"req-2": {"d-other"}, "req-none": {}}, deliveryIDsByRequest(list))
+	})
+	t.Run("GetByID", func(t *testing.T) {
+		wr, err := requests.GetByID("req-1")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"d-new", "d-old"}, deliveryIDsOf(*wr))
+	})
+}
+
+// Deliveries are loaded in chunks of request IDs, so a webhook with more
+// requests than fit in one chunk still gets all of them.
+func TestGormWebhookRepo_GetWithRequests_LoadsDeliveriesAcrossChunks(t *testing.T) {
+	db := newTestDB(t)
+	webhooks := NewGormWebookRepo(db, testLogger())
+	require.NoError(t, webhooks.Insert(&models.Webhook{ID: "wh-1", Title: "a"}))
+
+	n := deliveriesQueryChunk + 1
+	reqs := make([]models.WebhookRequest, n)
+	dels := make([]models.Delivery, n)
+	for i := range reqs {
+		reqs[i] = models.WebhookRequest{ID: fmt.Sprintf("req-%04d", i), WebhookID: "wh-1"}
+		dels[i] = models.Delivery{ID: fmt.Sprintf("del-%04d", i), RequestID: reqs[i].ID, WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto}
+	}
+	require.NoError(t, db.CreateInBatches(reqs, 100).Error)
+	require.NoError(t, db.CreateInBatches(dels, 100).Error)
+
+	wh, err := webhooks.GetWithRequests("wh-1")
+	require.NoError(t, err)
+	require.Len(t, wh.Requests, n)
+	for _, wr := range wh.Requests {
+		require.Len(t, wr.Deliveries, 1, "request %s", wr.ID)
+		assert.Equal(t, wr.ID, wr.Deliveries[0].RequestID)
+	}
+}
+
+func TestGormWebhookRepo_DeliveriesLoadFailureFailsRequestLoads(t *testing.T) {
+	db := newTestDB(t)
+	webhooks := NewGormWebookRepo(db, testLogger())
+	require.NoError(t, webhooks.Insert(&models.Webhook{ID: "wh-1", Title: "a", UserID: 5}))
+	seedRequest(t, db, "wh-1", "req-1")
+	require.NoError(t, db.Migrator().DropTable(&models.Delivery{}))
+
+	_, err := webhooks.GetWithRequests("wh-1")
+	assert.Error(t, err)
+	_, err = webhooks.GetAllByUser(5)
+	assert.Error(t, err)
+	_, err = webhooks.GetRequestsAfter("wh-1", models.RequestCursor{})
+	assert.Error(t, err)
 }

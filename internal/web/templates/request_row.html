@@ -33,9 +33,10 @@
         {{ end }}
       </span>
       <span class="flex shrink-0 items-center gap-3">
-        <span class="hidden text-xs text-muted sm:block">
+        <span class="hidden text-xs tabular-nums text-muted sm:block">
           {{ .Request.ReceivedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}
         </span>
+        {{ template "delivery-badge" (deliveryBadge .Request) }}
         {{ if .IsNew }}<span class="new-badge">New</span>{{ end }}
         <svg
           class="h-4 w-4 text-muted transition-transform"
@@ -52,7 +53,7 @@
     </button>
     <div style="display: none" data-show="$open_{{ signalKey .Request.ID }}" class="border-t">
       <div class="grid lg:grid-cols-2">
-        <section class="min-w-0 border-b lg:border-b-0 lg:border-r">
+        <section class="flex min-w-0 flex-col border-b lg:border-b-0 lg:border-r">
           <div class="section-bar">
             <h3>Body</h3>
             {{ template "request-body-actions" .Request }}
@@ -95,6 +96,14 @@
           </div>
         </section>
       {{ end }}
+      {{/* Hidden until the request has a delivery. */}}
+      <section class="row-deliveries border-t">
+        <div class="section-bar">
+          <h3>Deliveries</h3>
+          <span class="text-xs text-muted">Newest first</span>
+        </div>
+        {{ template "delivery-list" .Request }}
+      </section>
       <div class="flex flex-wrap justify-end gap-2 border-t bg-subtle p-3">
         <a
           href="/requests/{{ .Request.ID }}?address={{ .Request.WebhookID }}"
@@ -102,10 +111,25 @@
         >
           Open details
         </a>
-        <form method="POST" action="/requests/{{ .Request.ID }}/replay">
-          {{ .CSRFField }}
-          <button class="btn-secondary">Replay request</button>
-        </form>
+        {{ if .ForwardURL }}
+          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+            {{ .CSRFField }}
+            <input type="hidden" name="target" value="endpoint" />
+            <button class="btn-secondary">Replay to endpoint</button>
+          </form>
+          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+            {{ .CSRFField }}
+            <input type="hidden" name="target" value="forward" />
+            <button class="btn-secondary" title="Send to {{ .ForwardURL }}">
+              Replay to forward URL
+            </button>
+          </form>
+        {{ else }}
+          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
+            {{ .CSRFField }}
+            <button class="btn-secondary">Replay request</button>
+          </form>
+        {{ end }}
         <form
           method="POST"
           action="/requests/{{ .Request.ID }}/delete"
@@ -178,4 +202,137 @@
     class="request-body code-surface"
   >
 {{ .Body }}</pre>
+{{ end }}
+
+{{/* The status of a request's latest delivery, in its row of the request
+  list. Without one it renders an empty placeholder, which a live delivery
+  replaces. Expects a view.DeliveryBadge.
+*/}}
+{{ define "delivery-badge" }}
+  <span id="delivery-badge-{{ .RequestID }}" class="contents">
+    {{ with .Delivery }}
+      {{ $status := deliveryStatus . }}
+      <span
+        class="delivery-badge min-w-[4.75rem] tone-{{ $status.Tone }}"
+        title="Last delivery: {{ $status.Title }}"
+      >
+        <svg
+          class="h-3 w-3"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          aria-hidden="true"
+        >
+          <path d="M7 17 17 7M8 7h9v9" />
+        </svg>
+        <span aria-hidden="true">{{ $status.Label }}</span>
+        <span class="sr-only">Last delivery: {{ $status.Title }}</span>
+      </span>
+    {{ end }}
+  </span>
+{{ end }}
+
+{{/* A request's deliveries, newest first; live deliveries are prepended.
+  Expects a models.WebhookRequest.
+*/}}
+{{ define "delivery-list" }}
+  <ol id="delivery-list-{{ .ID }}" class="delivery-log">
+    {{ range .Deliveries }}
+      {{ template "delivery-item" . }}
+    {{ end }}
+  </ol>
+{{ end }}
+
+{{/* One delivery. One that got an answer expands to show it. Expects a
+  models.Delivery.
+*/}}
+{{ define "delivery-item" }}
+  <li id="delivery-{{ .ID }}" class="delivery-item">
+    {{ if .StatusCode }}
+      <details>
+        <summary class="delivery-summary">
+          {{ template "delivery-summary" . }}
+          <svg
+            class="details-chevron h-4 w-4 shrink-0 text-muted transition-transform"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </summary>
+        <div class="grid border-t lg:grid-cols-2">
+          <section class="flex min-w-0 flex-col border-b lg:border-b-0 lg:border-r">
+            <div class="section-bar">
+              <h4 class="text-sm font-semibold">Response body</h4>
+              {{ if .ResponseBodyTruncated }}
+                <span class="text-xs text-muted">
+                  Truncated to the first {{ maxDeliveryBodyKiB }} KiB
+                </span>
+              {{ end }}
+            </div>
+            {{ if .ResponseBody }}
+              <pre class="delivery-body code-surface">
+{{ or (prettyJSON .ResponseBody) .ResponseBody }}</pre>
+            {{ else }}
+              <p class="border-t px-4 py-3 text-sm text-muted sm:px-5">Empty response body</p>
+            {{ end }}
+          </section>
+          <section class="min-w-0">
+            <div class="section-bar">
+              <h4 class="text-sm font-semibold">Response headers</h4>
+            </div>
+            <div class="max-h-72 overflow-auto">
+              <table class="data-table w-full">
+                <tbody>
+                  {{ range $key, $val := .ResponseHeaders }}
+                    <tr>
+                      <td>{{ $key }}</td>
+                      <td class="break-all">{{ $val }}</td>
+                    </tr>
+                  {{ else }}
+                    <tr><td colspan="2">No response headers</td></tr>
+                  {{ end }}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </details>
+    {{ else }}
+      <div class="delivery-summary">
+        {{ template "delivery-summary" . }}
+        {{/* Keeps the columns aligned with expandable deliveries. */}}
+        <span class="h-4 w-4 shrink-0" aria-hidden="true"></span>
+      </div>
+    {{ end }}
+  </li>
+{{ end }}
+
+{{/* The always visible line of a delivery. Expects a models.Delivery. */}}
+{{ define "delivery-summary" }}
+  {{ $status := deliveryStatus . }}
+  <span class="delivery-badge min-w-[4rem] tone-{{ $status.Tone }}" title="{{ $status.Title }}">
+    {{ $status.Label }}
+  </span>
+  <span class="min-w-0 flex-1">
+    <span class="flex min-w-0 flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+      <span class="trigger-chip">{{ if eq .Trigger "replay" }}Replay{{ else }}Auto{{ end }}</span>
+      <span class="min-w-0 break-all font-mono text-xs sm:truncate" title="{{ .TargetURL }}">
+        {{ or .TargetURL "No target URL" }}
+      </span>
+    </span>
+    {{ with .Error }}
+      <span class="delivery-error mt-1 block text-xs">{{ . }}</span>
+    {{ else }}
+      <span class="mt-1 block text-xs text-muted">{{ $status.Title }}</span>
+    {{ end }}
+  </span>
+  <span class="flex shrink-0 items-center gap-3 text-xs tabular-nums text-muted">
+    <span>{{ formatDuration .DurationMs }}</span>
+    <span class="hidden md:inline">{{ .StartedAt.UTC.Format "2006-01-02 15:04:05 UTC" }}</span>
+  </span>
 {{ end }}
