@@ -7,12 +7,29 @@ import (
 	"webhook-tester/internal/models"
 )
 
-// RequestEvent is published to a webhook's subscribers each time a request is
-// captured. Count is the webhook's request total right after the insert, or
-// nil if counting failed.
-type RequestEvent struct {
-	Request models.WebhookRequest
-	Count   *int64
+// EventKind tells the kinds of Event apart.
+type EventKind string
+
+const (
+	// EventRequestCaptured is published each time a request is captured.
+	EventRequestCaptured EventKind = "request_captured"
+	// EventDeliveryRecorded is published each time a delivery of one of the
+	// webhook's captured requests is recorded.
+	EventDeliveryRecorded EventKind = "delivery_recorded"
+)
+
+// Event is published to a webhook's subscribers. Which fields are set
+// depends on Kind:
+//   - EventRequestCaptured: Request is the captured request, and Count the
+//     webhook's request total right after the insert, or nil if counting
+//     failed.
+//   - EventDeliveryRecorded: Delivery is the recorded delivery; its
+//     RequestID names the captured request it belongs to.
+type Event struct {
+	Kind     EventKind
+	Request  models.WebhookRequest
+	Count    *int64
+	Delivery models.Delivery
 }
 
 // subscriptionBuffer bounds how far a subscriber may fall behind before it is
@@ -20,13 +37,13 @@ type RequestEvent struct {
 // DB, so a small buffer costs a reconnect, never a lost request.
 const subscriptionBuffer = 32
 
-// Subscription receives a webhook's RequestEvents until Events is closed,
+// Subscription receives a webhook's Events until Events is closed,
 // which happens when the subscriber falls too far behind, the webhook is
 // deleted, or Close is called.
 type Subscription struct {
-	Events <-chan RequestEvent
+	Events <-chan Event
 
-	events    chan RequestEvent
+	events    chan Event
 	webhookID string
 	broker    *broker
 }
@@ -36,7 +53,7 @@ func (s *Subscription) Close() {
 	s.broker.remove(s.webhookID, s)
 }
 
-// broker fans captured requests out to live subscribers, and serializes
+// broker fans captured requests and deliveries out to live subscribers, and serializes
 // captures per webhook so each webhook's events are published in insert
 // order.
 type broker struct {
@@ -107,7 +124,7 @@ func (b *broker) nextStamp() time.Time {
 }
 
 func (b *broker) subscribe(webhookID string) *Subscription {
-	events := make(chan RequestEvent, subscriptionBuffer)
+	events := make(chan Event, subscriptionBuffer)
 	s := &Subscription{Events: events, events: events, webhookID: webhookID, broker: b}
 
 	b.mu.Lock()
@@ -121,7 +138,7 @@ func (b *broker) subscribe(webhookID string) *Subscription {
 
 // publish delivers evt without blocking, evicting any subscriber whose
 // buffer is full.
-func (b *broker) publish(webhookID string, evt RequestEvent) {
+func (b *broker) publish(webhookID string, evt Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for s := range b.subs[webhookID] {

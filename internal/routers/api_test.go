@@ -2,6 +2,7 @@ package routers_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -9,11 +10,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"webhook-tester/config"
 	webhookdb "webhook-tester/internal/db"
 	"webhook-tester/internal/dtos"
 	appMetrics "webhook-tester/internal/metrics"
@@ -24,10 +27,30 @@ import (
 
 func newAPITestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	// Foreign keys on, as Postgres enforces them in production. One
+	// connection, since each new connection to ":memory:" would open a
+	// fresh, empty database - and forwards write from other goroutines.
+	db, err := gorm.Open(sqlite.Open(":memory:?_foreign_keys=on"), &gorm.Config{})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	webhookdb.AutoMigrate(db)
 	return db
+}
+
+// newTestForwarder returns a forwarder recording into db. It waits for its
+// in-flight forwards when the test ends, before the DB closes.
+func newTestForwarder(t *testing.T, db *gorm.DB, webhookSvc *service.WebhookService, cfg config.Forwarding) *service.Forwarder {
+	t.Helper()
+	f := service.NewForwarder(cfg, store.NewGormDeliveryRepo(db, testLogger()), webhookSvc, &appMetrics.PrometheusRecorder{}, testLogger())
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		require.NoError(t, f.Wait(ctx), "in-flight forwards didn't finish")
+	})
+	return f
 }
 
 func testLogger() *log.Logger {

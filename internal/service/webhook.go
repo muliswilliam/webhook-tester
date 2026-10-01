@@ -107,7 +107,7 @@ func (s *WebhookService) RecordRequest(wr *models.WebhookRequest) error {
 		if err = s.repo.InsertRequest(wr); err != nil {
 			return
 		}
-		evt := RequestEvent{Request: *wr}
+		evt := Event{Kind: EventRequestCaptured, Request: *wr}
 		if count, countErr := s.repo.CountRequests(wr.WebhookID); countErr == nil {
 			evt.Count = &count
 		}
@@ -116,7 +116,14 @@ func (s *WebhookService) RecordRequest(wr *models.WebhookRequest) error {
 	return err
 }
 
-// Subscribe starts receiving the webhook's newly captured requests. Callers
+// PublishDelivery publishes a recorded delivery to the subscribers of its
+// webhook.
+func (s *WebhookService) PublishDelivery(d models.Delivery) {
+	s.broker.publish(d.WebhookID, Event{Kind: EventDeliveryRecorded, Delivery: d})
+}
+
+// Subscribe starts receiving the webhook's newly captured requests and
+// recorded deliveries. Callers
 // must Close the subscription when done.
 func (s *WebhookService) Subscribe(webhookID string) *Subscription {
 	return s.broker.subscribe(webhookID)

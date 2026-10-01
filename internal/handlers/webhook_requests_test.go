@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -27,7 +28,8 @@ func newTestWebhookRequestHandler(t *testing.T) (*WebhookRequestHandler, *testWe
 	whSvc := service.NewWebhookService(whRepo)
 
 	var rec metrics.Recorder = &testMetricsRecorder{}
-	h := NewWebhookRequestHandler(reqSvc, authSvc, whSvc, &rec, newTestLogger())
+	forwarder := newTestForwarder(&testDeliveryRepo{}, whSvc, rec)
+	h := NewWebhookRequestHandler(reqSvc, authSvc, whSvc, forwarder, &rec, newTestLogger())
 	return h, reqRepo, whRepo, userRepo, authSvc
 }
 
@@ -335,4 +337,64 @@ func TestWebhookRequestHandler_ReplayRequest_Success(t *testing.T) {
 	assert.Equal(t, "foo=bar", gotQuery)
 	assert.Equal(t, "yes", gotHeader)
 	assert.NotContains(t, gotHeaders, "Accept-Encoding", "the replay adds no headers of its own")
+}
+
+func TestWebhookRequestHandler_ReplayRequest_UnknownTarget(t *testing.T) {
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1"})
+	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: http.MethodGet})
+
+	router := chi.NewRouter()
+	router.Post("/requests/{id}/replay", h.ReplayRequest)
+
+	req := httptest.NewRequest(http.MethodPost, "/requests/r1/replay", strings.NewReader("target=elsewhere"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// Replaying to the forward URL needs a webhook that forwards: one with an
+// owner and a forward URL. Otherwise nothing is sent and the flash says why.
+func TestWebhookRequestHandler_ReplayRequest_ForwardNeedsForwardingWebhook(t *testing.T) {
+	forwardURL := "https://api.example.com/hooks"
+	for name, tc := range map[string]struct {
+		webhook models.Webhook
+		owned   bool
+		want    string
+	}{
+		"guest webhook": {
+			webhook: models.Webhook{ID: "wh1", ForwardURL: &forwardURL},
+			want:    "Forwarding is only available for endpoints in an account.",
+		},
+		"no forward URL": {
+			webhook: models.Webhook{ID: "wh1"},
+			owned:   true,
+			want:    "This endpoint has no forward URL. Set one in its settings first.",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, reqRepo, whRepo, userRepo, authSvc := newTestWebhookRequestHandler(t)
+			wh := tc.webhook
+			req := httptest.NewRequest(http.MethodPost, "/requests/r1/replay", strings.NewReader("target=forward"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if tc.owned {
+				owner := &models.User{Email: "owner@x.com"}
+				userRepo.addUser(owner)
+				wh.UserID = int(owner.ID)
+				req.AddCookie(sessionCookieFor(t, authSvc, owner))
+			}
+			whRepo.put(&wh)
+			reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: http.MethodGet})
+
+			router := chi.NewRouter()
+			router.Post("/requests/{id}/replay", h.ReplayRequest)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusSeeOther, rec.Code)
+			assert.Equal(t, &utils.Flash{Kind: utils.FlashError, Message: tc.want}, flashFrom(t, rec))
+		})
+	}
 }

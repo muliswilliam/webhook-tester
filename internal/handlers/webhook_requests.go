@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"webhook-tester/internal/metrics"
@@ -38,6 +39,7 @@ var replayClient = &http.Client{
 type WebhookRequestHandler struct {
 	reqService     *service.WebhookRequestService
 	authSvc        *service.AuthService
+	forwarder      *service.Forwarder
 	metrics        *metrics.Recorder
 	logger         *log.Logger
 	webhookService *service.WebhookService
@@ -48,10 +50,18 @@ func NewWebhookRequestHandler(
 	reqSvc *service.WebhookRequestService,
 	authSvc *service.AuthService,
 	webhookSvc *service.WebhookService,
+	forwarder *service.Forwarder,
 	metricsRec *metrics.Recorder,
 	logger *log.Logger,
 ) *WebhookRequestHandler {
-	return &WebhookRequestHandler{reqService: reqSvc, webhookService: webhookSvc, metrics: metricsRec, logger: logger, authSvc: authSvc}
+	return &WebhookRequestHandler{
+		reqService:     reqSvc,
+		webhookService: webhookSvc,
+		forwarder:      forwarder,
+		metrics:        metricsRec,
+		logger:         logger,
+		authSvc:        authSvc,
+	}
 }
 
 func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Request) {
@@ -119,24 +129,25 @@ func (h *WebhookRequestHandler) GetRequest(w http.ResponseWriter, r *http.Reques
 	view.RenderHTML(w, r, "request", data)
 }
 
-// accessibleRequest loads a captured request, provided the caller may access
-// the webhook it belongs to.
-func (h *WebhookRequestHandler) accessibleRequest(r *http.Request, id string) (*models.WebhookRequest, error) {
+// accessibleRequest loads a captured request and its webhook, provided the
+// caller may access that webhook.
+func (h *WebhookRequestHandler) accessibleRequest(r *http.Request, id string) (*models.WebhookRequest, *models.Webhook, error) {
 	wr, err := h.reqService.Get(id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	userID, _ := h.authSvc.Authorize(r) // 0 for guests
-	if _, err := h.webhookService.GetAccessibleWebhook(wr.WebhookID, userID); err != nil {
-		return nil, err
+	wh, err := h.webhookService.GetAccessibleWebhook(wr.WebhookID, userID)
+	if err != nil {
+		return nil, nil, err
 	}
-	return wr, nil
+	return wr, wh, nil
 }
 
 func (h *WebhookRequestHandler) DeleteRequest(w http.ResponseWriter, r *http.Request) {
 	requestId := chi.URLParam(r, "id")
 
-	wr, err := h.accessibleRequest(r, requestId)
+	wr, _, err := h.accessibleRequest(r, requestId)
 	if err != nil {
 		h.logger.Printf("delete: request %s not accessible: %v", requestId, err)
 		view.RenderNotFound(w, r)
@@ -155,17 +166,69 @@ func (h *WebhookRequestHandler) DeleteRequest(w http.ResponseWriter, r *http.Req
 	http.Redirect(w, r, "/?address="+url.QueryEscape(wr.WebhookID), http.StatusSeeOther)
 }
 
-// ReplayRequest re‐sends a stored webhook request via your services.
+// Replay targets, chosen by the replay form's "target" field.
+const (
+	// ReplayTargetEndpoint re-sends the request to its Webhook Tester
+	// endpoint, capturing a copy. It is the default.
+	ReplayTargetEndpoint = "endpoint"
+	// ReplayTargetForward relays the request to its webhook's forward URL,
+	// recording a delivery on the original request.
+	ReplayTargetForward = "forward"
+)
+
+// ReplayRequest re-sends a captured request, to its endpoint or to its
+// webhook's forward URL, and flashes the outcome.
 func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	reqEvent, err := h.accessibleRequest(r, id)
+	reqEvent, wh, err := h.accessibleRequest(r, id)
 	if err != nil {
 		h.logger.Printf("replay: request %s not found: %v", id, err)
 		view.RenderNotFound(w, r)
 		return
 	}
 
+	switch target := r.FormValue("target"); target {
+	case "", ReplayTargetEndpoint:
+		h.replayToEndpoint(w, r, reqEvent)
+	case ReplayTargetForward:
+		h.replayToForwardURL(w, r, wh, reqEvent)
+	default:
+		http.Error(w, fmt.Sprintf("unknown replay target %q", target), http.StatusBadRequest)
+	}
+}
+
+// replayToForwardURL forwards the request synchronously, recording a replay
+// delivery on it rather than capturing a copy.
+func (h *WebhookRequestHandler) replayToForwardURL(w http.ResponseWriter, r *http.Request, wh *models.Webhook, reqEvent *models.WebhookRequest) {
+	switch {
+	case wh.UserID == 0:
+		utils.SetFlashError(w, "Forwarding is only available for endpoints in an account.")
+	case wh.ForwardURL == nil:
+		utils.SetFlashError(w, "This endpoint has no forward URL. Set one in its settings first.")
+	default:
+		d := h.forwarder.Forward(r.Context(), *wh, *reqEvent, models.DeliveryTriggerReplay)
+		if d.StatusCode != nil {
+			utils.SetFlashSuccess(w, fmt.Sprintf("Forwarded. Your server answered %s.", statusLine(*d.StatusCode)))
+		} else {
+			utils.SetFlashError(w, fmt.Sprintf("Forward failed: %s.", strings.TrimSuffix(*d.Error, ".")))
+		}
+	}
+	http.Redirect(w, r, backURL(r), http.StatusSeeOther)
+}
+
+// statusLine is code with its reason phrase, e.g. "500 Internal Server
+// Error", or just the code for one without a standard phrase.
+func statusLine(code int) string {
+	if text := http.StatusText(code); text != "" {
+		return fmt.Sprintf("%d %s", code, text)
+	}
+	return strconv.Itoa(code)
+}
+
+// replayToEndpoint re-sends the request to its Webhook Tester endpoint,
+// which captures it as a new request.
+func (h *WebhookRequestHandler) replayToEndpoint(w http.ResponseWriter, r *http.Request, reqEvent *models.WebhookRequest) {
 	domain := os.Getenv("DOMAIN")
 	target, err := url.JoinPath(domain, "webhooks", reqEvent.WebhookID, reqEvent.Path)
 	if err != nil {

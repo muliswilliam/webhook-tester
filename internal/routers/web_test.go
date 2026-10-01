@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"webhook-tester/config"
 	"webhook-tester/internal/mailer"
 	appMetrics "webhook-tester/internal/metrics"
 	"webhook-tester/internal/routers"
@@ -36,7 +37,8 @@ func setupWebRouter(t *testing.T) http.Handler {
 
 	metricsRec := &appMetrics.PrometheusRecorder{}
 
-	return routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, &mailer.LogMailer{Logger: logger}, metricsRec, logger)
+	forwarder := newTestForwarder(t, db, webhookSvc, config.Forwarding{})
+	return routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, forwarder, &mailer.LogMailer{Logger: logger}, metricsRec, logger)
 }
 
 func TestNewWebRouter_PlainHTTPRequest(t *testing.T) {

@@ -149,3 +149,10 @@ func TestWebhookNormalize_ForwardURL(t *testing.T) {
 	w.Normalize()
 	assert.Nil(t, w.ForwardURL)
 }
+
+func TestWebhookForwards(t *testing.T) {
+	forwardURL := "https://api.example.com/hooks"
+	assert.True(t, (&Webhook{UserID: 1, ForwardURL: &forwardURL}).Forwards())
+	assert.False(t, (&Webhook{UserID: 1}).Forwards(), "no forward URL")
+	assert.False(t, (&Webhook{ForwardURL: &forwardURL}).Forwards(), "guest webhooks never forward")
+}

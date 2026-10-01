@@ -16,6 +16,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"webhook-tester/config"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/service"
@@ -460,6 +461,43 @@ func (m *testMetricsRecorder) IncLogin() {
 
 func newTestLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
+}
+
+// testDeliveryRepo is an in-memory implementation of
+// repository.DeliveryRepository.
+type testDeliveryRepo struct {
+	mu         sync.Mutex
+	deliveries []models.Delivery
+}
+
+func (f *testDeliveryRepo) Insert(d *models.Delivery) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deliveries = append(f.deliveries, *d)
+	return nil
+}
+
+func (f *testDeliveryRepo) ListByRequest(requestID string) ([]models.Delivery, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var list []models.Delivery
+	for i := len(f.deliveries) - 1; i >= 0; i-- {
+		if f.deliveries[i].RequestID == requestID {
+			list = append(list, f.deliveries[i])
+		}
+	}
+	return list, nil
+}
+
+func (f *testDeliveryRepo) DeleteByRequest(string) error { return nil }
+
+func (f *testDeliveryRepo) DeleteByWebhook(string) error { return nil }
+
+// newTestForwarder returns a forwarder allowed to reach loopback test
+// servers, recording into deliveries.
+func newTestForwarder(deliveries *testDeliveryRepo, whSvc *service.WebhookService, rec metrics.Recorder) *service.Forwarder {
+	cfg := config.Forwarding{AllowPrivateNetworks: true, Timeout: 5 * time.Second, MaxConcurrent: 4}
+	return service.NewForwarder(cfg, deliveries, whSvc, rec, newTestLogger())
 }
 
 func newTestAuthService(t *testing.T, repo *testUserRepo) *service.AuthService {
