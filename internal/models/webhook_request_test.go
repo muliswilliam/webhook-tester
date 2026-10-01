@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -86,21 +87,9 @@ func TestWebhookRequest_URLAt(t *testing.T) {
 			base: "https://api.example.com/hooks", wr: WebhookRequest{Query: datatypes.JSONMap{"n": 5.0}},
 			want: "https://api.example.com/hooks?n=5",
 		},
-		"dot segments can't climb above the base": {
-			base: "https://api.example.com/hooks/stripe", wr: WebhookRequest{Path: "/../../admin"}, want: "https://api.example.com/hooks/stripe/admin",
-		},
-		"escaped dot segments": {
-			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/%2e%2e/%2E%2e/admin"}, want: "https://api.example.com/hooks/admin",
-		},
-		"dot segments within the subpath resolved": {
-			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/a/./b/../c"}, want: "https://api.example.com/hooks/a/c",
-		},
-		"trailing dot segment keeps the slash": {
-			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/a/b/.."}, want: "https://api.example.com/hooks/a/",
-		},
-		"only dot segments": {base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/.."}, want: "https://api.example.com/hooks/"},
-		"dots inside a segment kept": {
-			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/v1..2/.well-known/..x"}, want: "https://api.example.com/hooks/v1..2/.well-known/..x",
+		"dots that aren't dot segments kept": {
+			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/v1..2/./.well-known/..x/%2e/a;b=.."},
+			want: "https://api.example.com/hooks/v1..2/./.well-known/..x/%2e/a;b=..",
 		},
 		"empty segments kept": {base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/a//b/"}, want: "https://api.example.com/hooks/a//b/"},
 		"subpath and query": {
@@ -117,4 +106,33 @@ func TestWebhookRequest_URLAt(t *testing.T) {
 
 	_, err := WebhookRequest{}.URLAt("http://[::1")
 	assert.Error(t, err)
+}
+
+// A subpath that any server could read as holding a ".." segment is refused
+// rather than rewritten, since servers disagree on what one is.
+func TestWebhookRequest_URLAtRefusesSubpathsThatCouldLeaveBase(t *testing.T) {
+	for _, p := range []string{
+		"/..",
+		"/../admin",
+		"/a/b/../../../admin",
+		"/%2e%2e/admin",
+		"/%2E./admin",
+		"/..%2fadmin",
+		"/..%2F..%2Fadmin",
+		"/%2e%2e%2f%2e%2e%2fadmin",
+		"/..%5c..%5cadmin",
+		"/..\\admin",
+		"/a\\..\\..\\admin",
+		"/..;/..;/admin",
+		"/..;jsessionid=x/admin",
+		"/%2e%2e;x/admin",
+		"/%252e%252e/admin",
+		"/%25252e%25252e%25252fadmin",
+	} {
+		t.Run(p, func(t *testing.T) {
+			_, err := WebhookRequest{Path: p}.URLAt("https://api.example.com/hooks/stripe")
+			require.ErrorIs(t, err, ErrSubpathLeavesBase)
+			assert.Contains(t, err.Error(), fmt.Sprintf("%q", p))
+		})
+	}
 }

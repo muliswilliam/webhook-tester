@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -111,24 +112,31 @@ func (wr WebhookRequest) QueryString() string {
 	return q.Encode()
 }
 
+// ErrSubpathLeavesBase is returned by URLAt for a subpath that could lead
+// out of the base URL's path.
+var ErrSubpathLeavesBase = errors.New("the subpath could lead out of the base URL's path")
+
 // URLAt is the URL the request addresses when relayed under base: base's
 // path followed by the request's subpath, and base's query followed by the
 // request's query string. Both are kept as written, percent-encoding and
-// parameter order included, except that the subpath's dot segments are
-// resolved, so it can't lead out of base's path.
+// parameter order included. A subpath that some server could read as
+// climbing above base's path is refused with ErrSubpathLeavesBase; see
+// climbsOut.
 func (wr WebhookRequest) URLAt(base string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
 		return "", err
 	}
 	if wr.Path != "" {
-		sub := removeDotSegments(wr.Path)
-		escaped := strings.TrimSuffix(u.EscapedPath(), "/") + sub
+		if climbsOut(wr.Path) {
+			return "", fmt.Errorf("%w: %q", ErrSubpathLeavesBase, wr.Path)
+		}
+		escaped := strings.TrimSuffix(u.EscapedPath(), "/") + wr.Path
 		if decoded, err := url.PathUnescape(escaped); err == nil {
 			u.Path, u.RawPath = decoded, escaped
 		} else {
 			// An older row whose decoded path holds a lone "%".
-			u.Path, u.RawPath = strings.TrimSuffix(u.Path, "/")+sub, ""
+			u.Path, u.RawPath = strings.TrimSuffix(u.Path, "/")+wr.Path, ""
 		}
 	}
 	if q := wr.QueryString(); q != "" {
@@ -141,26 +149,26 @@ func (wr WebhookRequest) URLAt(base string) (string, error) {
 	return u.String(), nil
 }
 
-// removeDotSegments resolves the "." and ".." segments of a subpath, which
-// starts with "/", as RFC 3986 section 5.2.4 does: a ".." beyond the start
-// is dropped, so the result never climbs above it. Segments are compared
-// decoded, since many servers treat "%2e" as ".", and the others are kept
-// as written.
-func removeDotSegments(p string) string {
-	segments := strings.Split(strings.TrimPrefix(p, "/"), "/")
-	out := make([]string, 0, len(segments))
-	for i, seg := range segments {
-		decoded, err := url.PathUnescape(seg)
-		if err != nil || (decoded != "." && decoded != "..") {
-			out = append(out, seg)
-			continue
+// climbsOut reports whether some server could read a ".." segment in the
+// subpath p, and so resolve it to a path above the one p is appended to.
+// Servers disagree on what a ".." is: some decode "%2e", "%2f" and "%5c"
+// before splitting, some decode twice, some split on "\" too, and some
+// (Tomcat, Spring) ignore ";parameters" in a segment. Rather than rewrite p
+// for one reading, it is checked against all of them: fully decoded, split
+// on "/" and "\", with each segment's ";parameters" dropped.
+func climbsOut(p string) bool {
+	for {
+		decoded, err := url.PathUnescape(p)
+		if err != nil || decoded == p {
+			break
 		}
-		if decoded == ".." && len(out) > 0 {
-			out = out[:len(out)-1]
-		}
-		if i == len(segments)-1 {
-			out = append(out, "") // "/a/b/.." is "/a/"
+		p = decoded
+	}
+	for _, seg := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
+		seg, _, _ = strings.Cut(seg, ";")
+		if seg == ".." {
+			return true
 		}
 	}
-	return "/" + strings.Join(out, "/")
+	return false
 }

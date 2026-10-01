@@ -219,6 +219,11 @@ func (h *WebhookRequestHandler) replayToEndpoint(w http.ResponseWriter, r *http.
 	if err == nil {
 		endpoint, err = reqEvent.URLAt(endpoint)
 	}
+	if errors.Is(err, models.ErrSubpathLeavesBase) {
+		utils.SetFlashError(w, fmt.Sprintf("Replay failed: the subpath %q could lead out of the endpoint's path, so it wasn't sent.", reqEvent.Path))
+		http.Redirect(w, r, backURL(r), http.StatusSeeOther)
+		return
+	}
 	if err != nil {
 		h.logger.Printf("replay: invalid target URL: %v", err)
 		http.Error(w, "could not construct replay URL", http.StatusInternalServerError)

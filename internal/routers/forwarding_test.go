@@ -332,22 +332,55 @@ func TestForwarding_RelaysQueryPathAndRepeatedHeadersVerbatim(t *testing.T) {
 }
 
 // A sender can't use dot segments in the subpath to reach paths outside the
-// forward URL's on the target host.
-func TestForwarding_SubpathStaysUnderForwardURLPath(t *testing.T) {
+// forward URL's on the target host. Servers disagree on what counts as one,
+// so a subpath with anything a server might read as ".." isn't forwarded:
+// the delivery records why, and the target receives nothing.
+func TestForwarding_RefusesSubpathsThatCouldLeaveForwardURLPath(t *testing.T) {
+	for _, subpath := range []string{
+		"/../admin",
+		"/%2e%2e/%2E%2e/admin",
+		"/..%5c..%5cadmin",
+		"/..%2f..%2fadmin",
+		"/%2e%2e%2f%2e%2e%2fadmin",
+		"/..;/..;/admin",
+		"/%252e%252e/admin",
+		"/a/..;jsessionid=x/admin",
+	} {
+		t.Run(subpath, func(t *testing.T) {
+			env := newForwardingEnv(t, allowLoopback)
+			tg := newTarget(t, nil)
+			env.createWebhook(t, "wh1", tg.URL+"/hooks/stripe", false)
+
+			rec := env.capture(t, http.MethodPost, "/wh1"+subpath, "{}", nil)
+			require.Equal(t, http.StatusAccepted, rec.Code)
+
+			captured := env.onlyRequest(t, "wh1")
+			assert.Equal(t, subpath, captured.Path, "captured as sent")
+			d := env.awaitDelivery(t, captured.ID)
+			assert.Equal(t, models.DeliveryOutcomeError, d.Outcome)
+			require.NotNil(t, d.Error)
+			assert.Contains(t, *d.Error, "could lead out of the forward URL's path")
+			assert.Equal(t, tg.URL+"/hooks/stripe", d.TargetURL, "the forward URL, as nothing was sent")
+			assert.Empty(t, tg.requests())
+		})
+	}
+}
+
+// Dots that no server reads as a dot segment are forwarded as sent.
+func TestForwarding_ForwardsSubpathsWithHarmlessDots(t *testing.T) {
 	env := newForwardingEnv(t, allowLoopback)
 	tg := newTarget(t, nil)
-	env.createWebhook(t, "wh1", tg.URL+"/hooks/stripe", false)
+	env.createWebhook(t, "wh1", tg.URL+"/hooks", false)
 
-	rec := env.capture(t, http.MethodPost, "/wh1/../../%2e%2e/admin", "{}", nil)
+	rec := env.capture(t, http.MethodPost, "/wh1/v1..2/./.well-known/..x/a.b", "{}", nil)
 	require.Equal(t, http.StatusAccepted, rec.Code)
 
 	captured := env.onlyRequest(t, "wh1")
-	assert.Equal(t, "/../../%2e%2e/admin", captured.Path, "captured as sent")
 	d := env.awaitDelivery(t, captured.ID)
-	assert.Equal(t, tg.URL+"/hooks/stripe/admin", d.TargetURL)
+	assert.Nil(t, d.Error)
 	got := tg.requests()
 	require.Len(t, got, 1)
-	assert.Equal(t, "/hooks/stripe/admin", got[0].EscapedPath)
+	assert.Equal(t, "/hooks/v1..2/./.well-known/..x/a.b", got[0].EscapedPath)
 }
 
 func TestForwarding_ProviderResponseNotDelayedBySlowTarget(t *testing.T) {
@@ -729,6 +762,35 @@ func TestReplay_ToForwardURLNetworkErrorFlashesFailure(t *testing.T) {
 	require.Equal(t, http.StatusSeeOther, rec.Code)
 	assert.Equal(t, &utils.Flash{Kind: utils.FlashError, Message: "Forward failed: connection refused."}, flashOf(t, rec))
 	assert.Len(t, env.deliveries(t, captured.ID), 2)
+}
+
+// Neither replay target sends a request whose subpath could lead out of the
+// target's path; both say why.
+func TestReplay_RefusesSubpathsThatCouldLeaveTargetPath(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, nil)
+	env.createWebhook(t, "wh1", tg.URL+"/hooks", false)
+	env.capture(t, http.MethodPost, "/wh1/..%2fadmin", "{}", nil)
+	captured := env.onlyRequest(t, "wh1")
+	env.awaitDelivery(t, captured.ID)
+
+	rec := env.postForm(t, "/requests/"+captured.ID+"/replay", url.Values{"target": {"forward"}}, "http://example.com/?address=wh1")
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, &utils.Flash{
+		Kind:    utils.FlashError,
+		Message: `Forward failed: the subpath "/..%2fadmin" could lead out of the forward URL's path, so it wasn't sent.`,
+	}, flashOf(t, rec))
+
+	rec = env.postForm(t, "/requests/"+captured.ID+"/replay", url.Values{"target": {"endpoint"}}, "http://example.com/?address=wh1")
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, &utils.Flash{
+		Kind:    utils.FlashError,
+		Message: `Replay failed: the subpath "/..%2fadmin" could lead out of the endpoint's path, so it wasn't sent.`,
+	}, flashOf(t, rec))
+
+	assert.Empty(t, tg.requests())
+	assert.Len(t, env.requests(t, "wh1"), 1)
+	assert.Len(t, env.deliveries(t, captured.ID), 2, "the automatic delivery and the forward replay")
 }
 
 // The endpoint target, explicit or by default, works as before: the copy is

@@ -34,7 +34,7 @@ The absolute http or https URL a webhook relays its captured requests to, with t
 _Avoid_: Target, destination, callback URL
 
 **Forward**:
-Relaying a captured request to the forward URL: same method, subpath, query, headers and body, minus hop-by-hop headers, plus the `X-Webhook-Tester-Request-Id` header. A captured request that carries that header came back from a forward and isn't forwarded again.
+Relaying a captured request to the forward URL: same method, subpath, query, headers and body, minus hop-by-hop headers, plus the `X-Webhook-Tester-Request-Id` header. A captured request that carries that header came back from a forward and isn't forwarded again. Nor is one whose subpath any server could read as holding a `..` segment, encoded or not, since it could reach paths outside the forward URL's; its delivery records why.
 _Avoid_: Proxy, relay request
 
 **Delivery**:

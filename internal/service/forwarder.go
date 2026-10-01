@@ -198,7 +198,7 @@ func (f *Forwarder) ForwardAsync(wh models.Webhook, wr models.WebhookRequest) {
 func (f *Forwarder) refuse(wh models.Webhook, wr models.WebhookRequest, reason string) {
 	d := newDelivery(wr, models.DeliveryTriggerAuto)
 	if wh.ForwardURL != nil {
-		d.TargetURL, _ = wr.URLAt(*wh.ForwardURL)
+		d.TargetURL = targetOrBase(wr, *wh.ForwardURL)
 	}
 	d.Error = ptr(reason)
 	d.Outcome = models.DeliveryOutcomeDropped
@@ -226,6 +226,15 @@ func (f *Forwarder) Shutdown(ctx context.Context) error {
 	}
 }
 
+// targetOrBase is the URL wr is forwarded to under base, or base itself
+// when wr can't be forwarded there.
+func targetOrBase(wr models.WebhookRequest, base string) string {
+	if target, err := wr.URLAt(base); err == nil {
+		return target
+	}
+	return base
+}
+
 // newDelivery starts the delivery of wr with the given trigger.
 func newDelivery(wr models.WebhookRequest, trigger models.DeliveryTrigger) models.Delivery {
 	return models.Delivery{
@@ -248,6 +257,11 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 		return models.DeliveryOutcomeError
 	}
 	target, err := wr.URLAt(*wh.ForwardURL)
+	if errors.Is(err, models.ErrSubpathLeavesBase) {
+		d.TargetURL = *wh.ForwardURL
+		d.Error = ptr(fmt.Sprintf("the subpath %q could lead out of the forward URL's path, so it wasn't sent", wr.Path))
+		return models.DeliveryOutcomeError
+	}
 	if err != nil {
 		d.Error = ptr(fmt.Sprintf("invalid forward URL: %v", err))
 		return models.DeliveryOutcomeError
