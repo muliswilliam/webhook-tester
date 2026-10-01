@@ -21,6 +21,18 @@ const (
 	DeliveryTriggerReplay DeliveryTrigger = "replay"
 )
 
+// ReplayTarget is where a replay re-sends a captured request.
+type ReplayTarget string
+
+const (
+	// ReplayTargetEndpoint re-sends the request to its Webhook Tester
+	// endpoint, capturing a copy. It is the default.
+	ReplayTargetEndpoint ReplayTarget = "endpoint"
+	// ReplayTargetForward relays the request to its webhook's forward URL,
+	// recording a replay delivery on the original request.
+	ReplayTargetForward ReplayTarget = "forward"
+)
+
 // DeliveryOutcome classifies how a delivery ended. The UI colors deliveries
 // by it and the delivery metrics are labelled with it.
 type DeliveryOutcome string

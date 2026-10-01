@@ -48,12 +48,29 @@ var funcMap = template.FuncMap{
 		}
 		return f
 	},
-	"maxForwardURLLength": func() int { return models.MaxForwardURLLength },
-	"deliveryStatus":      deliveryStatus,
-	"deliveryBadge":       NewDeliveryBadge,
-	"formatDuration":      formatDuration,
-	"fieldValue":          models.FieldValue,
-	"maxDeliveryBodyKiB":  func() int { return models.MaxDeliveryResponseBody >> 10 },
+	"maxForwardURLLength":  func() int { return models.MaxForwardURLLength },
+	"deliveryStatus":       deliveryStatus,
+	"deliveryBadge":        NewDeliveryBadge,
+	"formatDuration":       formatDuration,
+	"fieldValue":           models.FieldValue,
+	"maxDeliveryBodyKiB":   func() int { return models.MaxDeliveryResponseBody >> 10 },
+	"replayTargetEndpoint": func() models.ReplayTarget { return models.ReplayTargetEndpoint },
+	"replayTargetForward":  func() models.ReplayTarget { return models.ReplayTargetForward },
+	"replayControl": func(requestID, forwardURL string, csrfField template.HTML, prominent bool) ReplayControl {
+		return ReplayControl{RequestID: requestID, ForwardURL: forwardURL, CSRFField: csrfField, Prominent: prominent}
+	},
+}
+
+// ReplayControl is the data of the "replay-control" template: the replay
+// buttons of a captured request.
+type ReplayControl struct {
+	RequestID string
+	// ForwardURL is the webhook's forward URL if it forwards, which offers
+	// the replay to it; "" otherwise.
+	ForwardURL string
+	CSRFField  template.HTML
+	// Prominent makes the main replay the page's primary button.
+	Prominent bool
 }
 
 // HeaderRow is one row of the response header editor.

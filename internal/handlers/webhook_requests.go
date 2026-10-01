@@ -165,18 +165,9 @@ func (h *WebhookRequestHandler) DeleteRequest(w http.ResponseWriter, r *http.Req
 	http.Redirect(w, r, "/?address="+url.QueryEscape(wr.WebhookID), http.StatusSeeOther)
 }
 
-// Replay targets, chosen by the replay form's "target" field.
-const (
-	// ReplayTargetEndpoint re-sends the request to its Webhook Tester
-	// endpoint, capturing a copy. It is the default.
-	ReplayTargetEndpoint = "endpoint"
-	// ReplayTargetForward relays the request to its webhook's forward URL,
-	// recording a delivery on the original request.
-	ReplayTargetForward = "forward"
-)
-
 // ReplayRequest re-sends a captured request, to its endpoint or to its
-// webhook's forward URL, and flashes the outcome.
+// webhook's forward URL as chosen by the form's "target" field, and flashes
+// the outcome.
 func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -187,10 +178,10 @@ func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	switch target := r.FormValue("target"); target {
-	case "", ReplayTargetEndpoint:
+	switch target := models.ReplayTarget(r.FormValue("target")); target {
+	case "", models.ReplayTargetEndpoint:
 		h.replayToEndpoint(w, r, reqEvent)
-	case ReplayTargetForward:
+	case models.ReplayTargetForward:
 		h.replayToForwardURL(w, r, wh, reqEvent)
 	default:
 		http.Error(w, fmt.Sprintf("unknown replay target %q", target), http.StatusBadRequest)

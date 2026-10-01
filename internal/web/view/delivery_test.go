@@ -99,6 +99,7 @@ func TestRenderPartialMainRequestRowDeliveries(t *testing.T) {
 	// Both replay targets are offered.
 	assert.Contains(t, html, `name="target" value="endpoint"`)
 	assert.Contains(t, html, `name="target" value="forward"`)
+	assert.Contains(t, html, `class="btn-secondary" title="Send to https://hooks.example.com/stripe"`, "a row's replays are secondary")
 	assert.Contains(t, html, "Replay to forward URL")
 }
 
@@ -168,7 +169,7 @@ func TestRenderHTMLRequestDeliveries(t *testing.T) {
 		assert.Contains(t, body, "Deliveries")
 		assert.Contains(t, body, `id="delivery-del-replay"`)
 		assert.Contains(t, body, `name="target" value="forward"`)
-		assert.Contains(t, body, `title="Send to https://hooks.example.com/stripe"`)
+		assert.Contains(t, body, `class="btn-primary" title="Send to https://hooks.example.com/stripe"`, "the page's main action")
 	})
 
 	t.Run("forwarding webhook, request not forwarded yet", func(t *testing.T) {
@@ -185,7 +186,7 @@ func TestRenderHTMLRequestDeliveries(t *testing.T) {
 		body := renderRequestPage(t, guest, req)
 		assert.NotContains(t, body, "Deliveries")
 		assert.NotContains(t, body, `name="target"`)
-		assert.Contains(t, body, "Replay request")
+		assert.Contains(t, body, `<button class="btn-primary">Replay request</button>`)
 	})
 }
 

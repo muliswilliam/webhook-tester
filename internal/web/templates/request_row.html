@@ -111,25 +111,7 @@
         >
           Open details
         </a>
-        {{ if .ForwardURL }}
-          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
-            {{ .CSRFField }}
-            <input type="hidden" name="target" value="endpoint" />
-            <button class="btn-secondary">Replay to endpoint</button>
-          </form>
-          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
-            {{ .CSRFField }}
-            <input type="hidden" name="target" value="forward" />
-            <button class="btn-secondary" title="Send to {{ .ForwardURL }}">
-              Replay to forward URL
-            </button>
-          </form>
-        {{ else }}
-          <form method="POST" action="/requests/{{ .Request.ID }}/replay">
-            {{ .CSRFField }}
-            <button class="btn-secondary">Replay request</button>
-          </form>
-        {{ end }}
+        {{ template "replay-control" (replayControl .Request.ID .ForwardURL .CSRFField false) }}
         <form
           method="POST"
           action="/requests/{{ .Request.ID }}/delete"
@@ -144,6 +126,32 @@
       </div>
     </div>
   </article>
+{{ end }}
+
+{{/* The replay buttons of a captured request: to its endpoint and, when
+  the webhook forwards, to its forward URL. With .Prominent, the main replay
+  is the primary button. Expects a view.ReplayControl.
+*/}}
+{{ define "replay-control" }}
+  {{ $main := "btn-secondary" }}
+  {{ if .Prominent }}{{ $main = "btn-primary" }}{{ end }}
+  {{ if .ForwardURL }}
+    <form method="POST" action="/requests/{{ .RequestID }}/replay">
+      {{ .CSRFField }}
+      <input type="hidden" name="target" value="{{ replayTargetEndpoint }}" />
+      <button class="btn-secondary">Replay to endpoint</button>
+    </form>
+    <form method="POST" action="/requests/{{ .RequestID }}/replay">
+      {{ .CSRFField }}
+      <input type="hidden" name="target" value="{{ replayTargetForward }}" />
+      <button class="{{ $main }}" title="Send to {{ .ForwardURL }}">Replay to forward URL</button>
+    </form>
+  {{ else }}
+    <form method="POST" action="/requests/{{ .RequestID }}/replay">
+      {{ .CSRFField }}
+      <button class="{{ $main }}">Replay request</button>
+    </form>
+  {{ end }}
 {{ end }}
 
 {{/* Expects the rawBody_<key> and copiedBody_<key> signals of the request to be declared. */}}
