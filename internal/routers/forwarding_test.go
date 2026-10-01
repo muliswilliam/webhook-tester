@@ -331,6 +331,25 @@ func TestForwarding_RelaysQueryPathAndRepeatedHeadersVerbatim(t *testing.T) {
 	assert.Equal(t, tg.URL+"/my%2Fhooks/files/a%2Fb/c%20d?sig=a%2Bb&a=0&b=x%20y&a=1&a=2&empty=&flag", d.TargetURL)
 }
 
+// A sender can't use dot segments in the subpath to reach paths outside the
+// forward URL's on the target host.
+func TestForwarding_SubpathStaysUnderForwardURLPath(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, nil)
+	env.createWebhook(t, "wh1", tg.URL+"/hooks/stripe", false)
+
+	rec := env.capture(t, http.MethodPost, "/wh1/../../%2e%2e/admin", "{}", nil)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	captured := env.onlyRequest(t, "wh1")
+	assert.Equal(t, "/../../%2e%2e/admin", captured.Path, "captured as sent")
+	d := env.awaitDelivery(t, captured.ID)
+	assert.Equal(t, tg.URL+"/hooks/stripe/admin", d.TargetURL)
+	got := tg.requests()
+	require.Len(t, got, 1)
+	assert.Equal(t, "/hooks/stripe/admin", got[0].EscapedPath)
+}
+
 func TestForwarding_ProviderResponseNotDelayedBySlowTarget(t *testing.T) {
 	env := newForwardingEnv(t, allowLoopback)
 	release := make(chan struct{})

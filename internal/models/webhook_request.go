@@ -114,19 +114,21 @@ func (wr WebhookRequest) QueryString() string {
 // URLAt is the URL the request addresses when relayed under base: base's
 // path followed by the request's subpath, and base's query followed by the
 // request's query string. Both are kept as written, percent-encoding and
-// parameter order included.
+// parameter order included, except that the subpath's dot segments are
+// resolved, so it can't lead out of base's path.
 func (wr WebhookRequest) URLAt(base string) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
 		return "", err
 	}
 	if wr.Path != "" {
-		escaped := strings.TrimSuffix(u.EscapedPath(), "/") + wr.Path
+		sub := removeDotSegments(wr.Path)
+		escaped := strings.TrimSuffix(u.EscapedPath(), "/") + sub
 		if decoded, err := url.PathUnescape(escaped); err == nil {
 			u.Path, u.RawPath = decoded, escaped
 		} else {
 			// An older row whose decoded path holds a lone "%".
-			u.Path, u.RawPath = strings.TrimSuffix(u.Path, "/")+wr.Path, ""
+			u.Path, u.RawPath = strings.TrimSuffix(u.Path, "/")+sub, ""
 		}
 	}
 	if q := wr.QueryString(); q != "" {
@@ -137,4 +139,28 @@ func (wr WebhookRequest) URLAt(base string) (string, error) {
 		}
 	}
 	return u.String(), nil
+}
+
+// removeDotSegments resolves the "." and ".." segments of a subpath, which
+// starts with "/", as RFC 3986 section 5.2.4 does: a ".." beyond the start
+// is dropped, so the result never climbs above it. Segments are compared
+// decoded, since many servers treat "%2e" as ".", and the others are kept
+// as written.
+func removeDotSegments(p string) string {
+	segments := strings.Split(strings.TrimPrefix(p, "/"), "/")
+	out := make([]string, 0, len(segments))
+	for i, seg := range segments {
+		decoded, err := url.PathUnescape(seg)
+		if err != nil || (decoded != "." && decoded != "..") {
+			out = append(out, seg)
+			continue
+		}
+		if decoded == ".." && len(out) > 0 {
+			out = out[:len(out)-1]
+		}
+		if i == len(segments)-1 {
+			out = append(out, "") // "/a/b/.." is "/a/"
+		}
+	}
+	return "/" + strings.Join(out, "/")
 }

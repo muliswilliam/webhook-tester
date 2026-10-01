@@ -86,6 +86,23 @@ func TestWebhookRequest_URLAt(t *testing.T) {
 			base: "https://api.example.com/hooks", wr: WebhookRequest{Query: datatypes.JSONMap{"n": 5.0}},
 			want: "https://api.example.com/hooks?n=5",
 		},
+		"dot segments can't climb above the base": {
+			base: "https://api.example.com/hooks/stripe", wr: WebhookRequest{Path: "/../../admin"}, want: "https://api.example.com/hooks/stripe/admin",
+		},
+		"escaped dot segments": {
+			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/%2e%2e/%2E%2e/admin"}, want: "https://api.example.com/hooks/admin",
+		},
+		"dot segments within the subpath resolved": {
+			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/a/./b/../c"}, want: "https://api.example.com/hooks/a/c",
+		},
+		"trailing dot segment keeps the slash": {
+			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/a/b/.."}, want: "https://api.example.com/hooks/a/",
+		},
+		"only dot segments": {base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/.."}, want: "https://api.example.com/hooks/"},
+		"dots inside a segment kept": {
+			base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/v1..2/.well-known/..x"}, want: "https://api.example.com/hooks/v1..2/.well-known/..x",
+		},
+		"empty segments kept": {base: "https://api.example.com/hooks", wr: WebhookRequest{Path: "/a//b/"}, want: "https://api.example.com/hooks/a//b/"},
 		"subpath and query": {
 			base: "https://api.example.com/hooks?k=v", wr: WebhookRequest{Path: "/a%2Fb", RawQuery: "x=1"},
 			want: "https://api.example.com/hooks/a%2Fb?k=v&x=1",
