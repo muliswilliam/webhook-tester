@@ -62,8 +62,8 @@ var funcMap = template.FuncMap{
 	"maxDeliveryBodyKiB":   func() int { return models.MaxDeliveryResponseBody >> 10 },
 	"replayTargetEndpoint": func() models.ReplayTarget { return models.ReplayTargetEndpoint },
 	"replayTargetForward":  func() models.ReplayTarget { return models.ReplayTargetForward },
-	"replayControl": func(requestID string, canForward bool, forwardURL string, csrfField template.HTML, prominent bool) ReplayControl {
-		return ReplayControl{RequestID: requestID, CanForward: canForward, ForwardURL: forwardURL, CSRFField: csrfField, Prominent: prominent}
+	"replayControl": func(requestID string, forwardURL string, csrfField template.HTML, prominent bool) ReplayControl {
+		return ReplayControl{RequestID: requestID, ForwardURL: forwardURL, CSRFField: csrfField, Prominent: prominent}
 	},
 	// jsString quotes s as a JavaScript string, for a Datastar expression.
 	"jsString": func(s string) string {
@@ -74,19 +74,17 @@ var funcMap = template.FuncMap{
 }
 
 // ForwardToSignal names the page signal holding the forward URL of the
-// webhook the page shows, "" if it doesn't forward. The replay controls of
-// a webhook that can forward follow it, and the stream updates it when the
-// webhook's settings are saved, so controls already on the page never offer
-// a replay to a forward URL that was cleared.
+// webhook the page shows, "" if it doesn't forward. The replay controls
+// follow it, and the stream updates it when the webhook's settings are
+// saved, so controls already on the page offer a replay to the forward URL
+// exactly when the webhook forwards: never once it is cleared, and as soon
+// as it is set, even on a guest webhook claimed since the page loaded.
 const ForwardToSignal = "forwardTo"
 
 // ReplayControl is the data of the "replay-control" template: the replay
 // buttons of a captured request.
 type ReplayControl struct {
 	RequestID string
-	// CanForward is set for a webhook that may forward, whose control can
-	// offer the replay to its forward URL.
-	CanForward bool
 	// ForwardURL is the webhook's forward URL if it forwards, "" otherwise.
 	// The control is rendered for it, then follows the ForwardToSignal.
 	ForwardURL string

@@ -79,7 +79,7 @@ func testDeliveries() []models.Delivery {
 
 func TestRenderPartialMainRequestRowDeliveries(t *testing.T) {
 	wr := models.WebhookRequest{ID: "req-1", WebhookID: "wh-1", Method: "POST", Deliveries: testDeliveries()}
-	html, err := RenderRequestPartial("main-request-row", testRequestRow{Request: wr, CanForward: true, ForwardURL: "https://hooks.example.com/stripe"})
+	html, err := RenderRequestPartial("main-request-row", testRequestRow{Request: wr, ForwardURL: "https://hooks.example.com/stripe"})
 	require.NoError(t, err)
 
 	// The badge shows the latest delivery.
@@ -111,21 +111,8 @@ func TestRenderPartialMainRequestRowDeliveries(t *testing.T) {
 	assert.Contains(t, html, `data-show="!!$forwardTo"`, "the forward replay follows the forward URL")
 }
 
-// A webhook that can forward but has no forward URL renders the forward
-// replay hidden, so the forwardTo signal can show it once one is set.
-func TestRenderPartialMainRequestRowForwardURLNotSet(t *testing.T) {
-	wr := models.WebhookRequest{ID: "req-1", WebhookID: "wh-1", Method: "POST"}
-	html, err := RenderRequestPartial("main-request-row", testRequestRow{Request: wr, CanForward: true})
-	require.NoError(t, err)
-
-	endpoint := between(t, html, `value="endpoint"`, "</button>")
-	assert.Contains(t, endpoint, "Replay request")
-	assert.Contains(t, endpoint, `data-text="$forwardTo ? 'Replay to endpoint' : 'Replay request'"`)
-	forward := between(t, html, `action="/requests/req-1/replay"
-      style="display: none"`, "</button>")
-	assert.Contains(t, forward, `value="forward"`)
-}
-
+// A webhook that doesn't forward, guest or not, renders the forward replay
+// hidden, so the forwardTo signal can show it once a forward URL is set.
 func TestRenderPartialMainRequestRowWithoutForwarding(t *testing.T) {
 	wr := models.WebhookRequest{ID: "req-1", WebhookID: "wh-1", Method: "POST"}
 	html, err := RenderRequestPartial("main-request-row", testRequestRow{Request: wr})
@@ -137,9 +124,13 @@ func TestRenderPartialMainRequestRowWithoutForwarding(t *testing.T) {
 	assert.NotContains(t, html, "delivery-badge tone-")
 	assert.NotContains(t, html, "delivery-item")
 
-	assert.Contains(t, html, "Replay request")
-	assert.NotContains(t, html, `value="forward"`, "a guest webhook never forwards")
-	assert.NotContains(t, html, "forwardTo")
+	endpoint := between(t, html, `value="endpoint"`, "</button>")
+	assert.Contains(t, endpoint, "Replay request")
+	assert.Contains(t, endpoint, `data-text="$forwardTo ? 'Replay to endpoint' : 'Replay request'"`)
+	forward := between(t, html, `action="/requests/req-1/replay"
+    style="display: none"`, "</button>")
+	assert.Contains(t, forward, `value="forward"`)
+	assert.Contains(t, forward, `data-show="!!$forwardTo"`)
 }
 
 func TestRenderPartialDeliveryBadgeAndItem(t *testing.T) {
@@ -211,7 +202,9 @@ func TestRenderHTMLRequestDeliveries(t *testing.T) {
 		req.Deliveries = nil
 		body := renderRequestPage(t, guest, req)
 		assert.NotContains(t, body, "Deliveries")
-		assert.NotContains(t, body, `value="forward"`)
+		assert.Contains(t, body, `data-signals:forward-to="&#34;&#34;"`)
+		assert.Regexp(t, `style="display: none"\s+data-show="!!\$forwardTo"\s*>\s*<input type="hidden">\s*<input type="hidden" name="target" value="forward"`,
+			body, "the forward replay is hidden until a forward URL is set")
 		endpoint := between(t, body, `value="endpoint"`, "</button>")
 		assert.Contains(t, endpoint, `class="btn-primary"`)
 		assert.Contains(t, endpoint, "Replay request")

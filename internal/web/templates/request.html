@@ -62,7 +62,7 @@
         </button>
       </div>
       <div class="flex flex-wrap gap-2">
-        {{ template "replay-control" (replayControl .Request.ID .Webhook.CanForward .Webhook.ActiveForwardURL .CSRFField true) }}
+        {{ template "replay-control" (replayControl .Request.ID .Webhook.ActiveForwardURL .CSRFField true) }}
         <form
           method="POST"
           action="/requests/{{ .Request.ID }}/delete"

@@ -377,7 +377,6 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 	stream := &requestStream{
 		sse:           datastar.NewSSE(w, r),
 		webhookID:     webhookID,
-		canForward:    webhook.CanForward(),
 		forwardURL:    webhook.ActiveForwardURL(),
 		mainPanel:     r.URL.Query().Has("active"),
 		pageRequestID: r.URL.Query().Get("request"),
@@ -439,9 +438,8 @@ type requestRowView struct {
 	Request   models.WebhookRequest
 	CSRFField template.HTML
 	IsNew     bool
-	// CanForward and ForwardURL decide the replay targets offered; see
+	// ForwardURL decides the replay targets first shown; see
 	// view.ReplayControl.
-	CanForward bool
 	ForwardURL string
 }
 
@@ -456,7 +454,6 @@ type requestCounterView struct {
 type requestStream struct {
 	sse        *datastar.ServerSentEventGenerator
 	webhookID  string
-	canForward bool   // see requestRowView
 	forwardURL string // see requestRowView; kept current by settings events
 	mainPanel  bool   // the page shows the webhook's request list
 	// pageRequestID is the request whose page the stream is on, if any.
@@ -485,7 +482,7 @@ func (s *requestStream) send(requests []models.WebhookRequest, count *int64) err
 		}
 
 		if s.mainPanel {
-			row := requestRowView{Request: wr, CSRFField: s.csrfField, IsNew: true, CanForward: s.canForward, ForwardURL: s.forwardURL}
+			row := requestRowView{Request: wr, CSRFField: s.csrfField, IsNew: true, ForwardURL: s.forwardURL}
 			if err := s.patch("main-request-row", row,
 				datastar.WithSelectorID("request-log-list-"+s.webhookID),
 				datastar.WithModePrepend(),

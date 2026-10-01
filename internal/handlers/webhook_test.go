@@ -1008,6 +1008,31 @@ func TestWebhookHandler_StreamWebhookEvents_SettingsUpdateReplayTargets(t *testi
 	assert.NotContains(t, sidebar.rec.body(), "datastar-patch-signals")
 }
 
+// A guest webhook claimed while its page is open forwards once a forward URL
+// is set, so the page's replay controls offer the forward URL without a
+// reload, those of rows streamed later included.
+func TestWebhookHandler_StreamWebhookEvents_ClaimedGuestWebhookOffersForwardReplay(t *testing.T) {
+	h, whRepo, _, userRepo, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+	page := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil))
+
+	owner := &models.User{Email: "owner@example.com"}
+	userRepo.addUser(owner)
+	require.NoError(t, h.webhookSvc.ClaimGuestWebhook("wh", owner.ID))
+	claimed, err := h.webhookSvc.GetWebhook("wh")
+	require.NoError(t, err)
+	forwardURL := "https://hooks.example.com/in"
+	claimed.ForwardURL = &forwardURL
+	require.NoError(t, h.webhookSvc.UpdateWebhook(claimed))
+
+	page.waitFor(t, "event: datastar-patch-signals", `"forwardTo":"https://hooks.example.com/in"`)
+	recordRequest(t, h, "wh", "req-1")
+	page.waitFor(t, "req-1")
+	row := page.rec.body()[strings.Index(page.rec.body(), "req-1"):]
+	assert.Contains(t, row, `value="forward"`)
+	assert.Contains(t, row, `data-show="!!$forwardTo"`)
+}
+
 // Deliveries are listed by when they started, however they finish: an
 // automatic delivery that outlasts a later replay stays below it, and the
 // badge keeps showing the replay.

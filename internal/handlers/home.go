@@ -149,10 +149,10 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	csrfField := csrf.TemplateField(r)
-	canForward, forwardURL := activeWebhook.CanForward(), activeWebhook.ActiveForwardURL()
+	forwardURL := activeWebhook.ActiveForwardURL()
 	rows := make([]requestRowView, len(activeWebhook.Requests))
 	for i, wr := range activeWebhook.Requests {
-		rows[i] = requestRowView{Request: wr, CSRFField: csrfField, CanForward: canForward, ForwardURL: forwardURL}
+		rows[i] = requestRowView{Request: wr, CSRFField: csrfField, ForwardURL: forwardURL}
 	}
 
 	// RenderHTML the home page

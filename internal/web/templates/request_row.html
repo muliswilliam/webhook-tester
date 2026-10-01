@@ -119,7 +119,7 @@
         >
           Open details
         </a>
-        {{ template "replay-control" (replayControl .Request.ID .CanForward .ForwardURL .CSRFField false) }}
+        {{ template "replay-control" (replayControl .Request.ID .ForwardURL .CSRFField false) }}
         <form
           method="POST"
           action="/requests/{{ .Request.ID }}/delete"
@@ -138,9 +138,9 @@
 
 {{/* The replay buttons of a captured request: to its endpoint and, when
   the webhook forwards, to its forward URL. With .Prominent, the main replay
-  is the primary button. On a webhook that can forward, the buttons follow
-  the page's forwardTo signal, which the stream keeps current, so they change
-  when the forward URL is set or cleared. Expects a view.ReplayControl.
+  is the primary button. The buttons follow the page's forwardTo signal,
+  which the stream keeps current, so they change when the forward URL is set
+  or cleared. Expects a view.ReplayControl.
 */}}
 {{ define "replay-control" }}
   {{ $endpointClass := "btn-secondary" }}
@@ -152,12 +152,10 @@
     <input type="hidden" name="target" value="{{ replayTargetEndpoint }}" />
     <button
       class="{{ $endpointClass }}"
-      {{ if .CanForward }}
-        data-text="${{ forwardToSignal }} ? 'Replay to endpoint' : 'Replay request'"
-        {{ if .Prominent }}
-          data-class:btn-primary="!${{ forwardToSignal }}"
-          data-class:btn-secondary="!!${{ forwardToSignal }}"
-        {{ end }}
+      data-text="${{ forwardToSignal }} ? 'Replay to endpoint' : 'Replay request'"
+      {{ if .Prominent }}
+        data-class:btn-primary="!${{ forwardToSignal }}"
+        data-class:btn-secondary="!!${{ forwardToSignal }}"
       {{ end }}
     >
       {{ if .ForwardURL }}
@@ -167,24 +165,22 @@
       {{ end }}
     </button>
   </form>
-  {{ if .CanForward }}
-    <form
-      method="POST"
-      action="/requests/{{ .RequestID }}/replay"
-      {{ if not .ForwardURL }}style="display: none"{{ end }}
-      data-show="!!${{ forwardToSignal }}"
+  <form
+    method="POST"
+    action="/requests/{{ .RequestID }}/replay"
+    {{ if not .ForwardURL }}style="display: none"{{ end }}
+    data-show="!!${{ forwardToSignal }}"
+  >
+    {{ .CSRFField }}
+    <input type="hidden" name="target" value="{{ replayTargetForward }}" />
+    <button
+      class="{{ $forwardClass }}"
+      title="Send to {{ .ForwardURL }}"
+      data-attr:title="'Send to ' + ${{ forwardToSignal }}"
     >
-      {{ .CSRFField }}
-      <input type="hidden" name="target" value="{{ replayTargetForward }}" />
-      <button
-        class="{{ $forwardClass }}"
-        title="Send to {{ .ForwardURL }}"
-        data-attr:title="'Send to ' + ${{ forwardToSignal }}"
-      >
-        Replay to forward URL
-      </button>
-    </form>
-  {{ end }}
+      Replay to forward URL
+    </button>
+  </form>
 {{ end }}
 
 {{/* Expects the rawBody_<key> and copiedBody_<key> signals of the request to be declared. */}}
