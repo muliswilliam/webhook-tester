@@ -30,7 +30,7 @@ func newTestWebhookHandler(t *testing.T) (*WebhookHandler, *testWebhookRepo, *te
 	metricsRec := &testMetricsRecorder{}
 	authSvc := newTestAuthService(t, userRepo)
 
-	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{})
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{}, testDomain)
 	reqSvc := service.NewWebhookRequestService(reqRepo)
 
 	forwarder := newTestForwarder(whSvc, metricsRec)
@@ -452,7 +452,6 @@ func postUpdateForm(h *WebhookHandler, form url.Values, cookie *http.Cookie) *ht
 }
 
 func TestWebhookHandler_UpdateWebhook_ForwardURL(t *testing.T) {
-	t.Setenv("DOMAIN", "https://tester.example.com")
 	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
 	user := &models.User{Email: "a@b.com"}
 	userRepo.addUser(user)

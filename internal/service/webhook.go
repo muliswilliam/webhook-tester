@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"net/url"
 	"time"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/repository"
@@ -13,12 +14,27 @@ import (
 type WebhookService struct {
 	repo       repository.WebhookRepository
 	deliveries repository.DeliveryRepository
+	domain     string
 	broker     *broker
 }
 
 // NewWebhookService constructs a WebhookService with the given repositories.
-func NewWebhookService(repo repository.WebhookRepository, deliveries repository.DeliveryRepository) *WebhookService {
-	return &WebhookService{repo: repo, deliveries: deliveries, broker: newBroker()}
+// domain is the public base URL of this instance (the DOMAIN setting), which
+// webhook endpoints are served under, e.g. "https://webhooks.example.com".
+func NewWebhookService(repo repository.WebhookRepository, deliveries repository.DeliveryRepository, domain string) *WebhookService {
+	return &WebhookService{repo: repo, deliveries: deliveries, domain: domain, broker: newBroker()}
+}
+
+// ValidateWebhook validates w against this instance, so its forward URL
+// can't point back at the endpoints EndpointURL builds.
+func (s *WebhookService) ValidateWebhook(w *models.Webhook) error {
+	return w.Validate(s.domain)
+}
+
+// EndpointURL is the URL of the webhook's endpoint on this instance, which
+// captured requests are replayed to.
+func (s *WebhookService) EndpointURL(webhookID string) (string, error) {
+	return url.JoinPath(s.domain, "webhooks", webhookID)
 }
 
 // CreateWebhook creates a new webhook record.

@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 	"webhook-tester/internal/metrics"
@@ -216,8 +215,7 @@ func (h *WebhookRequestHandler) replayToForwardURL(w http.ResponseWriter, r *htt
 // replayToEndpoint re-sends the request to its Webhook Tester endpoint,
 // which captures it as a new request.
 func (h *WebhookRequestHandler) replayToEndpoint(w http.ResponseWriter, r *http.Request, reqEvent *models.WebhookRequest) {
-	domain := os.Getenv("DOMAIN")
-	endpoint, err := url.JoinPath(domain, "webhooks", reqEvent.WebhookID)
+	endpoint, err := h.webhookService.EndpointURL(reqEvent.WebhookID)
 	if err == nil {
 		endpoint, err = reqEvent.URLAt(endpoint)
 	}

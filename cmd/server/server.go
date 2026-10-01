@@ -44,6 +44,10 @@ type Server struct {
 	MetricsSrv *http.Server
 	// Forwarding configures the relay of captured requests to forward URLs.
 	Forwarding config.Forwarding
+	// Domain is the public base URL of this instance (the DOMAIN setting).
+	// Webhook endpoints are served under it, so replays target it and
+	// forward URLs may not point back at it.
+	Domain string
 
 	// WebhookSvc is set by MountHandlers.
 	WebhookSvc *service.WebhookService
@@ -58,7 +62,7 @@ func (srv *Server) MountHandlers() {
 	repo := store.NewGormWebookRepo(srv.DB, srv.Logger)
 	userRepo := store.NewGormUserRepo(srv.DB, srv.Logger)
 	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
-	webhookSvc := service.NewWebhookService(repo, store.NewGormDeliveryRepo(srv.DB, srv.Logger))
+	webhookSvc := service.NewWebhookService(repo, store.NewGormDeliveryRepo(srv.DB, srv.Logger), srv.Domain)
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
 	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
 	srv.WebhookSvc = webhookSvc
@@ -160,5 +164,6 @@ func NewServer() *Server {
 		Srv:        &srv,
 		MetricsSrv: &http.Server{Addr: metricsAddr, ReadHeaderTimeout: 10 * time.Second},
 		Forwarding: forwarding,
+		Domain:     os.Getenv("DOMAIN"),
 	}
 }

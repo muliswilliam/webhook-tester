@@ -46,13 +46,20 @@ type forwardingEnv struct {
 
 func newForwardingEnv(t *testing.T, cfg config.Forwarding) *forwardingEnv {
 	t.Helper()
+	return newForwardingEnvAt(t, cfg, testDomain)
+}
+
+// newForwardingEnvAt is newForwardingEnv for an instance served at domain,
+// where replays to the endpoint are sent.
+func newForwardingEnvAt(t *testing.T, cfg config.Forwarding, domain string) *forwardingEnv {
+	t.Helper()
 	t.Setenv("AUTH_SECRET", "some-32-plus-byte-secret-value!!")
-	t.Setenv("DOMAIN", "http://example.com")
+	t.Setenv("DOMAIN", "http://example.com") // the web router's CSRF origin
 
 	db := newAPITestDB(t)
 	logger := testLogger()
 	authSvc := service.NewAuthService(store.NewGormUserRepo(db, logger), db, "some-32-plus-byte-secret-value!!")
-	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger), store.NewGormDeliveryRepo(db, logger))
+	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger), store.NewGormDeliveryRepo(db, logger), domain)
 	webhookReqSvc := service.NewWebhookRequestService(store.NewGormWebhookRequestRepo(db, logger))
 	forwarder := newTestForwarder(t, webhookSvc, cfg)
 	metricsRec := &appMetrics.PrometheusRecorder{}
@@ -643,17 +650,22 @@ func TestReplay_ToEndpoint(t *testing.T) {
 		"explicit": {"target": {"endpoint"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			env := newForwardingEnv(t, allowLoopback)
+			// The instance's endpoints are served by the env's webhook
+			// router, which needs the endpoint's URL as its domain.
+			var webhooks http.Handler
+			endpoint := httptest.NewServer(http.StripPrefix("/webhooks", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				webhooks.ServeHTTP(w, r)
+			})))
+			defer endpoint.Close()
+			env := newForwardingEnvAt(t, allowLoopback, endpoint.URL)
+			webhooks = env.webhooks
 			tg := newTarget(t, nil)
 			env.createWebhook(t, "wh1", tg.URL, false)
-			endpoint := httptest.NewServer(http.StripPrefix("/webhooks", env.webhooks))
-			defer endpoint.Close()
 
 			env.capture(t, http.MethodPost, "/wh1", "{}", nil)
 			captured := env.onlyRequest(t, "wh1")
 			env.awaitDelivery(t, captured.ID)
 
-			t.Setenv("DOMAIN", endpoint.URL)
 			rec := env.postForm(t, "/requests/"+captured.ID+"/replay", form, "http://example.com/?address=wh1")
 			require.Equal(t, http.StatusSeeOther, rec.Code)
 			assert.Equal(t, &utils.Flash{Kind: utils.FlashSuccess, Message: "Request replayed. The endpoint answered 202 Accepted."}, flashOf(t, rec))

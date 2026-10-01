@@ -19,7 +19,7 @@ func newTestHomeHandler(t *testing.T) (*HomeHandler, *testWebhookRepo, *testUser
 	userRepo := newTestUserRepo()
 	metricsRec := &testMetricsRecorder{}
 	authSvc := newTestAuthService(t, userRepo)
-	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{})
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{}, testDomain)
 
 	h := NewHomeHandler(whSvc, authSvc, newTestLogger(), metricsRec)
 	return h, whRepo, userRepo, metricsRec, authSvc

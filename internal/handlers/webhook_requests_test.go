@@ -19,13 +19,20 @@ import (
 
 func newTestWebhookRequestHandler(t *testing.T) (*WebhookRequestHandler, *testWebhookRequestRepo, *testWebhookRepo, *testUserRepo, *service.AuthService) {
 	t.Helper()
+	return newTestWebhookRequestHandlerAt(t, testDomain)
+}
+
+// newTestWebhookRequestHandlerAt is newTestWebhookRequestHandler for an
+// instance served at domain, which replays to the endpoint target.
+func newTestWebhookRequestHandlerAt(t *testing.T, domain string) (*WebhookRequestHandler, *testWebhookRequestRepo, *testWebhookRepo, *testUserRepo, *service.AuthService) {
+	t.Helper()
 	reqRepo := newTestWebhookRequestRepo()
 	whRepo := newTestWebhookRepo()
 	userRepo := newTestUserRepo()
 	authSvc := newTestAuthService(t, userRepo)
 
 	reqSvc := service.NewWebhookRequestService(reqRepo)
-	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{})
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{}, domain)
 
 	var rec metrics.Recorder = &testMetricsRecorder{}
 	forwarder := newTestForwarder(whSvc, rec)
@@ -246,7 +253,6 @@ func TestWebhookRequestHandler_ReplayRequest_InvalidMethod(t *testing.T) {
 	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
 	whRepo.put(&models.Webhook{ID: "wh1"})
 	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: "BAD METHOD", Body: ""})
-	t.Setenv("DOMAIN", "http://example.com")
 
 	router := chi.NewRouter()
 	router.Post("/requests/{id}/replay", h.ReplayRequest)
@@ -259,13 +265,11 @@ func TestWebhookRequestHandler_ReplayRequest_InvalidMethod(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_ReplayRequest_NetworkError(t *testing.T) {
-	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
-	whRepo.put(&models.Webhook{ID: "wh1"})
-	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: http.MethodGet})
-
 	closedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	closedServer.Close()
-	t.Setenv("DOMAIN", closedServer.URL)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandlerAt(t, closedServer.URL)
+	whRepo.put(&models.Webhook{ID: "wh1"})
+	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: http.MethodGet})
 
 	router := chi.NewRouter()
 	router.Post("/requests/{id}/replay", h.ReplayRequest)
@@ -279,10 +283,9 @@ func TestWebhookRequestHandler_ReplayRequest_NetworkError(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_ReplayRequest_InvalidDomain(t *testing.T) {
-	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandlerAt(t, "://bad")
 	whRepo.put(&models.Webhook{ID: "wh1"})
 	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "wh1", Method: http.MethodGet})
-	t.Setenv("DOMAIN", "://bad")
 
 	router := chi.NewRouter()
 	router.Post("/requests/{id}/replay", h.ReplayRequest)
@@ -295,9 +298,6 @@ func TestWebhookRequestHandler_ReplayRequest_InvalidDomain(t *testing.T) {
 }
 
 func TestWebhookRequestHandler_ReplayRequest_Success(t *testing.T) {
-	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
-	whRepo.put(&models.Webhook{ID: "wh1"})
-
 	var gotPath, gotQuery, gotHeader string
 	var gotHeaders http.Header
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +308,8 @@ func TestWebhookRequestHandler_ReplayRequest_Success(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer target.Close()
-	t.Setenv("DOMAIN", target.URL)
+	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandlerAt(t, target.URL)
+	whRepo.put(&models.Webhook{ID: "wh1"})
 
 	reqRepo.put(&models.WebhookRequest{
 		ID:        "r1",

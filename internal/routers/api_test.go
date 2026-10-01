@@ -53,6 +53,9 @@ func newTestForwarder(t *testing.T, webhookSvc *service.WebhookService, cfg conf
 	return f
 }
 
+// testDomain is the DOMAIN the routers under test are served at.
+const testDomain = "https://tester.example.com"
+
 func testLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
 }
@@ -69,7 +72,7 @@ func setupAPIRouter(t *testing.T) (http.Handler, string) {
 	webhookRepo := store.NewGormWebookRepo(db, logger)
 
 	authSvc := service.NewAuthService(userRepo, db, "test-auth-secret")
-	webhookSvc := service.NewWebhookService(webhookRepo, store.NewGormDeliveryRepo(db, logger))
+	webhookSvc := service.NewWebhookService(webhookRepo, store.NewGormDeliveryRepo(db, logger), testDomain)
 
 	user, err := authSvc.Register("api-user@example.com", "Passw0rd!", "API User")
 	require.NoError(t, err)
@@ -208,7 +211,6 @@ func TestNewApiRouter_JSONErrors(t *testing.T) {
 }
 
 func TestNewApiRouter_ForwardURLRoundTrip(t *testing.T) {
-	t.Setenv("DOMAIN", "https://tester.example.com")
 	r, apiKey := setupAPIRouter(t)
 	do := func(method, path, body string) (int, dtos.Webhook, string) {
 		t.Helper()

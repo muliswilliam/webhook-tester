@@ -44,11 +44,11 @@ func TestValidateResponseHeaders(t *testing.T) {
 }
 
 func TestWebhookValidate(t *testing.T) {
-	assert.NoError(t, (&Webhook{Title: "t", ResponseCode: 200, ResponseDelay: MaxResponseDelay}).Validate())
-	assert.ErrorContains(t, (&Webhook{ResponseCode: 200}).Validate(), "title")
-	assert.ErrorContains(t, (&Webhook{Title: "t", ResponseCode: 1000}).Validate(), "response code")
-	assert.ErrorContains(t, (&Webhook{Title: "t", ResponseCode: 200, ResponseDelay: MaxResponseDelay + 1}).Validate(), "response delay")
-	assert.ErrorContains(t, (&Webhook{Title: "t", ResponseCode: 200, ResponseHeaders: map[string]any{"a b": "1"}}).Validate(), "header")
+	assert.NoError(t, (&Webhook{Title: "t", ResponseCode: 200, ResponseDelay: MaxResponseDelay}).Validate(""))
+	assert.ErrorContains(t, (&Webhook{ResponseCode: 200}).Validate(""), "title")
+	assert.ErrorContains(t, (&Webhook{Title: "t", ResponseCode: 1000}).Validate(""), "response code")
+	assert.ErrorContains(t, (&Webhook{Title: "t", ResponseCode: 200, ResponseDelay: MaxResponseDelay + 1}).Validate(""), "response delay")
+	assert.ErrorContains(t, (&Webhook{Title: "t", ResponseCode: 200, ResponseHeaders: map[string]any{"a b": "1"}}).Validate(""), "header")
 }
 
 func TestWebhookNormalize(t *testing.T) {
@@ -120,16 +120,16 @@ func TestValidateForwardURL(t *testing.T) {
 }
 
 func TestWebhookValidate_ForwardURL(t *testing.T) {
-	t.Setenv("DOMAIN", "https://webhooks.example.com")
+	const domain = "https://webhooks.example.com"
 	withForwardURL := func(forwardURL *string) *Webhook {
 		return &Webhook{Title: "t", ResponseCode: 200, ForwardURL: forwardURL}
 	}
 	ok, bad, loop := "https://api.example.com/hooks", "not a url", "https://webhooks.example.com/webhooks/abc"
 
-	assert.NoError(t, withForwardURL(nil).Validate(), "no forward URL is valid")
-	assert.NoError(t, withForwardURL(&ok).Validate())
-	assert.ErrorContains(t, withForwardURL(&bad).Validate(), "forward URL")
-	assert.ErrorContains(t, withForwardURL(&loop).Validate(), "own webhook endpoints", "the loop check uses DOMAIN")
+	assert.NoError(t, withForwardURL(nil).Validate(domain), "no forward URL is valid")
+	assert.NoError(t, withForwardURL(&ok).Validate(domain))
+	assert.ErrorContains(t, withForwardURL(&bad).Validate(domain), "forward URL")
+	assert.ErrorContains(t, withForwardURL(&loop).Validate(domain), "own webhook endpoints", "the loop check uses the domain")
 }
 
 func TestWebhookNormalize_ForwardURL(t *testing.T) {

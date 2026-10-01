@@ -33,6 +33,7 @@ func TestMountHandlers(t *testing.T) {
 		Logger:     log.New(io.Discard, "", 0),
 		Srv:        &http.Server{},
 		MetricsSrv: &http.Server{},
+		Domain:     "http://example.com",
 	}
 
 	srv.MountHandlers()

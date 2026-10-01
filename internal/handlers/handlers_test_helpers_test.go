@@ -461,6 +461,9 @@ func (m *testMetricsRecorder) IncLogin() {
 	m.logins++
 }
 
+// testDomain is the DOMAIN of the handlers under test.
+const testDomain = "https://tester.example.com"
+
 func newTestLogger() *log.Logger {
 	return log.New(io.Discard, "", 0)
 }
