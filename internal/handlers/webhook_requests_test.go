@@ -272,6 +272,38 @@ func TestWebhookRequestHandler_GetRequest_DeleteOnlyForManagers(t *testing.T) {
 	assert.Contains(t, body, `action="/requests/r1/replay"`, "replaying to the endpoint is still offered")
 }
 
+// A signed-in user's sidebar lists only their own webhooks, so the request
+// page of a guest webhook opens the webhook's stream on its own, while their
+// own webhook's page leaves it to the sidebar card.
+func TestWebhookRequestHandler_GetRequest_StreamOfUnlistedWebhook(t *testing.T) {
+	h, reqRepo, whRepo, userRepo, authSvc := newTestWebhookRequestHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	whRepo.put(&models.Webhook{ID: "guest1"})
+	whRepo.put(&models.Webhook{ID: "own1", UserID: int(user.ID)})
+	reqRepo.put(&models.WebhookRequest{ID: "r1", WebhookID: "guest1", Method: "GET", Headers: datatypes.JSONMap{}})
+	reqRepo.put(&models.WebhookRequest{ID: "r2", WebhookID: "own1", Method: "GET", Headers: datatypes.JSONMap{}})
+
+	router := chi.NewRouter()
+	router.Get("/requests/{id}", h.GetRequest)
+	page := func(target string) string {
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req.AddCookie(sessionCookieFor(t, authSvc, user))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Body.String()
+	}
+
+	guest := page("/requests/r1?address=guest1")
+	assert.Equal(t, 1, strings.Count(guest, "/webhook-stream/guest1?"))
+	assert.Regexp(t, `/webhook-stream/guest1\?since=[^']*&request=r1&unlisted'`, guest)
+
+	own := page("/requests/r2?address=own1")
+	assert.Equal(t, 1, strings.Count(own, "/webhook-stream/own1?"))
+	assert.NotContains(t, own, "&unlisted")
+}
+
 func TestWebhookRequestHandler_DeleteRequest_ServiceError(t *testing.T) {
 	h, reqRepo, whRepo, _, _ := newTestWebhookRequestHandler(t)
 	whRepo.put(&models.Webhook{ID: "wh1"})

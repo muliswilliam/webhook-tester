@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"slices"
 	"sync"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/utils"
@@ -34,6 +35,9 @@ var funcMap = template.FuncMap{
 	"asset":        assetURL,
 	"prettyJSON":   prettyJSON,
 	"streamCursor": func(requests []models.WebhookRequest) string { return models.LatestCursor(requests).String() },
+	"hasWebhook": func(webhooks []models.Webhook, id string) bool {
+		return slices.ContainsFunc(webhooks, func(w models.Webhook) bool { return w.ID == id })
+	},
 	// flash is bound per render to the request's queued notice; see withFlash.
 	"flash":            func() *utils.Flash { return nil },
 	"minResponseCode":  func() int { return models.MinResponseCode },

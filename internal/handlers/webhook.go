@@ -335,11 +335,13 @@ func capturedPath(r *http.Request) string {
 // deliveries as Datastar element patches. A connection first replays the
 // requests after its cursor - the Last-Event-ID of a reconnect, else the
 // ?since= cursor the page was rendered with - with their deliveries, and
-// then streams new ones live, so reconnects never lose requests. Every
-// connection patches the sidebar's request list. The connection of the page's
-// own webhook also patches its main panel: with ?active, the workspace's
-// request list, counter and delivery badges and lists; with ?request=<id>,
-// the request page's delivery list of that request.
+// then streams new ones live, so reconnects never lose requests. A
+// connection patches the sidebar's request list, unless ?unlisted says the
+// page has no sidebar card for the webhook, as for a guest webhook a
+// signed-in user opened. The connection of the page's own webhook also
+// patches its main panel: with ?active, the workspace's request list,
+// counter and delivery badges and lists; with ?request=<id>, the request
+// page's delivery list of that request.
 //
 // The client retries whenever the stream ends; a 204 tells it to stop.
 func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Request) {
@@ -369,23 +371,28 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	missed, err := h.webhookSvc.GetRequestsAfter(webhookID, cursor)
-	if err != nil {
-		h.logger.Printf("error loading missed requests for %s: %s", webhookID, err)
-		return
-	}
-
 	stream := &requestStream{
 		sse:           datastar.NewSSE(w, r),
 		webhookID:     webhookID,
 		forwardURL:    webhook.ActiveForwardURL(),
 		canManage:     webhook.ManagedBy(userID),
+		sidebar:       !r.URL.Query().Has("unlisted"),
 		mainPanel:     r.URL.Query().Has("active"),
 		pageRequestID: r.URL.Query().Get("request"),
 		csrfField:     csrf.TemplateField(r),
-		replayed:      make(map[string]bool, len(missed)),
 	}
 
+	// A page without a request list for the webhook has no missed requests
+	// to show, and its cursor never advances, so the backlog isn't queried.
+	var missed []models.WebhookRequest
+	if stream.sidebar || stream.mainPanel {
+		missed, err = h.webhookSvc.GetRequestsAfter(webhookID, cursor)
+		if err != nil {
+			h.logger.Printf("error loading missed requests for %s: %s", webhookID, err)
+			return
+		}
+	}
+	stream.replayed = make(map[string]bool, len(missed))
 	for _, wr := range missed {
 		stream.replayed[wr.ID] = true
 	}
@@ -460,6 +467,7 @@ type requestStream struct {
 	webhookID  string
 	forwardURL string // see requestRowView; kept current by settings events
 	canManage  bool   // see requestRowView
+	sidebar    bool   // the page's sidebar has a card for the webhook
 	mainPanel  bool   // the page shows the webhook's request list
 	// pageRequestID is the request whose page the stream is on, if any.
 	pageRequestID string
@@ -475,15 +483,17 @@ func (s *requestStream) send(requests []models.WebhookRequest, count *int64) err
 	for _, wr := range requests {
 		id := datastar.WithPatchElementsEventID(models.CursorAt(wr).String())
 
-		sidebarOpts := []datastar.PatchElementOption{
-			datastar.WithSelectorID("request-log-" + s.webhookID),
-			datastar.WithModePrepend(),
-		}
-		if !s.mainPanel {
-			sidebarOpts = append(sidebarOpts, id)
-		}
-		if err := s.patch("sidebar-request-row", wr, sidebarOpts...); err != nil {
-			return err
+		if s.sidebar {
+			sidebarOpts := []datastar.PatchElementOption{
+				datastar.WithSelectorID("request-log-" + s.webhookID),
+				datastar.WithModePrepend(),
+			}
+			if !s.mainPanel {
+				sidebarOpts = append(sidebarOpts, id)
+			}
+			if err := s.patch("sidebar-request-row", wr, sidebarOpts...); err != nil {
+				return err
+			}
 		}
 
 		if s.mainPanel {

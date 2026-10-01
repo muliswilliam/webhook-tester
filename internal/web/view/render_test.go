@@ -131,6 +131,7 @@ func TestRenderHTMLHomeWebhookStreamDataInit(t *testing.T) {
 
 	inactiveLiteral := jsStringLiteralAfter(t, body, "@get('", strings.Index(body, activeLiteral)+len(activeLiteral))
 	assert.Equal(t, "/webhook-stream/"+inactive.ID+"?since=", inactiveLiteral)
+	assert.Equal(t, 1, strings.Count(body, "/webhook-stream/"+active.ID+"?"), "the active webhook's sidebar card is its only stream")
 
 	// A long-lived dashboard connection must retry indefinitely, including
 	// after the server ends the stream (e.g. evicting a slow client), and
@@ -138,6 +139,47 @@ func TestRenderHTMLHomeWebhookStreamDataInit(t *testing.T) {
 	// signals: the stream needs none, and every row adds some, which would
 	// otherwise grow the URL without bound.
 	assert.Contains(t, body, "{retry: 'always', retryMaxCount: Infinity, openWhenHidden: true, filterSignals: {include: /^$/}}")
+}
+
+// A signed-in user can view a guest webhook that isn't in their sidebar.
+// With no sidebar card to open its stream, the page opens it on its own,
+// flagged unlisted so the stream patches only the main panel.
+func TestRenderHTMLHomeUnlistedWebhookStream(t *testing.T) {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+
+	active := newTestWebhook()
+	own := models.Webhook{ID: "wh-own"}
+
+	data := struct {
+		CSRFField      template.HTML
+		User           models.User
+		Webhooks       []models.Webhook
+		Webhook        models.Webhook
+		CanManage      bool
+		RequestRows    []testRequestRow
+		RequestCounter testRequestCounter
+		Domain         string
+		Year           int
+	}{
+		CSRFField: template.HTML(`<input type="hidden">`),
+		User:      models.User{ID: 7},
+		Webhooks:  []models.Webhook{own},
+		Webhook:   active,
+		Domain:    "example.com",
+	}
+
+	RenderHTML(w, r, "home", data)
+	body := w.Body.String()
+
+	ownLiteral := jsStringLiteralAfter(t, body, "@get('", 0)
+	assert.Equal(t, "/webhook-stream/"+own.ID+"?since=", ownLiteral)
+
+	activeLiteral := jsStringLiteralAfter(t, body, "@get('", strings.Index(body, ownLiteral)+len(ownLiteral))
+	assert.Equal(t, "/webhook-stream/"+active.ID+"?since="+models.LatestCursor(active.Requests).String()+"&active&unlisted", activeLiteral)
+	assert.Equal(t, 1, strings.Count(body, "/webhook-stream/"+active.ID+"?"))
+	assert.Equal(t, 2, strings.Count(body, "{retry: 'always', retryMaxCount: Infinity, openWhenHidden: true, filterSignals: {include: /^$/}}"),
+		"the unlisted stream reconnects like a sidebar card's")
 }
 
 func TestRenderHTMLHomeAssetsAreContentHashed(t *testing.T) {

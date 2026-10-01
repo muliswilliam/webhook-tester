@@ -317,6 +317,8 @@ func TestHomeHandler_SignedInUserViewingGuestWebhook(t *testing.T) {
 	assert.NotContains(t, body, `action="/requests/r1/delete"`)
 	assert.NotContains(t, body, "to set a forward URL")
 	assert.Regexp(t, `id="create_forward_url"`, body, "the create form still offers forwarding")
+	assert.Equal(t, 1, strings.Count(body, "/webhook-stream/guest1?"), "it isn't in the sidebar, but still streams")
+	assert.Regexp(t, `/webhook-stream/guest1\?since=[^']*&active&unlisted'`, body)
 }
 
 // The create and edit forms share their fields, under their own IDs.
