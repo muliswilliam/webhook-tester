@@ -51,11 +51,6 @@ type NullableString struct {
 	Value *string
 }
 
-// NewNullableString returns a present field holding s, or null when s is nil.
-func NewNullableString(s *string) NullableString {
-	return NullableString{Set: true, Value: s}
-}
-
 // UnmarshalJSON records that the field is present. encoding/json calls it
 // for null too, which is what tells null from missing.
 func (n *NullableString) UnmarshalJSON(data []byte) error {
@@ -160,8 +155,8 @@ func NewWebhookRequestDTO(r models.WebhookRequest) WebhookRequest {
 		WebhookID:  r.WebhookID,
 		Method:     r.Method,
 		Path:       r.Path,
-		Headers:    stringMap(r.Headers),
-		Query:      stringMap(r.Query),
+		Headers:    fieldMap(r.Headers),
+		Query:      fieldMap(r.Query),
 		Body:       r.Body,
 		ReceivedAt: r.ReceivedAt.UTC(),
 	}
@@ -172,6 +167,16 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// fieldMap is a captured request's headers or query parameters with the
+// values of each repeated one joined by commas.
+func fieldMap(m map[string]any) map[string]string {
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = models.FieldValue(v)
+	}
+	return out
 }
 
 func stringMap(m map[string]any) map[string]string {

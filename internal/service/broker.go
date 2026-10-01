@@ -20,16 +20,20 @@ const (
 
 // Event is published to a webhook's subscribers. Which fields are set
 // depends on Kind:
-//   - EventRequestCaptured: Request is the captured request, and Count the
+//   - EventRequestCaptured: Request is the captured request, Count the
 //     webhook's request total right after the insert, or nil if counting
-//     failed.
+//     failed, and ForwardURL the webhook's forward URL at capture time if
+//     it forwards, "" otherwise.
 //   - EventDeliveryRecorded: Delivery is the recorded delivery; its
-//     RequestID names the captured request it belongs to.
+//     RequestID names the captured request it belongs to. Deliveries are
+//     all of that request's deliveries, Delivery included, newest first.
 type Event struct {
-	Kind     EventKind
-	Request  models.WebhookRequest
-	Count    *int64
-	Delivery models.Delivery
+	Kind       EventKind
+	Request    models.WebhookRequest
+	Count      *int64
+	ForwardURL string
+	Delivery   models.Delivery
+	Deliveries []models.Delivery
 }
 
 // subscriptionBuffer bounds how far a subscriber may fall behind before it is

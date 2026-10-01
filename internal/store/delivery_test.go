@@ -113,43 +113,6 @@ func TestGormDeliveryRepo_ListByRequest_NoResults(t *testing.T) {
 	assert.Empty(t, list)
 }
 
-func TestGormDeliveryRepo_DeleteByRequest(t *testing.T) {
-	db := newTestDB(t)
-	repo := NewGormDeliveryRepo(db, testLogger())
-	seedRequest(t, db, "wh-1", "req-1")
-	seedRequest(t, db, "wh-1", "req-2")
-	require.NoError(t, repo.Insert(&models.Delivery{ID: "d1", RequestID: "req-1", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto}))
-	require.NoError(t, repo.Insert(&models.Delivery{ID: "d2", RequestID: "req-1", WebhookID: "wh-1", Trigger: models.DeliveryTriggerReplay}))
-	require.NoError(t, repo.Insert(&models.Delivery{ID: "d3", RequestID: "req-2", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto}))
-
-	require.NoError(t, repo.DeleteByRequest("req-1"))
-
-	assert.Equal(t, []string{"d3"}, deliveryIDs(t, db))
-}
-
-func TestGormDeliveryRepo_DeleteByWebhook(t *testing.T) {
-	db := newTestDB(t)
-	repo := NewGormDeliveryRepo(db, testLogger())
-	seedRequest(t, db, "wh-1", "req-1")
-	seedRequest(t, db, "wh-1", "req-2")
-	seedRequest(t, db, "wh-2", "req-3")
-	require.NoError(t, repo.Insert(&models.Delivery{ID: "d1", RequestID: "req-1", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto}))
-	require.NoError(t, repo.Insert(&models.Delivery{ID: "d2", RequestID: "req-2", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto}))
-	require.NoError(t, repo.Insert(&models.Delivery{ID: "d3", RequestID: "req-3", WebhookID: "wh-2", Trigger: models.DeliveryTriggerAuto}))
-
-	require.NoError(t, repo.DeleteByWebhook("wh-1"))
-
-	assert.Equal(t, []string{"d3"}, deliveryIDs(t, db))
-}
-
-func TestGormDeliveryRepo_DeleteNoMatchesIsNoop(t *testing.T) {
-	db := newTestDB(t)
-	repo := NewGormDeliveryRepo(db, testLogger())
-
-	require.NoError(t, repo.DeleteByRequest("does-not-exist"))
-	require.NoError(t, repo.DeleteByWebhook("does-not-exist"))
-}
-
 func TestGormDeliveryRepo_ErrorsAfterConnectionClosed(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewGormDeliveryRepo(db, testLogger())
@@ -160,8 +123,6 @@ func TestGormDeliveryRepo_ErrorsAfterConnectionClosed(t *testing.T) {
 	assert.Error(t, repo.Insert(&models.Delivery{ID: "d1", RequestID: "req-1", WebhookID: "wh-1"}))
 	_, err = repo.ListByRequest("req-1")
 	assert.Error(t, err)
-	assert.Error(t, repo.DeleteByRequest("req-1"))
-	assert.Error(t, repo.DeleteByWebhook("wh-1"))
 }
 
 // The delete paths for captured requests and webhooks also remove the

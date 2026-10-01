@@ -23,7 +23,6 @@ import (
 	"webhook-tester/config"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
-	"webhook-tester/internal/repository"
 	"webhook-tester/internal/utils"
 )
 
@@ -36,6 +35,9 @@ const (
 	// ErrMsgQueueFull is the error of an automatic forward dropped because
 	// the maximum number of forwards were already in flight.
 	ErrMsgQueueFull = "forwarding queue full"
+	// ErrMsgShuttingDown is the error of an automatic forward dropped
+	// because the server was shutting down.
+	ErrMsgShuttingDown = "server shutting down"
 	// ErrMsgDestinationNotAllowed starts the error of a forward whose
 	// destination resolved to an address forwarding may not reach.
 	ErrMsgDestinationNotAllowed = "destination not allowed"
@@ -45,10 +47,10 @@ const (
 // forwarding may not reach.
 var errDestinationNotAllowed = errors.New(ErrMsgDestinationNotAllowed)
 
-// hopByHopHeaders apply to a single connection, so they are never relayed
-// (RFC 9110 section 7.6.1). Host and Content-Length are set by the client
-// for the outgoing request instead.
-var hopByHopHeaders = map[string]bool{
+// unforwardedHeaders are the captured headers never relayed: the hop-by-hop
+// ones, which apply to a single connection (RFC 9110 section 7.6.1), and
+// Host and Content-Length, which the client sets for the outgoing request.
+var unforwardedHeaders = map[string]bool{
 	"Connection":          true,
 	"Proxy-Connection":    true,
 	"Keep-Alive":          true,
@@ -62,25 +64,27 @@ var hopByHopHeaders = map[string]bool{
 	"Content-Length":      true,
 }
 
-// DeliveryPublisher publishes recorded deliveries to live subscribers.
-// WebhookService implements it.
-type DeliveryPublisher interface {
-	PublishDelivery(d models.Delivery)
+// DeliveryRecorder stores deliveries and publishes them to live
+// subscribers. WebhookService implements it.
+type DeliveryRecorder interface {
+	RecordDelivery(d *models.Delivery) error
 }
 
 // Forwarder relays captured requests to their webhook's forward URL and
 // records each attempt as a delivery.
 type Forwarder struct {
-	client     *http.Client
-	timeout    time.Duration
-	deliveries repository.DeliveryRepository
-	publisher  DeliveryPublisher
-	metrics    metrics.Recorder
-	logger     *log.Logger
+	client   *http.Client
+	timeout  time.Duration
+	recorder DeliveryRecorder
+	metrics  metrics.Recorder
+	logger   *log.Logger
 
-	// slots bounds the automatic forwards in flight; inFlight tracks them
-	// so Wait can drain them.
-	slots    chan struct{}
+	// slots bounds the automatic forwards in flight.
+	slots chan struct{}
+	// mu guards closed, and orders inFlight.Add before Shutdown's Wait:
+	// once closed is set, no automatic forward is started.
+	mu       sync.Mutex
+	closed   bool
 	inFlight sync.WaitGroup
 }
 
@@ -88,8 +92,7 @@ type Forwarder struct {
 // Timeout or MaxConcurrent falls back to the config defaults.
 func NewForwarder(
 	cfg config.Forwarding,
-	deliveries repository.DeliveryRepository,
-	publisher DeliveryPublisher,
+	recorder DeliveryRecorder,
 	rec metrics.Recorder,
 	logger *log.Logger,
 ) *Forwarder {
@@ -100,13 +103,12 @@ func NewForwarder(
 		cfg.MaxConcurrent = config.DefaultForwardMaxConcurrent
 	}
 	return &Forwarder{
-		client:     newForwardClient(cfg),
-		timeout:    cfg.Timeout,
-		deliveries: deliveries,
-		publisher:  publisher,
-		metrics:    rec,
-		logger:     logger,
-		slots:      make(chan struct{}, cfg.MaxConcurrent),
+		client:   newForwardClient(cfg),
+		timeout:  cfg.Timeout,
+		recorder: recorder,
+		metrics:  rec,
+		logger:   logger,
+		slots:    make(chan struct{}, cfg.MaxConcurrent),
 	}
 }
 
@@ -156,7 +158,11 @@ var nonPublicPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("192.0.0.0/24"),  // IETF protocol assignments
 	netip.MustParsePrefix("198.18.0.0/15"), // benchmarking
 	netip.MustParsePrefix("240.0.0.0/4"),   // reserved, incl. broadcast
-	netip.MustParsePrefix("64:ff9b::/96"),  // NAT64, which maps to any IPv4 address
+	// IPv6 ranges that embed an IPv4 address, which may be a private one:
+	netip.MustParsePrefix("64:ff9b::/96"),   // NAT64
+	netip.MustParsePrefix("64:ff9b:1::/48"), // local-use NAT64
+	netip.MustParsePrefix("2002::/16"),      // 6to4
+	netip.MustParsePrefix("2001::/32"),      // Teredo
 }
 
 // isPublicAddr reports whether ip is a public unicast address: not private,
@@ -179,41 +185,32 @@ func isPublicAddr(ip netip.Addr) bool {
 // including a network error, is a delivery; failing to store it is only
 // logged, since that happens when wr was deleted while it was in flight.
 func (f *Forwarder) Forward(ctx context.Context, wh models.Webhook, wr models.WebhookRequest, trigger models.DeliveryTrigger) models.Delivery {
-	d := models.Delivery{
-		ID:        utils.GenerateID(),
-		RequestID: wr.ID,
-		WebhookID: wr.WebhookID,
-		Trigger:   trigger,
-		StartedAt: time.Now().UTC().Truncate(time.Microsecond),
-	}
-	outcome := f.send(ctx, wh, wr, &d)
-	f.record(&d, outcome)
+	d := newDelivery(wr, trigger)
+	d.Outcome = f.send(ctx, wh, wr, &d)
+	f.record(&d)
 	return d
 }
 
 // ForwardAsync forwards wr in the background with trigger auto. If the
-// maximum number of forwards are already in flight, it records a "forwarding
-// queue full" delivery instead of waiting.
+// maximum number of forwards are already in flight, or Shutdown was called,
+// it records a delivery saying why instead of forwarding.
 func (f *Forwarder) ForwardAsync(wh models.Webhook, wr models.WebhookRequest) {
+	f.mu.Lock()
+	if f.closed {
+		f.mu.Unlock()
+		f.refuse(wh, wr, ErrMsgShuttingDown)
+		return
+	}
 	select {
 	case f.slots <- struct{}{}:
 	default:
-		d := models.Delivery{
-			ID:        utils.GenerateID(),
-			RequestID: wr.ID,
-			WebhookID: wr.WebhookID,
-			Trigger:   models.DeliveryTriggerAuto,
-			StartedAt: time.Now().UTC().Truncate(time.Microsecond),
-		}
-		if wh.ForwardURL != nil {
-			d.TargetURL, _ = forwardTarget(*wh.ForwardURL, wr)
-		}
-		d.Error = ptr(ErrMsgQueueFull)
-		f.record(&d, metrics.DeliveryOutcomeError)
+		f.mu.Unlock()
+		f.refuse(wh, wr, ErrMsgQueueFull)
 		return
 	}
-
 	f.inFlight.Add(1)
+	f.mu.Unlock()
+
 	go func() {
 		defer func() {
 			<-f.slots
@@ -225,9 +222,26 @@ func (f *Forwarder) ForwardAsync(wh models.Webhook, wr models.WebhookRequest) {
 	}()
 }
 
-// Wait blocks until the automatic forwards in flight have finished, or ctx
-// is done.
-func (f *Forwarder) Wait(ctx context.Context) error {
+// refuse records an automatic delivery of wr that wasn't attempted, with
+// reason as its error.
+func (f *Forwarder) refuse(wh models.Webhook, wr models.WebhookRequest, reason string) {
+	d := newDelivery(wr, models.DeliveryTriggerAuto)
+	if wh.ForwardURL != nil {
+		d.TargetURL, _ = forwardTarget(*wh.ForwardURL, wr)
+	}
+	d.Error = ptr(reason)
+	d.Outcome = models.DeliveryOutcomeError
+	f.record(&d)
+}
+
+// Shutdown stops starting automatic forwards - later ones are recorded as
+// refused - and waits until those in flight have been recorded, or ctx is
+// done. Synchronous forwards (Forward) still work afterwards.
+func (f *Forwarder) Shutdown(ctx context.Context) error {
+	f.mu.Lock()
+	f.closed = true
+	f.mu.Unlock()
+
 	done := make(chan struct{})
 	go func() {
 		f.inFlight.Wait()
@@ -241,27 +255,38 @@ func (f *Forwarder) Wait(ctx context.Context) error {
 	}
 }
 
+// newDelivery starts the delivery of wr with the given trigger.
+func newDelivery(wr models.WebhookRequest, trigger models.DeliveryTrigger) models.Delivery {
+	return models.Delivery{
+		ID:        utils.GenerateID(),
+		RequestID: wr.ID,
+		WebhookID: wr.WebhookID,
+		Trigger:   trigger,
+		StartedAt: time.Now().UTC().Truncate(time.Microsecond),
+	}
+}
+
 // send makes the outbound request and fills in d with what came back,
-// returning the outcome for the metrics.
-func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.WebhookRequest, d *models.Delivery) metrics.DeliveryOutcome {
+// returning its outcome.
+func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.WebhookRequest, d *models.Delivery) models.DeliveryOutcome {
 	start := time.Now()
 	defer func() { d.DurationMs = time.Since(start).Milliseconds() }()
 
 	if wh.ForwardURL == nil {
 		d.Error = ptr("the webhook has no forward URL")
-		return metrics.DeliveryOutcomeError
+		return models.DeliveryOutcomeError
 	}
 	target, err := forwardTarget(*wh.ForwardURL, wr)
 	if err != nil {
 		d.Error = ptr(fmt.Sprintf("invalid forward URL: %v", err))
-		return metrics.DeliveryOutcomeError
+		return models.DeliveryOutcomeError
 	}
 	d.TargetURL = target
 
 	req, err := http.NewRequestWithContext(ctx, wr.Method, target, strings.NewReader(wr.Body))
 	if err != nil {
 		d.Error = ptr(fmt.Sprintf("couldn't build the request: %v", err))
-		return metrics.DeliveryOutcomeError
+		return models.DeliveryOutcomeError
 	}
 	req.Header = forwardHeaders(wr)
 
@@ -269,10 +294,10 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 	if err != nil {
 		if errors.Is(err, errDestinationNotAllowed) {
 			d.Error = ptr(blockedMessage(req.URL.Hostname()))
-			return metrics.DeliveryOutcomeBlocked
+			return models.DeliveryOutcomeBlocked
 		}
 		d.Error = ptr(f.describeError(err))
-		return metrics.DeliveryOutcomeError
+		return models.DeliveryOutcomeError
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -291,60 +316,46 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 	if err != nil {
 		d.Error = ptr("reading the response body: " + f.describeError(err))
 	}
-	return metrics.DeliveryOutcomeForStatus(resp.StatusCode)
+	return models.DeliveryOutcomeForStatus(resp.StatusCode)
 }
 
-// record stores, publishes and counts the delivery.
-func (f *Forwarder) record(d *models.Delivery, outcome metrics.DeliveryOutcome) {
-	f.metrics.ObserveDelivery(outcome, time.Duration(d.DurationMs)*time.Millisecond)
-	if err := f.deliveries.Insert(d); err != nil {
-		f.logger.Printf("forward: delivery for request %s not stored (deleted meanwhile?): %v", d.RequestID, err)
-		return
+// record counts, stores and publishes the delivery. The metrics count every
+// forward attempt, refused ones included, whether or not its delivery can be
+// stored: they measure forwarding itself, and a delivery is only lost when
+// its request was deleted meanwhile or the DB failed, which is logged.
+func (f *Forwarder) record(d *models.Delivery) {
+	f.metrics.ObserveDelivery(d.Outcome, time.Duration(d.DurationMs)*time.Millisecond)
+	if err := f.recorder.RecordDelivery(d); err != nil {
+		f.logger.Printf("forward: delivery %s of request %s (deleted meanwhile?): %v", d.ID, d.RequestID, err)
 	}
-	f.publisher.PublishDelivery(*d)
 }
 
-// forwardTarget joins the forward URL with the captured request's subpath
-// and merges in its query parameters, keeping any the forward URL has.
+// forwardTarget is the captured request's URL under the forward URL: the
+// subpath appended to its path and the query string to its query, both
+// byte for byte.
 func forwardTarget(forwardURL string, wr models.WebhookRequest) (string, error) {
-	u, err := url.Parse(forwardURL)
-	if err != nil {
-		return "", err
-	}
-	if wr.Path != "" {
-		u.Path = strings.TrimSuffix(u.Path, "/") + wr.Path
-		u.RawPath = ""
-	}
-	if len(wr.Query) > 0 {
-		q := u.Query()
-		for k, v := range wr.Query {
-			if s, ok := v.(string); ok {
-				q.Add(k, s)
-			}
-		}
-		u.RawQuery = q.Encode()
-	}
-	return u.String(), nil
+	return wr.URLAt(forwardURL)
 }
 
-// forwardHeaders are the captured request's headers minus the hop-by-hop
-// ones, including any the Connection header names, plus RequestIDHeader.
+// forwardHeaders are the captured request's headers, every value of each,
+// minus the unforwarded ones and any the Connection header names, plus
+// RequestIDHeader.
 func forwardHeaders(wr models.WebhookRequest) http.Header {
+	captured := wr.HeaderValues()
 	drop := map[string]bool{}
-	if c, ok := wr.Headers["Connection"].(string); ok {
+	for _, c := range captured.Values("Connection") {
 		for _, name := range strings.Split(c, ",") {
 			drop[textproto.CanonicalMIMEHeaderKey(strings.TrimSpace(name))] = true
 		}
 	}
 
 	h := http.Header{}
-	for k, v := range wr.Headers {
-		s, ok := v.(string)
+	for k, values := range captured {
 		key := textproto.CanonicalMIMEHeaderKey(k)
-		if !ok || hopByHopHeaders[key] || drop[key] {
+		if unforwardedHeaders[key] || drop[key] {
 			continue
 		}
-		h.Set(key, s)
+		h[key] = append(h[key], values...)
 	}
 	// Go adds its own User-Agent unless one is set; an empty value sends
 	// none, as the original request did.

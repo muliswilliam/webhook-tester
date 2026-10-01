@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 	"strings"
 	"time"
@@ -48,6 +47,15 @@ type Webhook struct {
 // used as an open relay.
 func (w *Webhook) Forwards() bool {
 	return w.ForwardURL != nil && w.UserID != 0
+}
+
+// ActiveForwardURL is the forward URL captured requests are relayed to, or
+// "" if the webhook doesn't forward.
+func (w *Webhook) ActiveForwardURL() string {
+	if !w.Forwards() {
+		return ""
+	}
+	return *w.ForwardURL
 }
 
 // ValidateResponseCode reports whether code can be sent as an HTTP status.
@@ -110,9 +118,10 @@ func (w *Webhook) Normalize() {
 }
 
 // Validate checks the webhook's title, configured response and forward URL,
-// returning the first problem found. The forward URL's loop check compares
-// against the DOMAIN setting, the same source replay builds its target from.
-func (w *Webhook) Validate() error {
+// returning the first problem found. domain is the public base URL of this
+// instance (the DOMAIN setting), which the forward URL's loop check compares
+// against; WebhookService.ValidateWebhook passes the one replay uses.
+func (w *Webhook) Validate(domain string) error {
 	if w.Title == "" {
 		return errors.New("title is required")
 	}
@@ -126,7 +135,7 @@ func (w *Webhook) Validate() error {
 		return err
 	}
 	if w.ForwardURL != nil {
-		return ValidateForwardURL(*w.ForwardURL, os.Getenv("DOMAIN"))
+		return ValidateForwardURL(*w.ForwardURL, domain)
 	}
 	return nil
 }

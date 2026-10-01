@@ -32,7 +32,7 @@ func TestScheduleCleanup_DeletesExpiredGuestWebhooks(t *testing.T) {
 	require.NoError(t, err)
 	webhookdb.AutoMigrate(db)
 	logger := log.New(io.Discard, "", 0)
-	svc := service.NewWebhookService(store.NewGormWebookRepo(db, logger))
+	svc := service.NewWebhookService(store.NewGormWebookRepo(db, logger), store.NewGormDeliveryRepo(db, logger), "")
 
 	now := time.Now().UTC()
 	require.NoError(t, db.Create(&models.Webhook{ID: "expired", CreatedAt: now.Add(-guestWorkspaceTTL - time.Minute)}).Error)

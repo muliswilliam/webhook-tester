@@ -42,7 +42,7 @@ func newAuthFixture(t *testing.T) *authFixture {
 		logs:        &syncBuffer{},
 	}
 	f.authSvc = newTestAuthService(t, f.userRepo)
-	f.h = NewAuthHandler(f.authSvc, service.NewWebhookService(f.webhookRepo), f.mailer, log.New(f.logs, "", 0), f.metrics)
+	f.h = NewAuthHandler(f.authSvc, service.NewWebhookService(f.webhookRepo, &testDeliveryRepo{}, testDomain), f.mailer, log.New(f.logs, "", 0), f.metrics)
 	return f
 }
 
@@ -334,7 +334,7 @@ func TestAuthHandler_LoginPost_CreateSessionError(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	authSvc := service.NewAuthService(userRepo, db, "test-secret")
-	h := NewAuthHandler(authSvc, service.NewWebhookService(newTestWebhookRepo()), newTestMailer(), newTestLogger(), metricsRec)
+	h := NewAuthHandler(authSvc, service.NewWebhookService(newTestWebhookRepo(), &testDeliveryRepo{}, testDomain), newTestMailer(), newTestLogger(), metricsRec)
 
 	hash, err := utils.HashPassword("Passw0rd!")
 	require.NoError(t, err)

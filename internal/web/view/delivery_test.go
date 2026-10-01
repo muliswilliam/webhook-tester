@@ -12,28 +12,32 @@ import (
 	"gorm.io/datatypes"
 
 	"webhook-tester/internal/models"
-	"webhook-tester/internal/service"
 )
 
 func ptr[T any](v T) *T { return &v }
+
+// answered is a delivery the target answered with code.
+func answered(code int) models.Delivery {
+	return models.Delivery{StatusCode: &code, Outcome: models.DeliveryOutcomeForStatus(code)}
+}
 
 func TestDeliveryStatus(t *testing.T) {
 	for name, tc := range map[string]struct {
 		delivery models.Delivery
 		want     DeliveryStatus
 	}{
-		"2xx":     {models.Delivery{StatusCode: ptr(200)}, DeliveryStatus{Label: "200", Tone: "success", Title: "200 OK"}},
-		"1xx":     {models.Delivery{StatusCode: ptr(101)}, DeliveryStatus{Label: "101", Tone: "success", Title: "101 Switching Protocols"}},
-		"3xx":     {models.Delivery{StatusCode: ptr(302)}, DeliveryStatus{Label: "302", Tone: "neutral", Title: "302 Found"}},
-		"4xx":     {models.Delivery{StatusCode: ptr(401)}, DeliveryStatus{Label: "401", Tone: "warning", Title: "401 Unauthorized"}},
-		"5xx":     {models.Delivery{StatusCode: ptr(503)}, DeliveryStatus{Label: "503", Tone: "danger", Title: "503 Service Unavailable"}},
-		"unknown": {models.Delivery{StatusCode: ptr(599)}, DeliveryStatus{Label: "599", Tone: "danger", Title: "599"}},
+		"2xx":     {answered(200), DeliveryStatus{Label: "200", Tone: "success", Title: "200 OK"}},
+		"1xx":     {answered(101), DeliveryStatus{Label: "101", Tone: "success", Title: "101 Switching Protocols"}},
+		"3xx":     {answered(302), DeliveryStatus{Label: "302", Tone: "neutral", Title: "302 Found"}},
+		"4xx":     {answered(401), DeliveryStatus{Label: "401", Tone: "warning", Title: "401 Unauthorized"}},
+		"5xx":     {answered(503), DeliveryStatus{Label: "503", Tone: "danger", Title: "503 Service Unavailable"}},
+		"unknown": {answered(599), DeliveryStatus{Label: "599", Tone: "danger", Title: "599"}},
 		"network error": {
-			models.Delivery{Error: ptr("connection refused")},
+			models.Delivery{Outcome: models.DeliveryOutcomeError, Error: ptr("connection refused")},
 			DeliveryStatus{Label: "Error", Tone: "danger", Title: "Not delivered: connection refused"},
 		},
 		"blocked": {
-			models.Delivery{Error: ptr(service.ErrMsgDestinationNotAllowed + ": 10.0.0.1 is a private or reserved address")},
+			models.Delivery{Outcome: models.DeliveryOutcomeBlocked, Error: ptr("destination not allowed: 10.0.0.1 is a private or reserved address")},
 			DeliveryStatus{Label: "Blocked", Tone: "danger", Title: "Not delivered: destination not allowed: 10.0.0.1 is a private or reserved address"},
 		},
 		"no outcome": {models.Delivery{}, DeliveryStatus{Label: "Error", Tone: "danger", Title: "Not delivered"}},
@@ -56,14 +60,14 @@ func testDeliveries() []models.Delivery {
 	return []models.Delivery{
 		{
 			ID: "del-replay", RequestID: "req-1", Trigger: models.DeliveryTriggerReplay,
-			TargetURL: "https://hooks.example.com/stripe", StatusCode: ptr(500), DurationMs: 1234,
+			TargetURL: "https://hooks.example.com/stripe", Outcome: models.DeliveryOutcome5xx, StatusCode: ptr(500), DurationMs: 1234,
 			ResponseHeaders: datatypes.JSONMap{"X-Handler": "orders"},
 			ResponseBody:    `{"error":"boom"}`, ResponseBodyTruncated: true,
 			StartedAt: started.Add(time.Minute),
 		},
 		{
 			ID: "del-auto", RequestID: "req-1", Trigger: models.DeliveryTriggerAuto,
-			TargetURL: "https://hooks.example.com/stripe", Error: ptr("connection refused"), DurationMs: 3,
+			TargetURL: "https://hooks.example.com/stripe", Outcome: models.DeliveryOutcomeError, Error: ptr("connection refused"), DurationMs: 3,
 			StartedAt: started,
 		},
 	}
@@ -95,6 +99,7 @@ func TestRenderPartialMainRequestRowDeliveries(t *testing.T) {
 	// Both replay targets are offered.
 	assert.Contains(t, html, `name="target" value="endpoint"`)
 	assert.Contains(t, html, `name="target" value="forward"`)
+	assert.Contains(t, html, `class="btn-secondary" title="Send to https://hooks.example.com/stripe"`, "a row's replays are secondary")
 	assert.Contains(t, html, "Replay to forward URL")
 }
 
@@ -164,7 +169,7 @@ func TestRenderHTMLRequestDeliveries(t *testing.T) {
 		assert.Contains(t, body, "Deliveries")
 		assert.Contains(t, body, `id="delivery-del-replay"`)
 		assert.Contains(t, body, `name="target" value="forward"`)
-		assert.Contains(t, body, `title="Send to https://hooks.example.com/stripe"`)
+		assert.Contains(t, body, `class="btn-primary" title="Send to https://hooks.example.com/stripe"`, "the page's main action")
 	})
 
 	t.Run("forwarding webhook, request not forwarded yet", func(t *testing.T) {
@@ -181,7 +186,7 @@ func TestRenderHTMLRequestDeliveries(t *testing.T) {
 		body := renderRequestPage(t, guest, req)
 		assert.NotContains(t, body, "Deliveries")
 		assert.NotContains(t, body, `name="target"`)
-		assert.Contains(t, body, "Replay request")
+		assert.Contains(t, body, `<button class="btn-primary">Replay request</button>`)
 	})
 }
 

@@ -8,8 +8,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 	"webhook-tester/internal/metrics"
@@ -166,18 +164,9 @@ func (h *WebhookRequestHandler) DeleteRequest(w http.ResponseWriter, r *http.Req
 	http.Redirect(w, r, "/?address="+url.QueryEscape(wr.WebhookID), http.StatusSeeOther)
 }
 
-// Replay targets, chosen by the replay form's "target" field.
-const (
-	// ReplayTargetEndpoint re-sends the request to its Webhook Tester
-	// endpoint, capturing a copy. It is the default.
-	ReplayTargetEndpoint = "endpoint"
-	// ReplayTargetForward relays the request to its webhook's forward URL,
-	// recording a delivery on the original request.
-	ReplayTargetForward = "forward"
-)
-
 // ReplayRequest re-sends a captured request, to its endpoint or to its
-// webhook's forward URL, and flashes the outcome.
+// webhook's forward URL as chosen by the form's "target" field, and flashes
+// the outcome.
 func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -188,10 +177,10 @@ func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	switch target := r.FormValue("target"); target {
-	case "", ReplayTargetEndpoint:
+	switch target := models.ReplayTarget(r.FormValue("target")); target {
+	case "", models.ReplayTargetEndpoint:
 		h.replayToEndpoint(w, r, reqEvent)
-	case ReplayTargetForward:
+	case models.ReplayTargetForward:
 		h.replayToForwardURL(w, r, wh, reqEvent)
 	default:
 		http.Error(w, fmt.Sprintf("unknown replay target %q", target), http.StatusBadRequest)
@@ -201,61 +190,51 @@ func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Req
 // replayToForwardURL forwards the request synchronously, recording a replay
 // delivery on it rather than capturing a copy.
 func (h *WebhookRequestHandler) replayToForwardURL(w http.ResponseWriter, r *http.Request, wh *models.Webhook, reqEvent *models.WebhookRequest) {
-	switch {
-	case wh.UserID == 0:
-		utils.SetFlashError(w, "Forwarding is only available for endpoints in an account.")
-	case wh.ForwardURL == nil:
-		utils.SetFlashError(w, "This endpoint has no forward URL. Set one in its settings first.")
-	default:
-		d := h.forwarder.Forward(r.Context(), *wh, *reqEvent, models.DeliveryTriggerReplay)
-		if d.StatusCode != nil {
-			utils.SetFlashSuccess(w, fmt.Sprintf("Forwarded. Your server answered %s.", statusLine(*d.StatusCode)))
+	defer http.Redirect(w, r, backURL(r), http.StatusSeeOther)
+	if !wh.Forwards() {
+		if wh.UserID == 0 {
+			utils.SetFlashError(w, "Forwarding is only available for endpoints in an account.")
 		} else {
-			utils.SetFlashError(w, fmt.Sprintf("Forward failed: %s.", strings.TrimSuffix(*d.Error, ".")))
+			utils.SetFlashError(w, "This endpoint has no forward URL. Set one in its settings first.")
 		}
+		return
 	}
-	http.Redirect(w, r, backURL(r), http.StatusSeeOther)
-}
 
-// statusLine is code with its reason phrase, e.g. "500 Internal Server
-// Error", or just the code for one without a standard phrase.
-func statusLine(code int) string {
-	if text := http.StatusText(code); text != "" {
-		return fmt.Sprintf("%d %s", code, text)
+	d := h.forwarder.Forward(r.Context(), *wh, *reqEvent, models.DeliveryTriggerReplay)
+	if d.Outcome.Answered() {
+		utils.SetFlashSuccess(w, fmt.Sprintf("Forwarded. Your server answered %s.", d.StatusLine()))
+		return
 	}
-	return strconv.Itoa(code)
+	reason := "the delivery failed"
+	if d.Error != nil {
+		reason = strings.TrimSuffix(*d.Error, ".")
+	}
+	utils.SetFlashError(w, fmt.Sprintf("Forward failed: %s.", reason))
 }
 
 // replayToEndpoint re-sends the request to its Webhook Tester endpoint,
 // which captures it as a new request.
 func (h *WebhookRequestHandler) replayToEndpoint(w http.ResponseWriter, r *http.Request, reqEvent *models.WebhookRequest) {
-	domain := os.Getenv("DOMAIN")
-	target, err := url.JoinPath(domain, "webhooks", reqEvent.WebhookID, reqEvent.Path)
+	endpoint, err := h.webhookService.EndpointURL(reqEvent.WebhookID)
+	if err == nil {
+		endpoint, err = reqEvent.URLAt(endpoint)
+	}
 	if err != nil {
 		h.logger.Printf("replay: invalid target URL: %v", err)
 		http.Error(w, "could not construct replay URL", http.StatusInternalServerError)
 		return
 	}
 
-	parsed, _ := url.Parse(target)
-	q := parsed.Query()
-	for k, v := range reqEvent.Query {
-		if s, ok := v.(string); ok {
-			q.Set(k, s)
-		}
-	}
-	parsed.RawQuery = q.Encode()
-
 	bodyReader := strings.NewReader(reqEvent.Body)
-	outReq, err := http.NewRequest(reqEvent.Method, parsed.String(), bodyReader)
+	outReq, err := http.NewRequest(reqEvent.Method, endpoint, bodyReader)
 	if err != nil {
 		h.logger.Printf("replay: error creating HTTP request: %v", err)
 		http.Error(w, "error creating request", http.StatusInternalServerError)
 		return
 	}
-	for k, v := range reqEvent.Headers {
-		if s, ok := v.(string); ok {
-			outReq.Header.Set(k, s)
+	for k, values := range reqEvent.HeaderValues() {
+		for _, v := range values {
+			outReq.Header.Add(k, v)
 		}
 	}
 

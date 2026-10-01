@@ -46,15 +46,22 @@ type forwardingEnv struct {
 
 func newForwardingEnv(t *testing.T, cfg config.Forwarding) *forwardingEnv {
 	t.Helper()
+	return newForwardingEnvAt(t, cfg, testDomain)
+}
+
+// newForwardingEnvAt is newForwardingEnv for an instance served at domain,
+// where replays to the endpoint are sent.
+func newForwardingEnvAt(t *testing.T, cfg config.Forwarding, domain string) *forwardingEnv {
+	t.Helper()
 	t.Setenv("AUTH_SECRET", "some-32-plus-byte-secret-value!!")
-	t.Setenv("DOMAIN", "http://example.com")
+	t.Setenv("DOMAIN", "http://example.com") // the web router's CSRF origin
 
 	db := newAPITestDB(t)
 	logger := testLogger()
 	authSvc := service.NewAuthService(store.NewGormUserRepo(db, logger), db, "some-32-plus-byte-secret-value!!")
-	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger))
+	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger), store.NewGormDeliveryRepo(db, logger), domain)
 	webhookReqSvc := service.NewWebhookRequestService(store.NewGormWebhookRequestRepo(db, logger))
-	forwarder := newTestForwarder(t, db, webhookSvc, cfg)
+	forwarder := newTestForwarder(t, webhookSvc, cfg)
 	metricsRec := &appMetrics.PrometheusRecorder{}
 
 	owner, err := authSvc.Register("owner@example.com", "Passw0rd!", "Owner")
@@ -103,14 +110,6 @@ func (e *forwardingEnv) capture(t *testing.T, method, target, body string, heade
 	return rec
 }
 
-// waitForwards waits for the automatic forwards in flight to be recorded.
-func (e *forwardingEnv) waitForwards(t *testing.T) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	require.NoError(t, e.forwarder.Wait(ctx))
-}
-
 func (e *forwardingEnv) requests(t *testing.T, webhookID string) []models.WebhookRequest {
 	t.Helper()
 	var list []models.WebhookRequest
@@ -133,12 +132,33 @@ func (e *forwardingEnv) deliveries(t *testing.T, requestID string) []models.Deli
 	return list
 }
 
-// onlyDelivery returns the request's single delivery.
-func (e *forwardingEnv) onlyDelivery(t *testing.T, requestID string) models.Delivery {
+// awaitDeliveries waits until the request has n deliveries recorded and
+// returns them, newest first.
+func (e *forwardingEnv) awaitDeliveries(t *testing.T, requestID string, n int) []models.Delivery {
 	t.Helper()
-	list := e.deliveries(t, requestID)
-	require.Len(t, list, 1)
-	return list[0]
+	var list []models.Delivery
+	require.Eventually(t, func() bool {
+		list = nil
+		err := e.db.Where("request_id = ?", requestID).Order("started_at DESC, id DESC").Find(&list).Error
+		return err == nil && len(list) >= n
+	}, 5*time.Second, 5*time.Millisecond, "waiting for %d deliveries of request %s", n, requestID)
+	require.Len(t, list, n)
+	return list
+}
+
+// awaitDelivery waits for the request's single delivery and returns it.
+func (e *forwardingEnv) awaitDelivery(t *testing.T, requestID string) models.Delivery {
+	t.Helper()
+	return e.awaitDeliveries(t, requestID, 1)[0]
+}
+
+// neverDelivered asserts that the request gets no delivery for a while.
+func (e *forwardingEnv) neverDelivered(t *testing.T, requestID string) {
+	t.Helper()
+	assert.Never(t, func() bool {
+		var n int64
+		return e.db.Model(&models.Delivery{}).Where("request_id = ?", requestID).Count(&n).Error == nil && n > 0
+	}, 300*time.Millisecond, 10*time.Millisecond, "request %s got a delivery", requestID)
 }
 
 var csrfFieldPattern = regexp.MustCompile(`name="gorilla.csrf.Token" value="([^"]+)"`)
@@ -179,11 +199,12 @@ func flashOf(t *testing.T, rec *httptest.ResponseRecorder) *utils.Flash {
 
 // receivedRequest is what a forward target saw.
 type receivedRequest struct {
-	Method   string
-	Path     string
-	RawQuery string
-	Header   http.Header
-	Body     []byte
+	Method      string
+	Path        string
+	EscapedPath string
+	RawQuery    string
+	Header      http.Header
+	Body        []byte
 }
 
 // target is a forward target server recording what it receives.
@@ -200,7 +221,8 @@ func newTarget(t *testing.T, respond http.HandlerFunc) *target {
 		body, _ := io.ReadAll(r.Body)
 		tg.mu.Lock()
 		tg.received = append(tg.received, receivedRequest{
-			Method: r.Method, Path: r.URL.Path, RawQuery: r.URL.RawQuery, Header: r.Header.Clone(), Body: body,
+			Method: r.Method, Path: r.URL.Path, EscapedPath: r.URL.EscapedPath(), RawQuery: r.URL.RawQuery,
+			Header: r.Header.Clone(), Body: body,
 		})
 		tg.mu.Unlock()
 		if respond != nil {
@@ -241,8 +263,8 @@ func TestForwarding_RelaysCapturedRequestFaithfully(t *testing.T) {
 	})
 	require.Equal(t, http.StatusAccepted, rec.Code, "the provider gets the configured response")
 
-	env.waitForwards(t)
 	captured := env.onlyRequest(t, "wh1")
+	d := env.awaitDelivery(t, captured.ID)
 	got := tg.requests()
 	require.Len(t, got, 1)
 	fwd := got[0]
@@ -259,12 +281,12 @@ func TestForwarding_RelaysCapturedRequestFaithfully(t *testing.T) {
 		assert.NotContains(t, fwd.Header, h)
 	}
 
-	d := env.onlyDelivery(t, captured.ID)
 	assert.Equal(t, models.DeliveryTriggerAuto, d.Trigger)
 	assert.Equal(t, "wh1", d.WebhookID)
 	assert.Equal(t, tg.URL+"/hooks/orders/42?token=abc&x=1&y=two", d.TargetURL)
 	require.NotNil(t, d.StatusCode)
 	assert.Equal(t, http.StatusOK, *d.StatusCode)
+	assert.Equal(t, models.DeliveryOutcome2xx, d.Outcome)
 	assert.Nil(t, d.Error)
 	assert.Equal(t, `{"ok":true}`, d.ResponseBody)
 	assert.False(t, d.ResponseBodyTruncated)
@@ -282,6 +304,30 @@ func TestForwarding_RelaysCapturedRequestFaithfully(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("no delivery event published")
 	}
+}
+
+// The query string and path go out exactly as the provider sent them, after
+// the forward URL's own, and repeated headers keep each value.
+func TestForwarding_RelaysQueryPathAndRepeatedHeadersVerbatim(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, nil)
+	env.createWebhook(t, "wh1", tg.URL+"/my%2Fhooks?sig=a%2Bb&a=0", false)
+
+	req := httptest.NewRequest(http.MethodPost, "/wh1/files/a%2Fb/c%20d?b=x%20y&a=1&a=2&empty=&flag", strings.NewReader("{}"))
+	req.Header.Add("X-Multi", "one")
+	req.Header.Add("X-Multi", "two, three")
+	rec := httptest.NewRecorder()
+	env.webhooks.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+
+	captured := env.onlyRequest(t, "wh1")
+	d := env.awaitDelivery(t, captured.ID)
+	got := tg.requests()
+	require.Len(t, got, 1)
+	assert.Equal(t, "/my%2Fhooks/files/a%2Fb/c%20d", got[0].EscapedPath)
+	assert.Equal(t, "sig=a%2Bb&a=0&b=x%20y&a=1&a=2&empty=&flag", got[0].RawQuery)
+	assert.Equal(t, []string{"one", "two, three"}, got[0].Header.Values("X-Multi"))
+	assert.Equal(t, tg.URL+"/my%2Fhooks/files/a%2Fb/c%20d?sig=a%2Bb&a=0&b=x%20y&a=1&a=2&empty=&flag", d.TargetURL)
 }
 
 func TestForwarding_ProviderResponseNotDelayedBySlowTarget(t *testing.T) {
@@ -306,8 +352,7 @@ func TestForwarding_ProviderResponseNotDelayedBySlowTarget(t *testing.T) {
 	assert.Empty(t, env.deliveries(t, env.onlyRequest(t, "wh1").ID))
 
 	close(release)
-	env.waitForwards(t)
-	d := env.onlyDelivery(t, env.onlyRequest(t, "wh1").ID)
+	d := env.awaitDelivery(t, env.onlyRequest(t, "wh1").ID)
 	require.NotNil(t, d.StatusCode)
 	assert.Equal(t, http.StatusNoContent, *d.StatusCode)
 }
@@ -344,18 +389,19 @@ func TestForwarding_RecordsTargetFailures(t *testing.T) {
 			rec := env.capture(t, http.MethodPost, "/wh1", "{}", nil)
 			require.Equal(t, http.StatusAccepted, rec.Code, "a failing target never affects capture")
 
-			env.waitForwards(t)
-			d := env.onlyDelivery(t, env.onlyRequest(t, "wh1").ID)
+			d := env.awaitDelivery(t, env.onlyRequest(t, "wh1").ID)
 			if tc.wantStatus != 0 {
 				require.NotNil(t, d.StatusCode)
 				assert.Equal(t, tc.wantStatus, *d.StatusCode)
 				assert.Equal(t, "boom\n", d.ResponseBody)
+				assert.Equal(t, models.DeliveryOutcome5xx, d.Outcome)
 				assert.Nil(t, d.Error)
 				return
 			}
 			assert.Nil(t, d.StatusCode)
 			require.NotNil(t, d.Error)
 			assert.Equal(t, tc.wantError, *d.Error)
+			assert.Equal(t, models.DeliveryOutcomeError, d.Outcome)
 		})
 	}
 }
@@ -370,9 +416,8 @@ func TestForwarding_RecordsRedirectWithoutFollowing(t *testing.T) {
 	env.createWebhook(t, "wh1", tg.URL+"/hook", false)
 
 	env.capture(t, http.MethodPost, "/wh1", "{}", nil)
-	env.waitForwards(t)
 
-	d := env.onlyDelivery(t, env.onlyRequest(t, "wh1").ID)
+	d := env.awaitDelivery(t, env.onlyRequest(t, "wh1").ID)
 	require.NotNil(t, d.StatusCode)
 	assert.Equal(t, http.StatusFound, *d.StatusCode)
 	assert.Equal(t, "/elsewhere", d.ResponseHeaders["Location"])
@@ -386,9 +431,8 @@ func TestForwarding_TruncatesLargeResponseBody(t *testing.T) {
 	env.createWebhook(t, "wh1", tg.URL, false)
 
 	env.capture(t, http.MethodPost, "/wh1", "{}", nil)
-	env.waitForwards(t)
 
-	d := env.onlyDelivery(t, env.onlyRequest(t, "wh1").ID)
+	d := env.awaitDelivery(t, env.onlyRequest(t, "wh1").ID)
 	assert.True(t, d.ResponseBodyTruncated)
 	assert.Equal(t, large[:models.MaxDeliveryResponseBody], d.ResponseBody)
 }
@@ -400,10 +444,9 @@ func TestForwarding_GuestWebhookDoesNotForward(t *testing.T) {
 
 	rec := env.capture(t, http.MethodPost, "/guest", "{}", nil)
 	require.Equal(t, http.StatusAccepted, rec.Code)
-	env.waitForwards(t)
 
+	env.neverDelivered(t, env.onlyRequest(t, "guest").ID)
 	assert.Empty(t, tg.requests())
-	assert.Empty(t, env.deliveries(t, env.onlyRequest(t, "guest").ID))
 }
 
 func TestForwarding_QueueFullRecordsDeliveryWithoutBlockingCapture(t *testing.T) {
@@ -423,17 +466,59 @@ func TestForwarding_QueueFullRecordsDeliveryWithoutBlockingCapture(t *testing.T)
 	rec := env.capture(t, http.MethodPost, "/wh1/second", "{}", nil)
 	require.Equal(t, http.StatusAccepted, rec.Code)
 	close(release)
-	env.waitForwards(t)
 
 	captured := env.requests(t, "wh1")
 	require.Len(t, captured, 2)
-	first, second := env.onlyDelivery(t, captured[0].ID), env.onlyDelivery(t, captured[1].ID)
+	first, second := env.awaitDelivery(t, captured[0].ID), env.awaitDelivery(t, captured[1].ID)
 	assert.NotNil(t, first.StatusCode)
 	assert.Nil(t, second.StatusCode)
 	require.NotNil(t, second.Error)
 	assert.Equal(t, service.ErrMsgQueueFull, *second.Error)
+	assert.Equal(t, models.DeliveryOutcomeError, second.Outcome)
 	assert.Equal(t, tg.URL+"/second", second.TargetURL)
 	assert.Len(t, tg.requests(), 1)
+}
+
+// The server shuts the forwarder down on its way out. Captures that are
+// still being handled then, even while it drains, record a refused delivery
+// instead of starting a forward, and every capture gets exactly one.
+func TestForwarding_ShutdownRefusesNewForwards(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, nil)
+	env.createWebhook(t, "wh1", tg.URL, false)
+
+	const captures = 20
+	var wg sync.WaitGroup
+	for i := range captures {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec := env.capture(t, http.MethodPost, fmt.Sprintf("/wh1/%d", i), "{}", nil)
+			assert.Equal(t, http.StatusAccepted, rec.Code)
+		}()
+	}
+	require.NoError(t, env.forwarder.Shutdown(context.Background()))
+	wg.Wait()
+
+	captured := env.requests(t, "wh1")
+	require.Len(t, captured, captures)
+	var refused int
+	for _, wr := range captured {
+		d := env.awaitDelivery(t, wr.ID)
+		if d.Error != nil {
+			assert.Equal(t, service.ErrMsgShuttingDown, *d.Error)
+			assert.Equal(t, tg.URL+wr.Path, d.TargetURL)
+			refused++
+		}
+	}
+	assert.Len(t, tg.requests(), captures-refused, "refused captures aren't forwarded")
+
+	rec := env.capture(t, http.MethodPost, "/wh1/late", "{}", nil)
+	require.Equal(t, http.StatusAccepted, rec.Code)
+	late := env.requests(t, "wh1")[captures]
+	d := env.awaitDelivery(t, late.ID)
+	require.NotNil(t, d.Error)
+	assert.Equal(t, service.ErrMsgShuttingDown, *d.Error)
 }
 
 // With the default policy, forwards to loopback - by IP or by a hostname
@@ -456,6 +541,8 @@ func TestForwarding_DefaultPolicyBlocksPrivateDestinations(t *testing.T) {
 		"IPv6 loopback":                {forwardURL: "http://[::1]:" + port, want: "destination not allowed: ::1 is a private or reserved address"},
 		"IPv6 unique local (private)":  {forwardURL: "http://[fd00::1]:" + port, want: "destination not allowed: fd00::1 is a private or reserved address"},
 		"carrier-grade NAT shared net": {forwardURL: "http://100.64.0.1:" + port, want: "destination not allowed: 100.64.0.1 is a private or reserved address"},
+		"6to4 of loopback":             {forwardURL: "http://[2002:7f00:1::1]:" + port, want: "destination not allowed: 2002:7f00:1::1 is a private or reserved address"},
+		"Teredo":                       {forwardURL: "http://[2001:0:4136:e378:8000:63bf:3fff:fdd2]:" + port, want: "destination not allowed: 2001:0:4136:e378:8000:63bf:3fff:fdd2 is a private or reserved address"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			env := newForwardingEnv(t, config.Forwarding{Timeout: 2 * time.Second, MaxConcurrent: 4})
@@ -463,12 +550,12 @@ func TestForwarding_DefaultPolicyBlocksPrivateDestinations(t *testing.T) {
 
 			rec := env.capture(t, http.MethodPost, "/wh1", "{}", nil)
 			require.Equal(t, http.StatusAccepted, rec.Code)
-			env.waitForwards(t)
 
-			d := env.onlyDelivery(t, env.onlyRequest(t, "wh1").ID)
+			d := env.awaitDelivery(t, env.onlyRequest(t, "wh1").ID)
 			assert.Nil(t, d.StatusCode)
 			require.NotNil(t, d.Error)
 			assert.Equal(t, tc.want, *d.Error)
+			assert.Equal(t, models.DeliveryOutcomeBlocked, d.Outcome, "blocked is recorded, not inferred from the message")
 		})
 	}
 	assert.Empty(t, tg.requests())
@@ -492,8 +579,8 @@ func TestForwarding_RequestDeletedMidForward(t *testing.T) {
 	rec := env.postForm(t, "/requests/"+captured.ID+"/delete", nil, "http://example.com/?address=wh1")
 	require.Equal(t, http.StatusSeeOther, rec.Code)
 	close(release)
-	env.waitForwards(t)
 
+	env.neverDelivered(t, captured.ID)
 	assert.Empty(t, env.requests(t, "wh1"))
 	var n int64
 	require.NoError(t, env.db.Model(&models.Delivery{}).Count(&n).Error)
@@ -511,8 +598,8 @@ func TestReplay_ToForwardURL(t *testing.T) {
 	})
 	env.createWebhook(t, "wh1", tg.URL, false)
 	env.capture(t, http.MethodPost, "/wh1/orders?x=1", `{"a": 1}`, map[string]string{"X-Signature": "sig"})
-	env.waitForwards(t)
 	captured := env.onlyRequest(t, "wh1")
+	env.awaitDelivery(t, captured.ID)
 
 	mu.Lock()
 	status = http.StatusInternalServerError
@@ -545,8 +632,8 @@ func TestReplay_ToForwardURLNetworkErrorFlashesFailure(t *testing.T) {
 	closed.Close()
 	env.createWebhook(t, "wh1", closed.URL, false)
 	env.capture(t, http.MethodPost, "/wh1", "{}", nil)
-	env.waitForwards(t)
 	captured := env.onlyRequest(t, "wh1")
+	env.awaitDelivery(t, captured.ID)
 
 	rec := env.postForm(t, "/requests/"+captured.ID+"/replay", url.Values{"target": {"forward"}}, "http://example.com/?address=wh1")
 
@@ -563,26 +650,30 @@ func TestReplay_ToEndpoint(t *testing.T) {
 		"explicit": {"target": {"endpoint"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			env := newForwardingEnv(t, allowLoopback)
+			// The instance's endpoints are served by the env's webhook
+			// router, which needs the endpoint's URL as its domain.
+			var webhooks http.Handler
+			endpoint := httptest.NewServer(http.StripPrefix("/webhooks", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				webhooks.ServeHTTP(w, r)
+			})))
+			defer endpoint.Close()
+			env := newForwardingEnvAt(t, allowLoopback, endpoint.URL)
+			webhooks = env.webhooks
 			tg := newTarget(t, nil)
 			env.createWebhook(t, "wh1", tg.URL, false)
-			endpoint := httptest.NewServer(http.StripPrefix("/webhooks", env.webhooks))
-			defer endpoint.Close()
 
 			env.capture(t, http.MethodPost, "/wh1", "{}", nil)
-			env.waitForwards(t)
 			captured := env.onlyRequest(t, "wh1")
+			env.awaitDelivery(t, captured.ID)
 
-			t.Setenv("DOMAIN", endpoint.URL)
 			rec := env.postForm(t, "/requests/"+captured.ID+"/replay", form, "http://example.com/?address=wh1")
 			require.Equal(t, http.StatusSeeOther, rec.Code)
 			assert.Equal(t, &utils.Flash{Kind: utils.FlashSuccess, Message: "Request replayed. The endpoint answered 202 Accepted."}, flashOf(t, rec))
-			env.waitForwards(t)
 
 			all := env.requests(t, "wh1")
 			require.Len(t, all, 2, "the replay is captured as a new request")
+			assert.Equal(t, models.DeliveryTriggerAuto, env.awaitDelivery(t, all[1].ID).Trigger)
 			assert.Len(t, env.deliveries(t, captured.ID), 1, "the original gets no replay delivery")
-			assert.Equal(t, models.DeliveryTriggerAuto, env.onlyDelivery(t, all[1].ID).Trigger)
 		})
 	}
 }
@@ -604,9 +695,8 @@ func TestForwarding_DeletesRemoveDeliveries(t *testing.T) {
 			tg := newTarget(t, nil)
 			env.createWebhook(t, "wh1", tg.URL, false)
 			env.capture(t, http.MethodPost, "/wh1", "{}", nil)
-			env.waitForwards(t)
 			captured := env.onlyRequest(t, "wh1")
-			require.Len(t, env.deliveries(t, captured.ID), 1)
+			env.awaitDelivery(t, captured.ID)
 
 			rec := del(t, env, captured.ID)
 			require.Equal(t, http.StatusSeeOther, rec.Code)
@@ -638,8 +728,8 @@ func TestForwarding_PagesShowDeliveries(t *testing.T) {
 	})
 	env.createWebhook(t, "wh1", tg.URL, false)
 	env.capture(t, http.MethodPost, "/wh1/orders", "{}", nil)
-	env.waitForwards(t)
 	captured := env.onlyRequest(t, "wh1")
+	env.awaitDelivery(t, captured.ID)
 	referer := "http://example.com/requests/" + captured.ID + "?address=wh1"
 	require.Equal(t, http.StatusSeeOther, env.postForm(t, "/requests/"+captured.ID+"/replay", url.Values{"target": {"forward"}}, referer).Code)
 	deliveries := env.deliveries(t, captured.ID)
