@@ -426,7 +426,7 @@
             </p>
           </div>
           {{ template "header-editor" (headerEditor "response_headers" .Webhook.ResponseHeaders) }}
-          {{ if .Webhook.UserID }}
+          {{ if .Webhook.CanForward }}
             {{ template "forward-url-field" (forwardURLField "forward_url" .Webhook.ForwardURL) }}
           {{ else }}
             {{ template "forward-url-signin" }}

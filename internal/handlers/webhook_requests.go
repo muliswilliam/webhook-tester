@@ -192,7 +192,7 @@ func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Req
 func (h *WebhookRequestHandler) replayToForwardURL(w http.ResponseWriter, r *http.Request, wh *models.Webhook, reqEvent *models.WebhookRequest) {
 	defer http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 	if !wh.Forwards() {
-		if wh.UserID == 0 {
+		if !wh.CanForward() {
 			utils.SetFlashError(w, "Forwarding is only available for endpoints in an account.")
 		} else {
 			utils.SetFlashError(w, "This endpoint has no forward URL. Set one in its settings first.")

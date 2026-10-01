@@ -42,16 +42,22 @@ type Webhook struct {
 	Requests []WebhookRequest `gorm:"foreignKey:WebhookID" json:"requests,omitempty"`
 }
 
-// Forwards reports whether the webhook relays its captured requests: it has
-// a forward URL and an owner. Guest webhooks never forward, so they can't be
-// used as an open relay.
-func (w *Webhook) Forwards() bool {
-	return w.ForwardURL != nil && w.UserID != 0
+// CanForward reports whether the webhook may relay its captured requests:
+// it has an owner. Guest webhooks never forward, so they can't be used as
+// an open relay, and their settings offer no forward URL.
+func (w Webhook) CanForward() bool {
+	return w.UserID != 0
+}
+
+// Forwards reports whether the webhook relays its captured requests: it may
+// forward and has a forward URL.
+func (w Webhook) Forwards() bool {
+	return w.CanForward() && w.ForwardURL != nil
 }
 
 // ActiveForwardURL is the forward URL captured requests are relayed to, or
 // "" if the webhook doesn't forward.
-func (w *Webhook) ActiveForwardURL() string {
+func (w Webhook) ActiveForwardURL() string {
 	if !w.Forwards() {
 		return ""
 	}

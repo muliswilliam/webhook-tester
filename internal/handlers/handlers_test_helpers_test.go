@@ -51,6 +51,14 @@ func newTestWebhookRepo() *testWebhookRepo {
 	return &testWebhookRepo{webhooks: make(map[string]*models.Webhook)}
 }
 
+// copyOf returns a copy of a stored webhook, as a DB read would, so callers
+// never share it with later writes such as InsertRequest.
+func copyOf(w *models.Webhook) *models.Webhook {
+	c := *w
+	c.Requests = append([]models.WebhookRequest(nil), w.Requests...)
+	return &c
+}
+
 func (f *testWebhookRepo) put(w *models.Webhook) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -75,7 +83,7 @@ func (f *testWebhookRepo) Get(id string) (*models.Webhook, error) {
 	if !ok {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return w, nil
+	return copyOf(w), nil
 }
 
 func (f *testWebhookRepo) GetByUser(id string, userID uint) (*models.Webhook, error) {
@@ -88,7 +96,7 @@ func (f *testWebhookRepo) GetByUser(id string, userID uint) (*models.Webhook, er
 	if !ok || uint(w.UserID) != userID {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return w, nil
+	return copyOf(w), nil
 }
 
 func (f *testWebhookRepo) GetAll() ([]models.Webhook, error) {
@@ -167,7 +175,7 @@ func (f *testWebhookRepo) GetWithRequests(id string) (*models.Webhook, error) {
 	if !ok {
 		return nil, gorm.ErrRecordNotFound
 	}
-	return w, nil
+	return copyOf(w), nil
 }
 
 func (f *testWebhookRepo) AssignOwner(id string, userID uint) error {

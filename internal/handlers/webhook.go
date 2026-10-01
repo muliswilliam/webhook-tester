@@ -196,9 +196,9 @@ func (h *WebhookHandler) applyWebhookForm(r *http.Request, wh *models.Webhook, i
 	next.ContentType = &contentType
 	next.Payload = &payload
 	next.NotifyOnEvent = r.FormValue("notify_on_event") == "true"
-	// Only webhooks in an account forward, so the form offers the field to
-	// owners alone; a guest webhook ignores it. A blank value clears it.
-	if next.UserID != 0 && r.PostForm.Has("forward_url") {
+	// The form offers the field only on webhooks that can forward; a guest
+	// webhook ignores it. A blank value clears it.
+	if next.CanForward() && r.PostForm.Has("forward_url") {
 		forwardURL := r.PostForm.Get("forward_url")
 		next.ForwardURL = &forwardURL
 	}
