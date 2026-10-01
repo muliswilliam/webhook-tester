@@ -2,11 +2,9 @@ package view
 
 import (
 	"fmt"
-	"net/http"
-	"strings"
+	"strconv"
 
 	"webhook-tester/internal/models"
-	"webhook-tester/internal/service"
 )
 
 // Delivery status tones, which pick the badge colors.
@@ -24,34 +22,36 @@ type DeliveryStatus struct {
 	Title string // longer, for a tooltip: "200 OK", or the error
 }
 
-// deliveryStatus describes d's outcome: green for 2xx, neutral for a 3xx,
+// outcomeTones color each delivery outcome: green for 2xx, neutral for 3xx,
 // amber for 4xx, and red for 5xx and deliveries that never got an answer.
+var outcomeTones = map[models.DeliveryOutcome]string{
+	models.DeliveryOutcome2xx:     toneSuccess,
+	models.DeliveryOutcome3xx:     toneNeutral,
+	models.DeliveryOutcome4xx:     toneWarning,
+	models.DeliveryOutcome5xx:     toneDanger,
+	models.DeliveryOutcomeError:   toneDanger,
+	models.DeliveryOutcomeBlocked: toneDanger,
+}
+
+// deliveryStatus describes d's outcome.
 func deliveryStatus(d models.Delivery) DeliveryStatus {
-	if d.StatusCode == nil {
-		s := DeliveryStatus{Label: "Error", Tone: toneDanger, Title: "Not delivered"}
-		if d.Error != nil {
-			s.Title = "Not delivered: " + *d.Error
-			if strings.HasPrefix(*d.Error, service.ErrMsgDestinationNotAllowed) {
-				s.Label = "Blocked"
-			}
-		}
+	s := DeliveryStatus{Tone: outcomeTones[d.Outcome]}
+	if s.Tone == "" {
+		s.Tone = toneDanger
+	}
+	if d.Outcome.Answered() && d.StatusCode != nil {
+		s.Label = strconv.Itoa(*d.StatusCode)
+		s.Title = d.StatusLine()
 		return s
 	}
 
-	code := *d.StatusCode
-	s := DeliveryStatus{Label: fmt.Sprint(code), Title: fmt.Sprint(code)}
-	if text := http.StatusText(code); text != "" {
-		s.Title += " " + text
+	s.Label = "Error"
+	if d.Outcome == models.DeliveryOutcomeBlocked {
+		s.Label = "Blocked"
 	}
-	switch {
-	case code < 300:
-		s.Tone = toneSuccess
-	case code < 400:
-		s.Tone = toneNeutral
-	case code < 500:
-		s.Tone = toneWarning
-	default:
-		s.Tone = toneDanger
+	s.Title = "Not delivered"
+	if d.Error != nil {
+		s.Title += ": " + *d.Error
 	}
 	return s
 }

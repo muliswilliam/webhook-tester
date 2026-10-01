@@ -7,6 +7,8 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"webhook-tester/internal/models"
 )
 
 func counterValue(t *testing.T, c interface{ Write(*dto.Metric) error }) float64 {
@@ -65,13 +67,13 @@ func histogramSnapshot(t *testing.T, h interface{ Write(*dto.Metric) error }) (c
 
 func TestPrometheusRecorderObserveDelivery(t *testing.T) {
 	r := &PrometheusRecorder{}
-	outcomes := []DeliveryOutcome{
-		DeliveryOutcome2xx, DeliveryOutcome3xx, DeliveryOutcome4xx,
-		DeliveryOutcome5xx, DeliveryOutcomeError, DeliveryOutcomeBlocked,
+	outcomes := []models.DeliveryOutcome{
+		models.DeliveryOutcome2xx, models.DeliveryOutcome3xx, models.DeliveryOutcome4xx,
+		models.DeliveryOutcome5xx, models.DeliveryOutcomeError, models.DeliveryOutcomeBlocked,
 	}
 	for _, outcome := range outcomes {
 		t.Run(string(outcome), func(t *testing.T) {
-			before := make(map[DeliveryOutcome]float64)
+			before := make(map[models.DeliveryOutcome]float64)
 			for _, o := range outcomes {
 				before[o] = counterValue(t, DeliveriesTotal.WithLabelValues(string(o)))
 			}

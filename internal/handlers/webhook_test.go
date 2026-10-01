@@ -856,7 +856,7 @@ func TestWebhookHandler_StreamWebhookEvents_ReplaysMissedRequests(t *testing.T) 
 func publishDelivery(h *WebhookHandler, webhookID, requestID, id string, status int) models.Delivery {
 	d := models.Delivery{
 		ID: id, RequestID: requestID, WebhookID: webhookID, Trigger: models.DeliveryTriggerAuto,
-		TargetURL: "https://hooks.example.com/in", StatusCode: &status, StartedAt: time.Now().UTC(),
+		TargetURL: "https://hooks.example.com/in", Outcome: models.DeliveryOutcomeForStatus(status), StatusCode: &status, StartedAt: time.Now().UTC(),
 	}
 	h.webhookSvc.PublishDelivery(d)
 	return d
@@ -921,7 +921,7 @@ func TestWebhookHandler_StreamWebhookEvents_ReplaysMissedDeliveries(t *testing.T
 	status := http.StatusOK
 	missed := models.WebhookRequest{
 		ID: "req-missed", WebhookID: "wh", ReceivedAt: time.Now().UTC(),
-		Deliveries: []models.Delivery{{ID: "del-missed", RequestID: "req-missed", WebhookID: "wh", StatusCode: &status}},
+		Deliveries: []models.Delivery{{ID: "del-missed", RequestID: "req-missed", WebhookID: "wh", Outcome: models.DeliveryOutcomeForStatus(status), StatusCode: &status}},
 	}
 	whRepo.put(&models.Webhook{ID: "wh", Requests: []models.WebhookRequest{missed}})
 

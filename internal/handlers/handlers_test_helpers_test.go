@@ -426,10 +426,10 @@ type testMetricsRecorder struct {
 	signUps         int
 	logins          int
 	webhookRequests []string
-	deliveries      []metrics.DeliveryOutcome
+	deliveries      []models.DeliveryOutcome
 }
 
-func (m *testMetricsRecorder) ObserveDelivery(outcome metrics.DeliveryOutcome, _ time.Duration) {
+func (m *testMetricsRecorder) ObserveDelivery(outcome models.DeliveryOutcome, _ time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.deliveries = append(m.deliveries, outcome)

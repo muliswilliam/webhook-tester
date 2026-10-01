@@ -279,6 +279,7 @@ func TestForwarding_RelaysCapturedRequestFaithfully(t *testing.T) {
 	assert.Equal(t, tg.URL+"/hooks/orders/42?token=abc&x=1&y=two", d.TargetURL)
 	require.NotNil(t, d.StatusCode)
 	assert.Equal(t, http.StatusOK, *d.StatusCode)
+	assert.Equal(t, models.DeliveryOutcome2xx, d.Outcome)
 	assert.Nil(t, d.Error)
 	assert.Equal(t, `{"ok":true}`, d.ResponseBody)
 	assert.False(t, d.ResponseBodyTruncated)
@@ -386,12 +387,14 @@ func TestForwarding_RecordsTargetFailures(t *testing.T) {
 				require.NotNil(t, d.StatusCode)
 				assert.Equal(t, tc.wantStatus, *d.StatusCode)
 				assert.Equal(t, "boom\n", d.ResponseBody)
+				assert.Equal(t, models.DeliveryOutcome5xx, d.Outcome)
 				assert.Nil(t, d.Error)
 				return
 			}
 			assert.Nil(t, d.StatusCode)
 			require.NotNil(t, d.Error)
 			assert.Equal(t, tc.wantError, *d.Error)
+			assert.Equal(t, models.DeliveryOutcomeError, d.Outcome)
 		})
 	}
 }
@@ -464,6 +467,7 @@ func TestForwarding_QueueFullRecordsDeliveryWithoutBlockingCapture(t *testing.T)
 	assert.Nil(t, second.StatusCode)
 	require.NotNil(t, second.Error)
 	assert.Equal(t, service.ErrMsgQueueFull, *second.Error)
+	assert.Equal(t, models.DeliveryOutcomeError, second.Outcome)
 	assert.Equal(t, tg.URL+"/second", second.TargetURL)
 	assert.Len(t, tg.requests(), 1)
 }
@@ -544,6 +548,7 @@ func TestForwarding_DefaultPolicyBlocksPrivateDestinations(t *testing.T) {
 			assert.Nil(t, d.StatusCode)
 			require.NotNil(t, d.Error)
 			assert.Equal(t, tc.want, *d.Error)
+			assert.Equal(t, models.DeliveryOutcomeBlocked, d.Outcome, "blocked is recorded, not inferred from the message")
 		})
 	}
 	assert.Empty(t, tg.requests())

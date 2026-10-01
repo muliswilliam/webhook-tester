@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 	"webhook-tester/internal/metrics"
@@ -201,29 +200,26 @@ func (h *WebhookRequestHandler) ReplayRequest(w http.ResponseWriter, r *http.Req
 // replayToForwardURL forwards the request synchronously, recording a replay
 // delivery on it rather than capturing a copy.
 func (h *WebhookRequestHandler) replayToForwardURL(w http.ResponseWriter, r *http.Request, wh *models.Webhook, reqEvent *models.WebhookRequest) {
-	switch {
-	case wh.UserID == 0:
-		utils.SetFlashError(w, "Forwarding is only available for endpoints in an account.")
-	case wh.ForwardURL == nil:
-		utils.SetFlashError(w, "This endpoint has no forward URL. Set one in its settings first.")
-	default:
-		d := h.forwarder.Forward(r.Context(), *wh, *reqEvent, models.DeliveryTriggerReplay)
-		if d.StatusCode != nil {
-			utils.SetFlashSuccess(w, fmt.Sprintf("Forwarded. Your server answered %s.", statusLine(*d.StatusCode)))
+	defer http.Redirect(w, r, backURL(r), http.StatusSeeOther)
+	if !wh.Forwards() {
+		if wh.UserID == 0 {
+			utils.SetFlashError(w, "Forwarding is only available for endpoints in an account.")
 		} else {
-			utils.SetFlashError(w, fmt.Sprintf("Forward failed: %s.", strings.TrimSuffix(*d.Error, ".")))
+			utils.SetFlashError(w, "This endpoint has no forward URL. Set one in its settings first.")
 		}
+		return
 	}
-	http.Redirect(w, r, backURL(r), http.StatusSeeOther)
-}
 
-// statusLine is code with its reason phrase, e.g. "500 Internal Server
-// Error", or just the code for one without a standard phrase.
-func statusLine(code int) string {
-	if text := http.StatusText(code); text != "" {
-		return fmt.Sprintf("%d %s", code, text)
+	d := h.forwarder.Forward(r.Context(), *wh, *reqEvent, models.DeliveryTriggerReplay)
+	if d.Outcome.Answered() {
+		utils.SetFlashSuccess(w, fmt.Sprintf("Forwarded. Your server answered %s.", d.StatusLine()))
+		return
 	}
-	return strconv.Itoa(code)
+	reason := "the delivery failed"
+	if d.Error != nil {
+		reason = strings.TrimSuffix(*d.Error, ".")
+	}
+	utils.SetFlashError(w, fmt.Sprintf("Forward failed: %s.", reason))
 }
 
 // replayToEndpoint re-sends the request to its Webhook Tester endpoint,

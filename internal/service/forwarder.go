@@ -190,8 +190,8 @@ func isPublicAddr(ip netip.Addr) bool {
 // logged, since that happens when wr was deleted while it was in flight.
 func (f *Forwarder) Forward(ctx context.Context, wh models.Webhook, wr models.WebhookRequest, trigger models.DeliveryTrigger) models.Delivery {
 	d := newDelivery(wr, trigger)
-	outcome := f.send(ctx, wh, wr, &d)
-	f.record(&d, outcome)
+	d.Outcome = f.send(ctx, wh, wr, &d)
+	f.record(&d)
 	return d
 }
 
@@ -234,7 +234,8 @@ func (f *Forwarder) refuse(wh models.Webhook, wr models.WebhookRequest, reason s
 		d.TargetURL, _ = forwardTarget(*wh.ForwardURL, wr)
 	}
 	d.Error = ptr(reason)
-	f.record(&d, metrics.DeliveryOutcomeError)
+	d.Outcome = models.DeliveryOutcomeError
+	f.record(&d)
 }
 
 // Shutdown stops starting automatic forwards - later ones are recorded as
@@ -270,26 +271,26 @@ func newDelivery(wr models.WebhookRequest, trigger models.DeliveryTrigger) model
 }
 
 // send makes the outbound request and fills in d with what came back,
-// returning the outcome for the metrics.
-func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.WebhookRequest, d *models.Delivery) metrics.DeliveryOutcome {
+// returning its outcome.
+func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.WebhookRequest, d *models.Delivery) models.DeliveryOutcome {
 	start := time.Now()
 	defer func() { d.DurationMs = time.Since(start).Milliseconds() }()
 
 	if wh.ForwardURL == nil {
 		d.Error = ptr("the webhook has no forward URL")
-		return metrics.DeliveryOutcomeError
+		return models.DeliveryOutcomeError
 	}
 	target, err := forwardTarget(*wh.ForwardURL, wr)
 	if err != nil {
 		d.Error = ptr(fmt.Sprintf("invalid forward URL: %v", err))
-		return metrics.DeliveryOutcomeError
+		return models.DeliveryOutcomeError
 	}
 	d.TargetURL = target
 
 	req, err := http.NewRequestWithContext(ctx, wr.Method, target, strings.NewReader(wr.Body))
 	if err != nil {
 		d.Error = ptr(fmt.Sprintf("couldn't build the request: %v", err))
-		return metrics.DeliveryOutcomeError
+		return models.DeliveryOutcomeError
 	}
 	req.Header = forwardHeaders(wr)
 
@@ -297,10 +298,10 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 	if err != nil {
 		if errors.Is(err, errDestinationNotAllowed) {
 			d.Error = ptr(blockedMessage(req.URL.Hostname()))
-			return metrics.DeliveryOutcomeBlocked
+			return models.DeliveryOutcomeBlocked
 		}
 		d.Error = ptr(f.describeError(err))
-		return metrics.DeliveryOutcomeError
+		return models.DeliveryOutcomeError
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -319,15 +320,15 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 	if err != nil {
 		d.Error = ptr("reading the response body: " + f.describeError(err))
 	}
-	return metrics.DeliveryOutcomeForStatus(resp.StatusCode)
+	return models.DeliveryOutcomeForStatus(resp.StatusCode)
 }
 
 // record counts, stores and publishes the delivery. The metrics count every
 // forward attempt, refused ones included, whether or not its delivery can be
 // stored: they measure forwarding itself, and a delivery is only lost when
 // its request was deleted meanwhile or the DB failed, which is logged.
-func (f *Forwarder) record(d *models.Delivery, outcome metrics.DeliveryOutcome) {
-	f.metrics.ObserveDelivery(outcome, time.Duration(d.DurationMs)*time.Millisecond)
+func (f *Forwarder) record(d *models.Delivery) {
+	f.metrics.ObserveDelivery(d.Outcome, time.Duration(d.DurationMs)*time.Millisecond)
 	if err := f.deliveries.Insert(d); err != nil {
 		f.logger.Printf("forward: delivery for request %s not stored (deleted meanwhile?): %v", d.RequestID, err)
 		return
