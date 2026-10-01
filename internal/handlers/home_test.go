@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -269,7 +270,7 @@ func TestHomeHandler_EditModalForwardURL_Owner(t *testing.T) {
 	h.Home(rec, req)
 
 	body := rec.Body.String()
-	assert.Regexp(t, `<input\s+id="forward_url"\s+type="url"\s+name="forward_url"[^>]*value="https://api.example.com/hooks\?a=1&amp;b=2"`, body)
+	assert.Regexp(t, `<input\s+id="edit_forward_url"\s+type="url"\s+name="forward_url"[^>]*value="https://api.example.com/hooks\?a=1&amp;b=2"`, body)
 	assert.Regexp(t, `id="create_forward_url"[^>]*value=""`, body, "the create form starts blank")
 	assert.NotContains(t, body, "to set a forward URL")
 }
@@ -285,6 +286,31 @@ func TestHomeHandler_EditModalForwardURL_GuestSeesSignInPrompt(t *testing.T) {
 
 	body := rec.Body.String()
 	assert.NotContains(t, body, `name="forward_url"`)
-	assert.Contains(t, body, "to set a forward URL")
+	assert.Equal(t, 2, strings.Count(body, "to set a forward URL"), "the create and edit forms both prompt")
 	assert.Contains(t, body, `href="/login"`)
+}
+
+// The create and edit forms share their fields, under their own IDs.
+func TestHomeHandler_WebhookFormsShareFields(t *testing.T) {
+	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	payload := `{"edited":true}`
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "Mine", UserID: int(user.ID), ResponseCode: 201, ResponseDelay: 250, Payload: &payload})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=wh1", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+	h.Home(rec, req)
+	body := rec.Body.String()
+
+	for _, field := range []string{"title", "response_code", "content_type", "response_delay", "payload", "response_headers", "forward_url", "notify"} {
+		assert.Contains(t, body, `id="create_`+field+`"`)
+		assert.Contains(t, body, `id="edit_`+field+`"`)
+	}
+	assert.Regexp(t, `id="create_response_code"[^>]*value="200"`, body)
+	assert.Regexp(t, `id="edit_response_code"[^>]*value="201"`, body)
+	assert.Regexp(t, `id="edit_response_delay"[^>]*value="250"`, body)
+	assert.Contains(t, body, "{&#34;message&#34;:&#34;ok&#34;}</textarea>")
+	assert.Contains(t, body, "{&#34;edited&#34;:true}</textarea>")
 }

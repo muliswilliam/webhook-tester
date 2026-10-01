@@ -41,7 +41,6 @@ type HomePageData struct {
 	User           models.User
 	Webhooks       []models.Webhook
 	Webhook        models.Webhook
-	ContentType    string
 	RequestRows    []requestRowView
 	RequestCounter requestCounterView
 	Domain         string
@@ -145,11 +144,6 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		user = &models.User{}
 	}
 
-	var contentType string
-	if activeWebhook.ContentType != nil {
-		contentType = *activeWebhook.ContentType
-	}
-
 	csrfField := csrf.TemplateField(r)
 	canForward, forwardURL := activeWebhook.CanForward(), activeWebhook.ActiveForwardURL()
 	rows := make([]requestRowView, len(activeWebhook.Requests))
@@ -163,7 +157,6 @@ func (h *HomeHandler) Home(w http.ResponseWriter, r *http.Request) {
 		User:           *user,
 		Webhooks:       webhooks,
 		Webhook:        activeWebhook,
-		ContentType:    contentType,
 		RequestRows:    rows,
 		RequestCounter: requestCounterView{WebhookID: activeWebhook.ID, Count: int64(len(activeWebhook.Requests))},
 		Domain:         os.Getenv("DOMAIN"),

@@ -52,6 +52,8 @@ var funcMap = template.FuncMap{
 		}
 		return f
 	},
+	"newWebhookFields":     NewWebhookFields,
+	"editWebhookFields":    EditWebhookFields,
 	"maxForwardURLLength":  func() int { return models.MaxForwardURLLength },
 	"deliveryStatus":       deliveryStatus,
 	"deliveryBadge":        NewDeliveryBadge,
@@ -103,6 +105,40 @@ type HeaderRow struct {
 type HeaderEditor struct {
 	ID      string         // the editor's element ID
 	Headers map[string]any // the current response headers, nil for none
+}
+
+// WebhookFields is the data of the "webhook-fields" template: the fields
+// of the create and edit webhook forms, prefilled from Webhook.
+type WebhookFields struct {
+	// IDPrefix starts every element ID, keeping the two forms' apart.
+	IDPrefix    string
+	Webhook     models.Webhook
+	ContentType string // the selected content type
+	Payload     string
+}
+
+// NewWebhookFields are the create form's fields, prefilled with a new
+// webhook's defaults. userID is the signed-in user's ID, 0 for a guest, who
+// gets the sign-in prompt instead of the forward URL input.
+func NewWebhookFields(userID uint) WebhookFields {
+	return WebhookFields{
+		IDPrefix:    "create_",
+		Webhook:     models.Webhook{ResponseCode: models.DefaultResponseCode, UserID: int(userID)},
+		ContentType: models.DefaultContentType,
+		Payload:     `{"message":"ok"}`,
+	}
+}
+
+// EditWebhookFields are the edit form's fields, prefilled from wh.
+func EditWebhookFields(wh models.Webhook) WebhookFields {
+	f := WebhookFields{IDPrefix: "edit_", Webhook: wh, ContentType: models.DefaultContentType}
+	if wh.ContentType != nil && *wh.ContentType != "" {
+		f.ContentType = *wh.ContentType
+	}
+	if wh.Payload != nil {
+		f.Payload = *wh.Payload
+	}
+	return f
 }
 
 // ForwardURLField is the forward URL input of a webhook form.
