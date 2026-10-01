@@ -152,14 +152,15 @@ func (wr WebhookRequest) URLAt(base string) (string, error) {
 // climbsOut reports whether some server could read a ".." segment in the
 // subpath p, and so resolve it to a path above the one p is appended to.
 // Servers disagree on what a ".." is: some decode "%2e", "%2f" and "%5c"
-// before splitting, some decode twice, some split on "\" too, and some
-// (Tomcat, Spring) ignore ";parameters" in a segment. Rather than rewrite p
-// for one reading, it is checked against all of them: fully decoded, split
-// on "/" and "\", with each segment's ";parameters" dropped.
+// before splitting, some decode twice, some decode the valid escapes around
+// an invalid one, some split on "\" too, and some (Tomcat, Spring) ignore
+// ";parameters" in a segment. Rather than rewrite p for one reading, it is
+// checked against all of them: fully decoded, skipping invalid escapes,
+// split on "/" and "\", with each segment's ";parameters" dropped.
 func climbsOut(p string) bool {
 	for {
-		decoded, err := url.PathUnescape(p)
-		if err != nil || decoded == p {
+		decoded := unescapeLeniently(p)
+		if decoded == p {
 			break
 		}
 		p = decoded
@@ -171,4 +172,34 @@ func climbsOut(p string) bool {
 		}
 	}
 	return false
+}
+
+// unescapeLeniently decodes p's valid percent-escapes, keeping invalid ones
+// as written.
+func unescapeLeniently(p string) string {
+	var b strings.Builder
+	for i := 0; i < len(p); i++ {
+		if p[i] == '%' && i+2 < len(p) && isHex(p[i+1]) && isHex(p[i+2]) {
+			b.WriteByte(unhex(p[i+1])<<4 | unhex(p[i+2]))
+			i += 2
+			continue
+		}
+		b.WriteByte(p[i])
+	}
+	return b.String()
+}
+
+func isHex(c byte) bool {
+	return '0' <= c && c <= '9' || 'a' <= c && c <= 'f' || 'A' <= c && c <= 'F'
+}
+
+func unhex(c byte) byte {
+	switch {
+	case c <= '9':
+		return c - '0'
+	case c <= 'F':
+		return c - 'A' + 10
+	default:
+		return c - 'a' + 10
+	}
 }

@@ -128,6 +128,10 @@ func TestWebhookRequest_URLAtRefusesSubpathsThatCouldLeaveBase(t *testing.T) {
 		"/%2e%2e;x/admin",
 		"/%252e%252e/admin",
 		"/%25252e%25252e%25252fadmin",
+		// Decoding goes on past an invalid escape, as some servers' does.
+		"/%zz/%2e%2e/admin",
+		"/100%/..%2fadmin",
+		"/%2e%2e%zz/..%2fadmin",
 	} {
 		t.Run(p, func(t *testing.T) {
 			_, err := WebhookRequest{Path: p}.URLAt("https://api.example.com/hooks/stripe")
