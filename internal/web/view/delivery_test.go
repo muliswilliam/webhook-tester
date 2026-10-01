@@ -231,7 +231,7 @@ func TestRenderHTMLRequestStreamScope(t *testing.T) {
 
 // The request page of a webhook missing from the sidebar opens the
 // webhook's stream on its own; see TestRenderHTMLHomeUnlistedWebhookStream.
-func TestRenderHTMLRequestStreamScope_UnlistedWebhook(t *testing.T) {
+func TestRenderHTMLRequestUnlistedWebhookStream(t *testing.T) {
 	webhook := newTestWebhook()
 	body := renderRequestPageWithSidebar(t, []models.Webhook{{ID: "wh-own"}}, webhook, webhook.Requests[0])
 

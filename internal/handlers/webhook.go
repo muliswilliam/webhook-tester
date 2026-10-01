@@ -371,12 +371,6 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	missed, err := h.webhookSvc.GetRequestsAfter(webhookID, cursor)
-	if err != nil {
-		h.logger.Printf("error loading missed requests for %s: %s", webhookID, err)
-		return
-	}
-
 	stream := &requestStream{
 		sse:           datastar.NewSSE(w, r),
 		webhookID:     webhookID,
@@ -386,9 +380,19 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 		mainPanel:     r.URL.Query().Has("active"),
 		pageRequestID: r.URL.Query().Get("request"),
 		csrfField:     csrf.TemplateField(r),
-		replayed:      make(map[string]bool, len(missed)),
 	}
 
+	// A page without a request list for the webhook has no missed requests
+	// to show, and its cursor never advances, so the backlog isn't queried.
+	var missed []models.WebhookRequest
+	if stream.sidebar || stream.mainPanel {
+		missed, err = h.webhookSvc.GetRequestsAfter(webhookID, cursor)
+		if err != nil {
+			h.logger.Printf("error loading missed requests for %s: %s", webhookID, err)
+			return
+		}
+	}
+	stream.replayed = make(map[string]bool, len(missed))
 	for _, wr := range missed {
 		stream.replayed[wr.ID] = true
 	}

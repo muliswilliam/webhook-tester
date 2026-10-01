@@ -1214,6 +1214,21 @@ func TestWebhookHandler_StreamWebhookEvents_ReplayErrorEndsStream(t *testing.T) 
 	assert.Empty(t, rec.Body.String())
 }
 
+// A stream that shows no request list, such as the request page's of an
+// unlisted webhook, has no backlog to replay, so it never queries one.
+func TestWebhookHandler_StreamWebhookEvents_NoRequestListSkipsBacklog(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+	whRepo.getRequestsAfterErr = errors.New("db down")
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?request=req-shown&unlisted&since=", nil))
+	recordDelivery(t, h, "wh", "req-shown", "del-shown", http.StatusOK, time.Now().UTC())
+
+	run.waitFor(t, `id="delivery-del-shown"`)
+	run.cancel()
+	run.requireEnded(t)
+}
+
 // Streams the client must not retry end with 204 No Content.
 func TestWebhookHandler_StreamWebhookEvents_NoContent(t *testing.T) {
 	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
