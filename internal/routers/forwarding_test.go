@@ -491,6 +491,33 @@ func TestForwarding_GuestWebhookDoesNotForward(t *testing.T) {
 	assert.Empty(t, tg.requests())
 }
 
+// A forward URL leading back to the webhook through a relay (a tunnel, a
+// proxy, another hostname for this instance) would loop forever. A request
+// carrying the forwarded-request header is still captured, but not forwarded
+// again.
+func TestForwarding_RelayedBackRequestIsNotForwardedAgain(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	relay := newTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		// Relays to the webhook endpoint, as a tunnel pointing back would.
+		body, _ := io.ReadAll(r.Body)
+		req := httptest.NewRequest(r.Method, "/wh1"+strings.TrimPrefix(r.URL.Path, "/relay"), strings.NewReader(string(body)))
+		req.Header = r.Header.Clone()
+		env.webhooks.ServeHTTP(httptest.NewRecorder(), req)
+	})
+	env.createWebhook(t, "wh1", relay.URL+"/relay", false)
+
+	env.capture(t, http.MethodPost, "/wh1/orders", "{}", nil)
+
+	require.Eventually(t, func() bool { return len(env.requests(t, "wh1")) == 2 }, 5*time.Second, 5*time.Millisecond)
+	captured := env.requests(t, "wh1")
+	d := env.awaitDelivery(t, captured[0].ID)
+	require.NotNil(t, d.StatusCode, "the original is forwarded")
+	assert.Equal(t, captured[0].ID, models.FieldValue(captured[1].Headers[service.RequestIDHeader]), "the relayed copy is captured")
+	env.neverDelivered(t, captured[1].ID)
+	assert.Len(t, relay.requests(), 1)
+	assert.Len(t, env.requests(t, "wh1"), 2)
+}
+
 func TestForwarding_QueueFullRecordsDeliveryWithoutBlockingCapture(t *testing.T) {
 	cfg := allowLoopback
 	cfg.MaxConcurrent = 1

@@ -25,7 +25,9 @@ import (
 )
 
 // RequestIDHeader is added to every forwarded request, carrying the ID of
-// the captured request, so the target's logs can be matched to it.
+// the captured request, so the target's logs can be matched to it. A
+// captured request that has it is a forward that came back, and isn't
+// forwarded again.
 const RequestIDHeader = "X-Webhook-Tester-Request-Id"
 
 // Delivery errors recorded for forwards that weren't attempted.

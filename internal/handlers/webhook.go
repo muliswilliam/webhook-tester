@@ -226,7 +226,8 @@ func backURL(r *http.Request) string {
 
 // HandleWebhookRequest captures a request sent to /webhooks/{id}, or to any
 // subpath of it, and answers with the webhook's configured response. If the
-// webhook forwards, the captured request is also relayed to its forward URL.
+// webhook forwards, the captured request is also relayed to its forward URL,
+// unless it is a forwarded request itself.
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	path := capturedPath(r)
@@ -270,8 +271,10 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	h.metrics.IncWebhookRequest(webhookID)
 
 	// Relay in the background: the provider's response never waits on the
-	// forward target.
-	if webhook.Forwards() {
+	// forward target. A request that is itself a forward, which reached a
+	// webhook again through a tunnel, proxy or alias of this instance, isn't
+	// relayed again, so such a forward URL can't loop.
+	if webhook.Forwards() && r.Header.Get(service.RequestIDHeader) == "" {
 		h.forwarder.ForwardAsync(*webhook, wr)
 	}
 
