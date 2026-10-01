@@ -41,12 +41,26 @@ var funcMap = template.FuncMap{
 	"headerRow": func(name string, value any) HeaderRow {
 		return HeaderRow{Name: name, Value: fmt.Sprint(value)}
 	},
+	"forwardURLField": func(id string, value *string) ForwardURLField {
+		f := ForwardURLField{ID: id}
+		if value != nil {
+			f.Value = *value
+		}
+		return f
+	},
+	"maxForwardURLLength": func() int { return models.MaxForwardURLLength },
 }
 
 // HeaderRow is one row of the response header editor.
 type HeaderRow struct {
 	Name  string
 	Value string
+}
+
+// ForwardURLField is the forward URL input of a webhook form.
+type ForwardURLField struct {
+	ID    string // the input's element ID
+	Value string // the current forward URL, "" for none
 }
 
 // withFlash pops the request's queued notice and binds it to the "flash"

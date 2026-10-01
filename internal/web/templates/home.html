@@ -391,6 +391,11 @@
 {{ if .Webhook.Payload }}{{ .Webhook.Payload }}{{ end }}</textarea>
           </div>
           {{ template "header-editor" .Webhook.ResponseHeaders }}
+          {{ if .Webhook.UserID }}
+            {{ template "forward-url-field" (forwardURLField "forward_url" .Webhook.ForwardURL) }}
+          {{ else }}
+            {{ template "forward-url-signin" }}
+          {{ end }}
           <label class="check-row">
             <input
               type="checkbox"

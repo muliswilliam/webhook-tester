@@ -140,7 +140,7 @@ func ValidateForwardURL(raw, domain string) error {
 		return errors.New("forward URL must include a host")
 	}
 	if pointsAtOwnWebhooks(u, domain) {
-		return errors.New("forward URL can't point at this Webhook Tester's own webhook endpoints, that would loop")
+		return errors.New("forward URL can't point at this Webhook Tester's own webhook endpoints, since that would loop")
 	}
 	return nil
 }
