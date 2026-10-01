@@ -233,7 +233,7 @@
   </span>
 {{ end }}
 
-{{/* A request's deliveries, newest first; live deliveries are prepended.
+{{/* A request's deliveries, newest first; the stream morphs in each new list.
   Expects a models.WebhookRequest.
 */}}
 {{ define "delivery-list" }}
@@ -249,8 +249,8 @@
 */}}
 {{ define "delivery-item" }}
   <li id="delivery-{{ .ID }}" class="delivery-item">
-    {{ if .StatusCode }}
-      <details>
+    {{ if .Outcome.Answered }}
+      <details data-preserve-attr="open">
         <summary class="delivery-summary">
           {{ template "delivery-summary" . }}
           <svg

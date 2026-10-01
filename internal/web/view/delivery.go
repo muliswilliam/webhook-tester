@@ -63,8 +63,8 @@ type DeliveryBadge struct {
 	Delivery  *models.Delivery // nil while the request has none
 }
 
-// deliveryBadge is the badge of wr, whose deliveries are newest first.
-func deliveryBadge(wr models.WebhookRequest) DeliveryBadge {
+// NewDeliveryBadge is the badge of wr, whose deliveries are newest first.
+func NewDeliveryBadge(wr models.WebhookRequest) DeliveryBadge {
 	b := DeliveryBadge{RequestID: wr.ID}
 	if len(wr.Deliveries) > 0 {
 		b.Delivery = &wr.Deliveries[0]

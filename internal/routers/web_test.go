@@ -32,12 +32,12 @@ func setupWebRouter(t *testing.T) http.Handler {
 	webhookReqRepo := store.NewGormWebhookRequestRepo(db, logger)
 
 	authSvc := service.NewAuthService(userRepo, db, "some-32-plus-byte-secret-value!!")
-	webhookSvc := service.NewWebhookService(webhookRepo)
+	webhookSvc := service.NewWebhookService(webhookRepo, store.NewGormDeliveryRepo(db, logger))
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
 
 	metricsRec := &appMetrics.PrometheusRecorder{}
 
-	forwarder := newTestForwarder(t, db, webhookSvc, config.Forwarding{})
+	forwarder := newTestForwarder(t, webhookSvc, config.Forwarding{})
 	return routers.NewWebRouter(webhookReqSvc, webhookSvc, authSvc, forwarder, &mailer.LogMailer{Logger: logger}, metricsRec, logger)
 }
 

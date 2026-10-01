@@ -116,10 +116,10 @@ func TestNullableString_JSON(t *testing.T) {
 	out, err := json.Marshal(UpdateWebhookRequest{})
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), "forward_url")
-	out, err = json.Marshal(UpdateWebhookRequest{ForwardURL: NewNullableString(nil)})
+	out, err = json.Marshal(UpdateWebhookRequest{ForwardURL: NullableString{Set: true, Value: nil}})
 	require.NoError(t, err)
 	assert.Contains(t, string(out), `"forward_url":null`)
-	out, err = json.Marshal(UpdateWebhookRequest{ForwardURL: NewNullableString(value.Value)})
+	out, err = json.Marshal(UpdateWebhookRequest{ForwardURL: NullableString{Set: true, Value: value.Value}})
 	require.NoError(t, err)
 	assert.Contains(t, string(out), `"forward_url":"https://x.example"`)
 }

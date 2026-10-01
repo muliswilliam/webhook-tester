@@ -40,11 +40,11 @@ func newAPITestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// newTestForwarder returns a forwarder recording into db. It waits for its
-// in-flight forwards when the test ends, before the DB closes.
-func newTestForwarder(t *testing.T, db *gorm.DB, webhookSvc *service.WebhookService, cfg config.Forwarding) *service.Forwarder {
+// newTestForwarder returns a forwarder recording through webhookSvc. It
+// waits for its in-flight forwards when the test ends, before the DB closes.
+func newTestForwarder(t *testing.T, webhookSvc *service.WebhookService, cfg config.Forwarding) *service.Forwarder {
 	t.Helper()
-	f := service.NewForwarder(cfg, store.NewGormDeliveryRepo(db, testLogger()), webhookSvc, &appMetrics.PrometheusRecorder{}, testLogger())
+	f := service.NewForwarder(cfg, webhookSvc, &appMetrics.PrometheusRecorder{}, testLogger())
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -69,7 +69,7 @@ func setupAPIRouter(t *testing.T) (http.Handler, string) {
 	webhookRepo := store.NewGormWebookRepo(db, logger)
 
 	authSvc := service.NewAuthService(userRepo, db, "test-auth-secret")
-	webhookSvc := service.NewWebhookService(webhookRepo)
+	webhookSvc := service.NewWebhookService(webhookRepo, store.NewGormDeliveryRepo(db, logger))
 
 	user, err := authSvc.Register("api-user@example.com", "Passw0rd!", "API User")
 	require.NoError(t, err)

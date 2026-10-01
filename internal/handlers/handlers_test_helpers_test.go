@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -481,23 +483,26 @@ func (f *testDeliveryRepo) ListByRequest(requestID string) ([]models.Delivery, e
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var list []models.Delivery
-	for i := len(f.deliveries) - 1; i >= 0; i-- {
-		if f.deliveries[i].RequestID == requestID {
-			list = append(list, f.deliveries[i])
+	for _, d := range f.deliveries {
+		if d.RequestID == requestID {
+			list = append(list, d)
 		}
 	}
+	// Newest first, as the store orders them.
+	slices.SortFunc(list, func(a, b models.Delivery) int {
+		if c := b.StartedAt.Compare(a.StartedAt); c != 0 {
+			return c
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
 	return list, nil
 }
 
-func (f *testDeliveryRepo) DeleteByRequest(string) error { return nil }
-
-func (f *testDeliveryRepo) DeleteByWebhook(string) error { return nil }
-
 // newTestForwarder returns a forwarder allowed to reach loopback test
-// servers, recording into deliveries.
-func newTestForwarder(deliveries *testDeliveryRepo, whSvc *service.WebhookService, rec metrics.Recorder) *service.Forwarder {
+// servers, recording through whSvc.
+func newTestForwarder(whSvc *service.WebhookService, rec metrics.Recorder) *service.Forwarder {
 	cfg := config.Forwarding{AllowPrivateNetworks: true, Timeout: 5 * time.Second, MaxConcurrent: 4}
-	return service.NewForwarder(cfg, deliveries, whSvc, rec, newTestLogger())
+	return service.NewForwarder(cfg, whSvc, rec, newTestLogger())
 }
 
 func newTestAuthService(t *testing.T, repo *testUserRepo) *service.AuthService {

@@ -25,10 +25,10 @@ func newTestWebhookRequestHandler(t *testing.T) (*WebhookRequestHandler, *testWe
 	authSvc := newTestAuthService(t, userRepo)
 
 	reqSvc := service.NewWebhookRequestService(reqRepo)
-	whSvc := service.NewWebhookService(whRepo)
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{})
 
 	var rec metrics.Recorder = &testMetricsRecorder{}
-	forwarder := newTestForwarder(&testDeliveryRepo{}, whSvc, rec)
+	forwarder := newTestForwarder(whSvc, rec)
 	h := NewWebhookRequestHandler(reqSvc, authSvc, whSvc, forwarder, &rec, newTestLogger())
 	return h, reqRepo, whRepo, userRepo, authSvc
 }

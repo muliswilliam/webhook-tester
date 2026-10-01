@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"time"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/repository"
@@ -10,13 +11,14 @@ import (
 
 // WebhookService encapsulates business logic for webhooks.
 type WebhookService struct {
-	repo   repository.WebhookRepository
-	broker *broker
+	repo       repository.WebhookRepository
+	deliveries repository.DeliveryRepository
+	broker     *broker
 }
 
-// NewWebhookService constructs a WebhookService with the given repository.
-func NewWebhookService(repo repository.WebhookRepository) *WebhookService {
-	return &WebhookService{repo: repo, broker: newBroker()}
+// NewWebhookService constructs a WebhookService with the given repositories.
+func NewWebhookService(repo repository.WebhookRepository, deliveries repository.DeliveryRepository) *WebhookService {
+	return &WebhookService{repo: repo, deliveries: deliveries, broker: newBroker()}
 }
 
 // CreateWebhook creates a new webhook record.
@@ -99,15 +101,17 @@ func (s *WebhookService) UpdateWebhook(w *models.Webhook) error {
 // RecordRequest stamps wr.ReceivedAt, stores it, and publishes it to the
 // webhook's subscribers. Captures for the same webhook are serialized, so
 // ReceivedAt order, insert order and publish order all agree - which is what
-// lets a subscriber resume from a models.RequestCursor without gaps.
-func (s *WebhookService) RecordRequest(wr *models.WebhookRequest) error {
+// lets a subscriber resume from a models.RequestCursor without gaps. wh is
+// the webhook wr was sent to, as loaded for the capture; the event carries
+// its forward URL, so subscribers offer the current replay targets.
+func (s *WebhookService) RecordRequest(wh *models.Webhook, wr *models.WebhookRequest) error {
 	var err error
 	s.broker.withWebhookLock(wr.WebhookID, func(stamp time.Time) {
 		wr.ReceivedAt = stamp
 		if err = s.repo.InsertRequest(wr); err != nil {
 			return
 		}
-		evt := Event{Kind: EventRequestCaptured, Request: *wr}
+		evt := Event{Kind: EventRequestCaptured, Request: *wr, ForwardURL: wh.ActiveForwardURL()}
 		if count, countErr := s.repo.CountRequests(wr.WebhookID); countErr == nil {
 			evt.Count = &count
 		}
@@ -116,10 +120,24 @@ func (s *WebhookService) RecordRequest(wr *models.WebhookRequest) error {
 	return err
 }
 
-// PublishDelivery publishes a recorded delivery to the subscribers of its
-// webhook.
-func (s *WebhookService) PublishDelivery(d models.Delivery) {
-	s.broker.publish(d.WebhookID, Event{Kind: EventDeliveryRecorded, Delivery: d})
+// RecordDelivery stores d and publishes it to its webhook's subscribers,
+// together with all of its request's deliveries, newest first. A webhook's
+// deliveries are recorded one at a time, so each event's list holds every
+// delivery published before it, and the latest list is always complete.
+func (s *WebhookService) RecordDelivery(d *models.Delivery) error {
+	var err error
+	s.broker.withWebhookLock(d.WebhookID, func(time.Time) {
+		if err = s.deliveries.Insert(d); err != nil {
+			return
+		}
+		list, listErr := s.deliveries.ListByRequest(d.RequestID)
+		if listErr != nil {
+			err = fmt.Errorf("stored, but not published: %w", listErr)
+			return
+		}
+		s.broker.publish(d.WebhookID, Event{Kind: EventDeliveryRecorded, Delivery: *d, Deliveries: list})
+	})
+	return err
 }
 
 // Subscribe starts receiving the webhook's newly captured requests and

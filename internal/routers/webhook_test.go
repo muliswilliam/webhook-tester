@@ -21,9 +21,9 @@ func newTestWebhookRouter(t *testing.T) (http.Handler, *gorm.DB) {
 	db := newAPITestDB(t)
 	logger := testLogger()
 	authSvc := service.NewAuthService(store.NewGormUserRepo(db, logger), db, "test-auth-secret")
-	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger))
+	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger), store.NewGormDeliveryRepo(db, logger))
 	webhookReqSvc := service.NewWebhookRequestService(store.NewGormWebhookRequestRepo(db, logger))
-	forwarder := newTestForwarder(t, db, webhookSvc, config.Forwarding{})
+	forwarder := newTestForwarder(t, webhookSvc, config.Forwarding{})
 	return routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, forwarder, logger, &appMetrics.PrometheusRecorder{}), db
 }
 
@@ -63,12 +63,12 @@ func TestNewWebhookRouter_UnknownWebhookReturnsNotFound(t *testing.T) {
 	webhookReqRepo := store.NewGormWebhookRequestRepo(db, logger)
 
 	authSvc := service.NewAuthService(userRepo, db, "test-auth-secret")
-	webhookSvc := service.NewWebhookService(webhookRepo)
+	webhookSvc := service.NewWebhookService(webhookRepo, store.NewGormDeliveryRepo(db, logger))
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
 
 	metricsRec := &appMetrics.PrometheusRecorder{}
 
-	forwarder := newTestForwarder(t, db, webhookSvc, config.Forwarding{})
+	forwarder := newTestForwarder(t, webhookSvc, config.Forwarding{})
 	r := routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, forwarder, logger, metricsRec)
 
 	req := httptest.NewRequest(http.MethodGet, "/some-webhook-id", nil)

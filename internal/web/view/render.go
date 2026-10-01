@@ -50,7 +50,7 @@ var funcMap = template.FuncMap{
 	},
 	"maxForwardURLLength": func() int { return models.MaxForwardURLLength },
 	"deliveryStatus":      deliveryStatus,
-	"deliveryBadge":       deliveryBadge,
+	"deliveryBadge":       NewDeliveryBadge,
 	"formatDuration":      formatDuration,
 	"fieldValue":          models.FieldValue,
 	"maxDeliveryBodyKiB":  func() int { return models.MaxDeliveryResponseBody >> 10 },

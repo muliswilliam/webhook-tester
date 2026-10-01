@@ -30,10 +30,10 @@ func newTestWebhookHandler(t *testing.T) (*WebhookHandler, *testWebhookRepo, *te
 	metricsRec := &testMetricsRecorder{}
 	authSvc := newTestAuthService(t, userRepo)
 
-	whSvc := service.NewWebhookService(whRepo)
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{})
 	reqSvc := service.NewWebhookRequestService(reqRepo)
 
-	forwarder := newTestForwarder(&testDeliveryRepo{}, whSvc, metricsRec)
+	forwarder := newTestForwarder(whSvc, metricsRec)
 	h := NewWebhookHandler(whSvc, reqSvc, authSvc, forwarder, newTestLogger(), metricsRec)
 	return h, whRepo, reqRepo, userRepo, metricsRec, authSvc
 }
@@ -785,8 +785,10 @@ func (s *streamRun) requireEnded(t *testing.T) {
 
 func recordRequest(t *testing.T, h *WebhookHandler, webhookID, id string) models.WebhookRequest {
 	t.Helper()
+	wh, err := h.webhookSvc.GetWebhook(webhookID)
+	require.NoError(t, err)
 	wr := models.WebhookRequest{ID: id, WebhookID: webhookID, Method: "POST", Body: `{"a":1}`}
-	require.NoError(t, h.webhookSvc.RecordRequest(&wr))
+	require.NoError(t, h.webhookSvc.RecordRequest(wh, &wr))
 	return wr
 }
 
@@ -853,12 +855,15 @@ func TestWebhookHandler_StreamWebhookEvents_ReplaysMissedRequests(t *testing.T) 
 	}
 }
 
-func publishDelivery(h *WebhookHandler, webhookID, requestID, id string, status int) models.Delivery {
+// recordDelivery records a delivery the target answered with status, started
+// at startedAt, as the forwarder does.
+func recordDelivery(t *testing.T, h *WebhookHandler, webhookID, requestID, id string, status int, startedAt time.Time) models.Delivery {
+	t.Helper()
 	d := models.Delivery{
 		ID: id, RequestID: requestID, WebhookID: webhookID, Trigger: models.DeliveryTriggerAuto,
-		TargetURL: "https://hooks.example.com/in", Outcome: models.DeliveryOutcomeForStatus(status), StatusCode: &status, StartedAt: time.Now().UTC(),
+		TargetURL: "https://hooks.example.com/in", Outcome: models.DeliveryOutcomeForStatus(status), StatusCode: &status, StartedAt: startedAt,
 	}
-	h.webhookSvc.PublishDelivery(d)
+	require.NoError(t, h.webhookSvc.RecordDelivery(&d))
 	return d
 }
 
@@ -876,10 +881,36 @@ func TestWebhookHandler_StreamWebhookEvents_ActivePatchesDeliveries(t *testing.T
 	// The streamed row offers the replay to the forward URL.
 	run.waitFor(t, "selector #request-log-list-wh", "Replay to forward URL")
 
-	publishDelivery(h, "wh", "req-1", "del-1", http.StatusBadGateway)
+	recordDelivery(t, h, "wh", "req-1", "del-1", http.StatusBadGateway, time.Now().UTC())
 	run.waitFor(t,
 		`id="delivery-badge-req-1"`, "Last delivery: 502 Bad Gateway",
-		"selector #delivery-list-req-1", "mode prepend", `id="delivery-del-1"`)
+		`id="delivery-list-req-1"`, `id="delivery-del-1"`)
+}
+
+// Deliveries are listed by when they started, however they finish: an
+// automatic delivery that outlasts a later replay stays below it, and the
+// badge keeps showing the replay.
+func TestWebhookHandler_StreamWebhookEvents_DeliveriesInStartOrder(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh"})
+
+	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active", nil))
+	recordRequest(t, h, "wh", "req-1")
+	started := time.Now().UTC()
+	recordDelivery(t, h, "wh", "req-1", "del-replay", http.StatusOK, started.Add(time.Second))
+	recordDelivery(t, h, "wh", "req-1", "del-auto", http.StatusInternalServerError, started)
+
+	// The last list patch has both deliveries, newest started first.
+	run.waitFor(t, `id="delivery-del-auto"`)
+	body := run.rec.body()
+	lastList := body[strings.LastIndex(body, `id="delivery-list-req-1"`):]
+	replay, auto := strings.Index(lastList, `id="delivery-del-replay"`), strings.Index(lastList, `id="delivery-del-auto"`)
+	require.NotEqual(t, -1, replay, "the replay is still listed")
+	assert.Less(t, replay, auto, "the replay started last, so it stays on top")
+
+	lastBadge := body[strings.LastIndex(body, `id="delivery-badge-req-1"`):]
+	lastBadge = lastBadge[:strings.Index(lastBadge, `id="delivery-list-req-1"`)] // the badge is patched before the list
+	assert.Contains(t, lastBadge, "Last delivery: 200 OK")
 }
 
 func TestWebhookHandler_StreamWebhookEvents_RequestPagePatchesOnlyItsDeliveries(t *testing.T) {
@@ -887,10 +918,10 @@ func TestWebhookHandler_StreamWebhookEvents_RequestPagePatchesOnlyItsDeliveries(
 	whRepo.put(&models.Webhook{ID: "wh"})
 
 	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?request=req-shown", nil))
-	publishDelivery(h, "wh", "req-other", "del-other", http.StatusOK)
-	publishDelivery(h, "wh", "req-shown", "del-shown", http.StatusOK)
+	recordDelivery(t, h, "wh", "req-other", "del-other", http.StatusOK, time.Now().UTC())
+	recordDelivery(t, h, "wh", "req-shown", "del-shown", http.StatusOK, time.Now().UTC())
 
-	run.waitFor(t, "selector #delivery-list-req-shown", `id="delivery-del-shown"`)
+	run.waitFor(t, `id="delivery-list-req-shown"`, `id="delivery-del-shown"`)
 	body := run.rec.body()
 	assert.NotContains(t, body, "del-other")
 	assert.NotContains(t, body, "delivery-badge-", "the request page has no request list")
@@ -906,7 +937,7 @@ func TestWebhookHandler_StreamWebhookEvents_SidebarSkipsDeliveries(t *testing.T)
 	whRepo.put(&models.Webhook{ID: "wh"})
 
 	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh", nil))
-	publishDelivery(h, "wh", "req-1", "del-1", http.StatusOK)
+	recordDelivery(t, h, "wh", "req-1", "del-1", http.StatusOK, time.Now().UTC())
 	// Events are handled in order, so once the capture is streamed the
 	// delivery before it has been skipped.
 	recordRequest(t, h, "wh", "req-2")
@@ -914,8 +945,7 @@ func TestWebhookHandler_StreamWebhookEvents_SidebarSkipsDeliveries(t *testing.T)
 	assert.NotContains(t, run.rec.body(), "del-1")
 }
 
-// Missed requests are replayed with their deliveries, and a live event for a
-// delivery already replayed isn't sent again.
+// Missed requests are replayed with their deliveries.
 func TestWebhookHandler_StreamWebhookEvents_ReplaysMissedDeliveries(t *testing.T) {
 	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
 	status := http.StatusOK
@@ -928,10 +958,8 @@ func TestWebhookHandler_StreamWebhookEvents_ReplaysMissedDeliveries(t *testing.T
 	run := startStream(t, h, httptest.NewRequest(http.MethodGet, "/webhook-stream/wh?active&since=", nil))
 	run.waitFor(t, "req-missed", `id="delivery-del-missed"`, "Last delivery: 200 OK")
 
-	h.webhookSvc.PublishDelivery(missed.Deliveries[0])
 	recordRequest(t, h, "wh", "req-live")
 	run.waitFor(t, "req-live")
-	assert.Equal(t, 1, strings.Count(run.rec.body(), `id="delivery-del-missed"`))
 }
 
 func TestWebhookHandler_StreamWebhookEvents_ReplayErrorEndsStream(t *testing.T) {

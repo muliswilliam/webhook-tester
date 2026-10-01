@@ -51,11 +51,6 @@ type NullableString struct {
 	Value *string
 }
 
-// NewNullableString returns a present field holding s, or null when s is nil.
-func NewNullableString(s *string) NullableString {
-	return NullableString{Set: true, Value: s}
-}
-
 // UnmarshalJSON records that the field is present. encoding/json calls it
 // for null too, which is what tells null from missing.
 func (n *NullableString) UnmarshalJSON(data []byte) error {

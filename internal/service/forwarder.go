@@ -23,7 +23,6 @@ import (
 	"webhook-tester/config"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
-	"webhook-tester/internal/repository"
 	"webhook-tester/internal/utils"
 )
 
@@ -65,21 +64,20 @@ var unforwardedHeaders = map[string]bool{
 	"Content-Length":      true,
 }
 
-// DeliveryPublisher publishes recorded deliveries to live subscribers.
-// WebhookService implements it.
-type DeliveryPublisher interface {
-	PublishDelivery(d models.Delivery)
+// DeliveryRecorder stores deliveries and publishes them to live
+// subscribers. WebhookService implements it.
+type DeliveryRecorder interface {
+	RecordDelivery(d *models.Delivery) error
 }
 
 // Forwarder relays captured requests to their webhook's forward URL and
 // records each attempt as a delivery.
 type Forwarder struct {
-	client     *http.Client
-	timeout    time.Duration
-	deliveries repository.DeliveryRepository
-	publisher  DeliveryPublisher
-	metrics    metrics.Recorder
-	logger     *log.Logger
+	client   *http.Client
+	timeout  time.Duration
+	recorder DeliveryRecorder
+	metrics  metrics.Recorder
+	logger   *log.Logger
 
 	// slots bounds the automatic forwards in flight.
 	slots chan struct{}
@@ -94,8 +92,7 @@ type Forwarder struct {
 // Timeout or MaxConcurrent falls back to the config defaults.
 func NewForwarder(
 	cfg config.Forwarding,
-	deliveries repository.DeliveryRepository,
-	publisher DeliveryPublisher,
+	recorder DeliveryRecorder,
 	rec metrics.Recorder,
 	logger *log.Logger,
 ) *Forwarder {
@@ -106,13 +103,12 @@ func NewForwarder(
 		cfg.MaxConcurrent = config.DefaultForwardMaxConcurrent
 	}
 	return &Forwarder{
-		client:     newForwardClient(cfg),
-		timeout:    cfg.Timeout,
-		deliveries: deliveries,
-		publisher:  publisher,
-		metrics:    rec,
-		logger:     logger,
-		slots:      make(chan struct{}, cfg.MaxConcurrent),
+		client:   newForwardClient(cfg),
+		timeout:  cfg.Timeout,
+		recorder: recorder,
+		metrics:  rec,
+		logger:   logger,
+		slots:    make(chan struct{}, cfg.MaxConcurrent),
 	}
 }
 
@@ -329,11 +325,9 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 // its request was deleted meanwhile or the DB failed, which is logged.
 func (f *Forwarder) record(d *models.Delivery) {
 	f.metrics.ObserveDelivery(d.Outcome, time.Duration(d.DurationMs)*time.Millisecond)
-	if err := f.deliveries.Insert(d); err != nil {
-		f.logger.Printf("forward: delivery for request %s not stored (deleted meanwhile?): %v", d.RequestID, err)
-		return
+	if err := f.recorder.RecordDelivery(d); err != nil {
+		f.logger.Printf("forward: delivery %s of request %s (deleted meanwhile?): %v", d.ID, d.RequestID, err)
 	}
-	f.publisher.PublishDelivery(*d)
 }
 
 // forwardTarget is the captured request's URL under the forward URL: the

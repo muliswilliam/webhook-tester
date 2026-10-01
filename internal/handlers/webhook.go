@@ -256,7 +256,7 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		RawQuery:  r.URL.RawQuery,
 		Body:      string(body),
 	}
-	if err := h.webhookSvc.RecordRequest(&wr); err != nil {
+	if err := h.webhookSvc.RecordRequest(webhook, &wr); err != nil {
 		h.logger.Printf("error creating webhook request: %s", err)
 		utils.RenderJSON(w, http.StatusInternalServerError, nil)
 		return
@@ -366,21 +366,17 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 	}
 
 	stream := &requestStream{
-		sse:                datastar.NewSSE(w, r),
-		webhookID:          webhookID,
-		forwardURL:         forwardURLOf(webhook),
-		mainPanel:          r.URL.Query().Has("active"),
-		pageRequestID:      r.URL.Query().Get("request"),
-		csrfField:          csrf.TemplateField(r),
-		replayed:           make(map[string]bool, len(missed)),
-		replayedDeliveries: make(map[string]bool),
+		sse:           datastar.NewSSE(w, r),
+		webhookID:     webhookID,
+		forwardURL:    webhook.ActiveForwardURL(),
+		mainPanel:     r.URL.Query().Has("active"),
+		pageRequestID: r.URL.Query().Get("request"),
+		csrfField:     csrf.TemplateField(r),
+		replayed:      make(map[string]bool, len(missed)),
 	}
 
 	for _, wr := range missed {
 		stream.replayed[wr.ID] = true
-		for _, d := range wr.Deliveries {
-			stream.replayedDeliveries[d.ID] = true
-		}
 	}
 	if len(missed) > 0 {
 		var count *int64
@@ -408,21 +404,15 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 					continue
 				}
 				// The forward URL may have changed since the stream
-				// started; new rows offer the current replay targets.
-				if stream.mainPanel {
-					if wh, err := h.webhookSvc.GetWebhook(webhookID); err == nil {
-						stream.forwardURL = forwardURLOf(wh)
-					}
-				}
+				// started; new rows offer the replay targets current at
+				// capture.
+				stream.forwardURL = evt.ForwardURL
 				if err := stream.send([]models.WebhookRequest{evt.Request}, evt.Count); err != nil {
 					h.logger.Printf("error streaming request %s: %s", evt.Request.ID, err)
 					return
 				}
 			case service.EventDeliveryRecorded:
-				if stream.replayedDeliveries[evt.Delivery.ID] {
-					continue
-				}
-				if err := stream.sendDelivery(evt.Delivery); err != nil {
+				if err := stream.sendDeliveries(evt.Delivery.RequestID, evt.Deliveries); err != nil {
 					h.logger.Printf("error streaming delivery %s: %s", evt.Delivery.ID, err)
 					return
 				}
@@ -443,14 +433,6 @@ type requestRowView struct {
 	ForwardURL string
 }
 
-// forwardURLOf is wh's forward URL if it forwards, else "".
-func forwardURLOf(wh *models.Webhook) string {
-	if !wh.Forwards() {
-		return ""
-	}
-	return *wh.ForwardURL
-}
-
 // requestCounterView is the data for the "request-counter" template.
 type requestCounterView struct {
 	WebhookID string
@@ -465,10 +447,9 @@ type requestStream struct {
 	forwardURL string // see requestRowView.ForwardURL
 	mainPanel  bool   // the page shows the webhook's request list
 	// pageRequestID is the request whose page the stream is on, if any.
-	pageRequestID      string
-	csrfField          template.HTML
-	replayed           map[string]bool // IDs of requests sent from the backlog
-	replayedDeliveries map[string]bool // IDs of deliveries sent with them
+	pageRequestID string
+	csrfField     template.HTML
+	replayed      map[string]bool // IDs of requests sent from the backlog
 }
 
 // send prepends each request, oldest first, and then patches the counter if
@@ -508,22 +489,22 @@ func (s *requestStream) send(requests []models.WebhookRequest, count *int64) err
 	return nil
 }
 
-// sendDelivery shows a newly recorded delivery wherever the page shows its
-// request: on top of the request's delivery list and, in the request list,
-// as the request's badge. Pages that don't show the request get nothing.
-func (s *requestStream) sendDelivery(d models.Delivery) error {
-	if !s.mainPanel && s.pageRequestID != d.RequestID {
+// sendDeliveries shows a request's deliveries, newest first, wherever the
+// page shows the request: its delivery list is morphed into the given one
+// and, in the request list, its badge shows the newest. Re-rendering the
+// whole list keeps it in start order however deliveries finish, and picks
+// up any the page missed. Pages that don't show the request get nothing.
+func (s *requestStream) sendDeliveries(requestID string, deliveries []models.Delivery) error {
+	if !s.mainPanel && s.pageRequestID != requestID {
 		return nil
 	}
+	wr := models.WebhookRequest{ID: requestID, Deliveries: deliveries}
 	if s.mainPanel {
-		if err := s.patch("delivery-badge", view.DeliveryBadge{RequestID: d.RequestID, Delivery: &d}); err != nil {
+		if err := s.patch("delivery-badge", view.NewDeliveryBadge(wr)); err != nil {
 			return err
 		}
 	}
-	return s.patch("delivery-item", d,
-		datastar.WithSelectorID("delivery-list-"+d.RequestID),
-		datastar.WithModePrepend(),
-	)
+	return s.patch("delivery-list", wr)
 }
 
 func (s *requestStream) patch(tmpl string, data any, opts ...datastar.PatchElementOption) error {

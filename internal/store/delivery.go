@@ -49,24 +49,6 @@ func (r *GormDeliveryRepo) ListByRequest(requestID string) ([]models.Delivery, e
 	return list, nil
 }
 
-// DeleteByRequest removes all deliveries of a captured request.
-func (r *GormDeliveryRepo) DeleteByRequest(requestID string) error {
-	if err := deleteDeliveriesByRequest(r.DB, requestID); err != nil {
-		r.logger.Printf("delete deliveries for request %s failed: %v", requestID, err)
-		return err
-	}
-	return nil
-}
-
-// DeleteByWebhook removes all deliveries of a webhook's captured requests.
-func (r *GormDeliveryRepo) DeleteByWebhook(webhookID string) error {
-	if err := deleteDeliveriesByWebhooks(r.DB, webhookID); err != nil {
-		r.logger.Printf("delete deliveries for webhook %s failed: %v", webhookID, err)
-		return err
-	}
-	return nil
-}
-
 // deleteDeliveriesByRequest deletes a captured request's deliveries. The
 // request delete paths call it inside their transaction, before deleting the
 // request itself, so no delivery is orphaned.

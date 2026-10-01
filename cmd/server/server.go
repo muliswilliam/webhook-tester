@@ -58,12 +58,12 @@ func (srv *Server) MountHandlers() {
 	repo := store.NewGormWebookRepo(srv.DB, srv.Logger)
 	userRepo := store.NewGormUserRepo(srv.DB, srv.Logger)
 	webhookReqRepo := store.NewGormWebhookRequestRepo(srv.DB, srv.Logger)
-	webhookSvc := service.NewWebhookService(repo)
+	webhookSvc := service.NewWebhookService(repo, store.NewGormDeliveryRepo(srv.DB, srv.Logger))
 	webhookReqSvc := service.NewWebhookRequestService(webhookReqRepo)
 	authSvc := service.NewAuthService(userRepo, srv.DB, authSecret)
 	srv.WebhookSvc = webhookSvc
 	metricsRec := appMetrics.PrometheusRecorder{}
-	forwarder := service.NewForwarder(srv.Forwarding, store.NewGormDeliveryRepo(srv.DB, srv.Logger), webhookSvc, &metricsRec, srv.Logger)
+	forwarder := service.NewForwarder(srv.Forwarding, webhookSvc, &metricsRec, srv.Logger)
 	srv.Forwarder = forwarder
 	view.SetLogger(srv.Logger)
 

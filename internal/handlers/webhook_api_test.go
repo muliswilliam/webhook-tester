@@ -24,7 +24,7 @@ func newTestWebhookApiHandler(t *testing.T) (*WebhookAiHandler, *testWebhookRepo
 	whRepo := newTestWebhookRepo()
 	userRepo := newTestUserRepo()
 	authSvc := newTestAuthService(t, userRepo)
-	whSvc := service.NewWebhookService(whRepo)
+	whSvc := service.NewWebhookService(whRepo, &testDeliveryRepo{})
 
 	h := NewWebhookApiHandler(whSvc, &testMetricsRecorder{}, newTestLogger())
 	return h, whRepo, userRepo, authSvc

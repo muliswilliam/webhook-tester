@@ -50,6 +50,15 @@ func (w *Webhook) Forwards() bool {
 	return w.ForwardURL != nil && w.UserID != 0
 }
 
+// ActiveForwardURL is the forward URL captured requests are relayed to, or
+// "" if the webhook doesn't forward.
+func (w *Webhook) ActiveForwardURL() string {
+	if !w.Forwards() {
+		return ""
+	}
+	return *w.ForwardURL
+}
+
 // ValidateResponseCode reports whether code can be sent as an HTTP status.
 func ValidateResponseCode(code int) error {
 	if code < MinResponseCode || code > MaxResponseCode {
