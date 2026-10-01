@@ -793,6 +793,35 @@ func TestReplay_RefusesSubpathsThatCouldLeaveTargetPath(t *testing.T) {
 	assert.Len(t, env.deliveries(t, captured.ID), 2, "the automatic delivery and the forward replay")
 }
 
+// A refused subpath too long for a flash cookie is shortened in the flash
+// and in the delivery's error, so the browser still shows the notice.
+func TestReplay_RefusedLongSubpathIsShortened(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, nil)
+	env.createWebhook(t, "wh1", tg.URL+"/hooks", false)
+	path := "/" + strings.Repeat("a", 3000) + "/..%2fadmin"
+	env.capture(t, http.MethodPost, "/wh1"+path, "{}", nil)
+	captured := env.onlyRequest(t, "wh1")
+	require.Equal(t, path, captured.Path)
+	short := `"/` + strings.Repeat("a", 196) + `..."`
+
+	d := env.awaitDelivery(t, captured.ID)
+	require.NotNil(t, d.Error)
+	assert.Equal(t, "the subpath "+short+" could lead out of the forward URL's path, so it wasn't sent", *d.Error)
+
+	for target, want := range map[string]string{
+		"forward":  "Forward failed: the subpath " + short + " could lead out of the forward URL's path, so it wasn't sent.",
+		"endpoint": "Replay failed: the subpath " + short + " could lead out of the endpoint's path, so it wasn't sent.",
+	} {
+		rec := env.postForm(t, "/requests/"+captured.ID+"/replay", url.Values{"target": {target}}, "http://example.com/?address=wh1")
+		require.Equal(t, http.StatusSeeOther, rec.Code)
+		cookie := rec.Result().Header.Get("Set-Cookie")
+		assert.Less(t, len(strings.SplitN(cookie, ";", 2)[0]), 4096, target)
+		assert.Equal(t, &utils.Flash{Kind: utils.FlashError, Message: want}, flashOf(t, rec), target)
+	}
+	assert.Empty(t, tg.requests())
+}
+
 // The endpoint target, explicit or by default, works as before: the copy is
 // captured as a new request, which then forwards like any other.
 func TestReplay_ToEndpoint(t *testing.T) {

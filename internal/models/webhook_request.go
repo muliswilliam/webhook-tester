@@ -10,6 +10,8 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 	"gorm.io/datatypes"
+
+	"webhook-tester/internal/utils"
 )
 
 // swagger:model WebhookRequest
@@ -116,6 +118,15 @@ func (wr WebhookRequest) QueryString() string {
 // ErrSubpathLeavesBase is returned by URLAt for a subpath that could lead
 // out of the base URL's path.
 var ErrSubpathLeavesBase = errors.New("the subpath could lead out of the base URL's path")
+
+// maxShownPath bounds a subpath quoted in a message, in bytes.
+const maxShownPath = 200
+
+// ShownPath is Path for quoting in a message: cut short if long, so the
+// message stays readable and fits in a flash.
+func (wr WebhookRequest) ShownPath() string {
+	return utils.Abbreviate(wr.Path, maxShownPath)
+}
 
 // URLAt is the URL the request addresses when relayed under base: base's
 // path followed by the request's subpath, and base's query followed by the

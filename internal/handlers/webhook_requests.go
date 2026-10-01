@@ -220,7 +220,7 @@ func (h *WebhookRequestHandler) replayToEndpoint(w http.ResponseWriter, r *http.
 		endpoint, err = reqEvent.URLAt(endpoint)
 	}
 	if errors.Is(err, models.ErrSubpathLeavesBase) {
-		utils.SetFlashError(w, fmt.Sprintf("Replay failed: the subpath %q could lead out of the endpoint's path, so it wasn't sent.", reqEvent.Path))
+		utils.SetFlashError(w, fmt.Sprintf("Replay failed: the subpath %q could lead out of the endpoint's path, so it wasn't sent.", reqEvent.ShownPath()))
 		http.Redirect(w, r, backURL(r), http.StatusSeeOther)
 		return
 	}

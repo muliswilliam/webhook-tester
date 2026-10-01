@@ -259,7 +259,7 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 	target, err := wr.URLAt(*wh.ForwardURL)
 	if errors.Is(err, models.ErrSubpathLeavesBase) {
 		d.TargetURL = *wh.ForwardURL
-		d.Error = ptr(fmt.Sprintf("the subpath %q could lead out of the forward URL's path, so it wasn't sent", wr.Path))
+		d.Error = ptr(fmt.Sprintf("the subpath %q could lead out of the forward URL's path, so it wasn't sent", wr.ShownPath()))
 		return models.DeliveryOutcomeError
 	}
 	if err != nil {

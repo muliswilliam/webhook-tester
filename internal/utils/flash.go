@@ -23,6 +23,10 @@ type Flash struct {
 
 const flashCookieName = "_webhook_tester_flash"
 
+// maxFlashMessage bounds a Flash's message, in bytes, so its cookie stays
+// well under the 4096 bytes browsers keep; a longer message is cut short.
+const maxFlashMessage = 1024
+
 // SetFlashSuccess queues a success notice for the next page render.
 func SetFlashSuccess(w http.ResponseWriter, message string) {
 	setFlash(w, Flash{Kind: FlashSuccess, Message: message})
@@ -34,6 +38,7 @@ func SetFlashError(w http.ResponseWriter, message string) {
 }
 
 func setFlash(w http.ResponseWriter, f Flash) {
+	f.Message = Abbreviate(f.Message, maxFlashMessage)
 	http.SetCookie(w, &http.Cookie{
 		Name:     flashCookieName,
 		Value:    base64.RawURLEncoding.EncodeToString([]byte(string(f.Kind) + ":" + f.Message)),
