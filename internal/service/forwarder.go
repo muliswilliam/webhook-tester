@@ -196,7 +196,7 @@ func (f *Forwarder) ForwardAsync(wh models.Webhook, wr models.WebhookRequest) {
 func (f *Forwarder) refuse(wh models.Webhook, wr models.WebhookRequest, reason string) {
 	d := newDelivery(wr, models.DeliveryTriggerAuto)
 	if wh.ForwardURL != nil {
-		d.TargetURL, _ = forwardTarget(*wh.ForwardURL, wr)
+		d.TargetURL, _ = wr.URLAt(*wh.ForwardURL)
 	}
 	d.Error = ptr(reason)
 	d.Outcome = models.DeliveryOutcomeError
@@ -245,7 +245,7 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 		d.Error = ptr("the webhook has no forward URL")
 		return models.DeliveryOutcomeError
 	}
-	target, err := forwardTarget(*wh.ForwardURL, wr)
+	target, err := wr.URLAt(*wh.ForwardURL)
 	if err != nil {
 		d.Error = ptr(fmt.Sprintf("invalid forward URL: %v", err))
 		return models.DeliveryOutcomeError
@@ -294,13 +294,6 @@ func (f *Forwarder) record(d *models.Delivery) {
 	if err := f.recorder.RecordDelivery(d); err != nil {
 		f.logger.Printf("forward: delivery %s of request %s (deleted meanwhile?): %v", d.ID, d.RequestID, err)
 	}
-}
-
-// forwardTarget is the captured request's URL under the forward URL: the
-// subpath appended to its path and the query string to its query, both
-// byte for byte.
-func forwardTarget(forwardURL string, wr models.WebhookRequest) (string, error) {
-	return wr.URLAt(forwardURL)
 }
 
 // forwardHeaders are the captured request's headers, every value of each,
