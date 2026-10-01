@@ -41,6 +41,9 @@ var funcMap = template.FuncMap{
 	"headerRow": func(name string, value any) HeaderRow {
 		return HeaderRow{Name: name, Value: fmt.Sprint(value)}
 	},
+	"headerEditor": func(id string, headers map[string]any) HeaderEditor {
+		return HeaderEditor{ID: id, Headers: headers}
+	},
 	"forwardURLField": func(id string, value *string) ForwardURLField {
 		f := ForwardURLField{ID: id}
 		if value != nil {
@@ -77,6 +80,12 @@ type ReplayControl struct {
 type HeaderRow struct {
 	Name  string
 	Value string
+}
+
+// HeaderEditor is the response header editor of a webhook form.
+type HeaderEditor struct {
+	ID      string         // the editor's element ID
+	Headers map[string]any // the current response headers, nil for none
 }
 
 // ForwardURLField is the forward URL input of a webhook form.

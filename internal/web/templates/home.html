@@ -348,7 +348,17 @@
           {{ .CSRFField }}
           <div>
             <label for="title" class="field-label">Title</label>
-            <input id="title" name="title" class="field" value="{{ .Webhook.Title }}" required />
+            <input
+              id="title"
+              name="title"
+              class="field"
+              value="{{ .Webhook.Title }}"
+              required
+              aria-describedby="title_hint"
+            />
+            <p id="title_hint" class="mt-1.5 text-xs leading-5 text-muted">
+              {{ template "title-hint" }}
+            </p>
           </div>
           <div class="grid gap-4 sm:grid-cols-2">
             <div>
@@ -363,13 +373,25 @@
                 min="{{ minResponseCode }}"
                 max="{{ maxResponseCode }}"
                 required
+                aria-describedby="response_code_hint"
               />
+              <p id="response_code_hint" class="mt-1.5 text-xs leading-5 text-muted">
+                {{ template "response-code-hint" }}
+              </p>
             </div>
             <div>
               <label for="content_type" class="field-label">Content type</label>
-              <select id="content_type" name="content_type" class="field">
+              <select
+                id="content_type"
+                name="content_type"
+                class="field"
+                aria-describedby="content_type_hint"
+              >
                 {{ template "content-type-options" .ContentType }}
               </select>
+              <p id="content_type_hint" class="mt-1.5 text-xs leading-5 text-muted">
+                {{ template "content-type-hint" }}
+              </p>
             </div>
           </div>
           <div>
@@ -383,29 +405,48 @@
               value="{{ .Webhook.ResponseDelay }}"
               min="0"
               max="{{ maxResponseDelay }}"
+              aria-describedby="response_delay_hint"
             />
+            <p id="response_delay_hint" class="mt-1.5 text-xs leading-5 text-muted">
+              {{ template "response-delay-hint" }}
+            </p>
           </div>
           <div>
             <label for="payload" class="field-label">Response payload</label>
-            <textarea id="payload" name="payload" rows="4" class="field font-mono">
+            <textarea
+              id="payload"
+              name="payload"
+              rows="4"
+              class="field block font-mono"
+              aria-describedby="payload_hint"
+            >
 {{ if .Webhook.Payload }}{{ .Webhook.Payload }}{{ end }}</textarea>
+            <p id="payload_hint" class="mt-1.5 text-xs leading-5 text-muted">
+              {{ template "payload-hint" }}
+            </p>
           </div>
-          {{ template "header-editor" .Webhook.ResponseHeaders }}
+          {{ template "header-editor" (headerEditor "response_headers" .Webhook.ResponseHeaders) }}
           {{ if .Webhook.UserID }}
             {{ template "forward-url-field" (forwardURLField "forward_url" .Webhook.ForwardURL) }}
           {{ else }}
             {{ template "forward-url-signin" }}
           {{ end }}
-          <label class="check-row">
-            <input
-              type="checkbox"
-              id="notify"
-              name="notify_on_event"
-              value="true"
-              {{ if .Webhook.NotifyOnEvent }}checked{{ end }}
-            />
-            <span>Notify me when a request arrives</span>
-          </label>
+          <div>
+            <label class="check-row">
+              <input
+                type="checkbox"
+                id="notify"
+                name="notify_on_event"
+                value="true"
+                aria-describedby="notify_hint"
+                {{ if .Webhook.NotifyOnEvent }}checked{{ end }}
+              />
+              <span>Notify me when a request arrives</span>
+            </label>
+            <p id="notify_hint" class="mt-1.5 text-xs leading-5 text-muted">
+              {{ template "notify-hint" }}
+            </p>
+          </div>
           <div class="flex justify-end gap-3 pt-2">
             <button type="button" data-on:click="$showEditModal = false" class="btn-secondary">
               Cancel
