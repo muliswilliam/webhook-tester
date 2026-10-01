@@ -6,7 +6,8 @@ import "webhook-tester/internal/models"
 // deleted along with their captured requests, by WebhookRequestRepository
 // and WebhookRepository.
 type DeliveryRepository interface {
-	// Insert a new delivery record
+	// Insert stores d, then deletes its request's deliveries beyond the
+	// newest models.MaxDeliveriesPerRequest
 	Insert(d *models.Delivery) error
 	// ListByRequest returns a captured request's deliveries, newest first
 	ListByRequest(requestID string) ([]models.Delivery, error)

@@ -14,6 +14,7 @@ payloads, and optionally replay those requests.
 - 💾 Log and view webhook events in real-time
 - 🛠️ Customize responses (status code, content type, payload, delay)
 - 🔁 Replay events
+- ↪️ Forward captured requests to your own server, and replay them to it after a fix. Each attempt is recorded as a delivery, and a request keeps its latest 50
 - 🔐 API to manage webhooks
 - 📚 Swagger API documentation
 - 🧪 Built for testing, mocking, and debugging external integrations

@@ -87,6 +87,12 @@ const MaxDeliveryResponseBody = 64 << 10 // 64 KiB
 // error, so a delivery never stores more than this of them.
 const MaxDeliveryResponseHeaders = 64 << 10 // 64 KiB
 
+// MaxDeliveriesPerRequest is how many deliveries a captured request keeps:
+// recording another deletes the oldest beyond it. It bounds the storage of
+// a request replayed over and over, and the delivery list each live update
+// carries, while keeping far more attempts than anyone reads.
+const MaxDeliveriesPerRequest = 50
+
 // Delivery is one attempt to relay a captured request to a forward target.
 // A delivery that reached the target has a StatusCode; one that failed at
 // the network level (DNS, connection refused, TLS, timeout, blocked

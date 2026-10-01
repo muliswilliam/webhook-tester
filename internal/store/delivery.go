@@ -24,12 +24,23 @@ func NewGormDeliveryRepo(db *gorm.DB, logger *log.Logger) *GormDeliveryRepo {
 	return &GormDeliveryRepo{DB: db, logger: logger}
 }
 
-// Insert stores d, generating its ID if unset.
+// Insert stores d, generating its ID if unset, and deletes its request's
+// deliveries beyond the newest models.MaxDeliveriesPerRequest.
 func (r *GormDeliveryRepo) Insert(d *models.Delivery) error {
 	if d.ID == "" {
 		d.ID = utils.GenerateID()
 	}
-	if err := r.DB.Create(d).Error; err != nil {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(d).Error; err != nil {
+			return err
+		}
+		newest := tx.Model(&models.Delivery{}).Select("id").
+			Where("request_id = ?", d.RequestID).
+			Order(newestDeliveriesFirst).
+			Limit(models.MaxDeliveriesPerRequest)
+		return tx.Where("request_id = ? AND id NOT IN (?)", d.RequestID, newest).Delete(&models.Delivery{}).Error
+	})
+	if err != nil {
 		r.logger.Printf("insert delivery for request %s failed: %v", d.RequestID, err)
 		return err
 	}

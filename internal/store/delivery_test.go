@@ -66,6 +66,34 @@ func TestGormDeliveryRepo_InsertAndListByRequest(t *testing.T) {
 	assert.True(t, got.ResponseBodyTruncated)
 }
 
+// A request keeps only its newest deliveries; other requests' are untouched.
+func TestGormDeliveryRepo_Insert_KeepsNewestPerRequest(t *testing.T) {
+	db := newTestDB(t)
+	repo := NewGormDeliveryRepo(db, testLogger())
+	seedRequest(t, db, "wh-1", "req-1")
+	seedRequest(t, db, "wh-1", "req-2")
+	require.NoError(t, repo.Insert(&models.Delivery{ID: "other", RequestID: "req-2", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto}))
+
+	start := time.Now().UTC().Truncate(time.Microsecond)
+	for i := range models.MaxDeliveriesPerRequest + 5 {
+		require.NoError(t, repo.Insert(&models.Delivery{
+			ID: fmt.Sprintf("d%03d", i), RequestID: "req-1", WebhookID: "wh-1",
+			Trigger: models.DeliveryTriggerReplay, StartedAt: start.Add(time.Duration(i) * time.Second),
+		}))
+	}
+	// One that started before all of them but finished last is the oldest.
+	require.NoError(t, repo.Insert(&models.Delivery{ID: "slow", RequestID: "req-1", WebhookID: "wh-1", Trigger: models.DeliveryTriggerAuto, StartedAt: start.Add(-time.Second)}))
+
+	list, err := repo.ListByRequest("req-1")
+	require.NoError(t, err)
+	require.Len(t, list, models.MaxDeliveriesPerRequest)
+	assert.Equal(t, fmt.Sprintf("d%03d", models.MaxDeliveriesPerRequest+4), list[0].ID, "the newest is kept")
+	assert.Equal(t, "d005", list[len(list)-1].ID, "the oldest are deleted")
+	other, err := repo.ListByRequest("req-2")
+	require.NoError(t, err)
+	assert.Len(t, other, 1)
+}
+
 func TestGormDeliveryRepo_Insert_GeneratesID(t *testing.T) {
 	db := newTestDB(t)
 	repo := NewGormDeliveryRepo(db, testLogger())
