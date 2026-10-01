@@ -16,11 +16,9 @@ import (
 	webhookdb "webhook-tester/internal/db"
 )
 
-// TestMountHandlers exercises Server.MountHandlers once for the whole test
-// binary. MountHandlers registers prometheus collectors via
-// go-http-metrics/metrics/prometheus, and registering the same collectors
-// twice in one process panics - so all assertions live in one test with
-// sub-checks sharing a single mounted Server.
+// TestMountHandlers exercises the routes of a mounted Server. Each Server
+// registers its metrics with its own registry, so it can be mounted again,
+// e.g. under go test -count>1.
 func TestMountHandlers(t *testing.T) {
 	t.Setenv("AUTH_SECRET", "some-32-plus-byte-secret-value!!")
 	t.Setenv("DOMAIN", "http://example.com")
@@ -38,6 +36,8 @@ func TestMountHandlers(t *testing.T) {
 	}
 
 	srv.MountHandlers()
+	require.NotNil(t, srv.WebhookSvc)
+	require.NotNil(t, srv.Forwarder, "shutdown waits on the forwarder")
 
 	t.Run("health", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -58,6 +58,9 @@ func TestMountHandlers(t *testing.T) {
 		rec := httptest.NewRecorder()
 		srv.MetricsSrv.Handler.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
+		for _, name := range []string{"go_goroutines", "webhooks_created_total", "webhook_delivery_duration_seconds", "http_request_duration_seconds"} {
+			require.Contains(t, rec.Body.String(), name)
+		}
 
 		rec = httptest.NewRecorder()
 		srv.Router.ServeHTTP(rec, req)

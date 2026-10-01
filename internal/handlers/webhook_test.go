@@ -33,7 +33,8 @@ func newTestWebhookHandler(t *testing.T) (*WebhookHandler, *testWebhookRepo, *te
 	whSvc := service.NewWebhookService(whRepo)
 	reqSvc := service.NewWebhookRequestService(reqRepo)
 
-	h := NewWebhookHandler(whSvc, reqSvc, authSvc, newTestLogger(), metricsRec)
+	forwarder := newTestForwarder(&testDeliveryRepo{}, whSvc, metricsRec)
+	h := NewWebhookHandler(whSvc, reqSvc, authSvc, forwarder, newTestLogger(), metricsRec)
 	return h, whRepo, reqRepo, userRepo, metricsRec, authSvc
 }
 

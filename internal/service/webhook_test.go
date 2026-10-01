@@ -289,7 +289,7 @@ func TestWebhookService_UpdateWebhook(t *testing.T) {
 }
 
 // receive returns the next event on sub, failing the test if none arrives.
-func receive(t *testing.T, sub *Subscription) RequestEvent {
+func receive(t *testing.T, sub *Subscription) Event {
 	t.Helper()
 	select {
 	case evt, ok := <-sub.Events:
@@ -297,7 +297,7 @@ func receive(t *testing.T, sub *Subscription) RequestEvent {
 		return evt
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for an event")
-		return RequestEvent{}
+		return Event{}
 	}
 }
 
@@ -330,9 +330,26 @@ func TestWebhookService_RecordRequest_StoresStampsAndPublishes(t *testing.T) {
 	assert.Equal(t, wr.ReceivedAt, wr.ReceivedAt.Truncate(time.Microsecond), "stamped at DB precision")
 
 	evt := receive(t, sub)
+	assert.Equal(t, EventRequestCaptured, evt.Kind)
 	assert.Equal(t, "r1", evt.Request.ID)
 	require.NotNil(t, evt.Count)
 	assert.Equal(t, int64(1), *evt.Count)
+	assert.Empty(t, other.Events, "other webhooks' subscribers get nothing")
+}
+
+func TestWebhookService_PublishDelivery(t *testing.T) {
+	svc := NewWebhookService(newFakeWebhookRepo())
+	sub := svc.Subscribe("abc")
+	defer sub.Close()
+	other := svc.Subscribe("other")
+	defer other.Close()
+
+	svc.PublishDelivery(models.Delivery{ID: "d1", RequestID: "r1", WebhookID: "abc"})
+
+	evt := receive(t, sub)
+	assert.Equal(t, EventDeliveryRecorded, evt.Kind)
+	assert.Equal(t, "d1", evt.Delivery.ID)
+	assert.Equal(t, "r1", evt.Delivery.RequestID)
 	assert.Empty(t, other.Events, "other webhooks' subscribers get nothing")
 }
 

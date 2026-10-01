@@ -45,9 +45,11 @@ var (
 	})
 )
 
-// Register prometheus metrics
-func Register() {
-	prometheus.MustRegister(
+// Register registers the app's metrics with reg, panicking if any is already
+// registered there. Each server registers them with its own registry, so
+// several servers (as in tests) can coexist in one process.
+func Register(reg prometheus.Registerer) {
+	reg.MustRegister(
 		WebhooksCreated,
 		WebhookRequestsReceived,
 		SignupsTotal,

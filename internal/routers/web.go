@@ -21,6 +21,7 @@ func NewWebRouter(
 	wrs *service.WebhookRequestService,
 	ws *service.WebhookService,
 	authSvc *service.AuthService,
+	forwarder *service.Forwarder,
 	m mailer.Mailer,
 	metricsRec metrics.Recorder,
 	logger *log.Logger,
@@ -66,7 +67,7 @@ func NewWebRouter(
 	})
 	r.Use(csrfMiddleware)
 
-	webhookReqHandler := handlers.NewWebhookRequestHandler(wrs, authSvc, ws, &metricsRec, logger)
+	webhookReqHandler := handlers.NewWebhookRequestHandler(wrs, authSvc, ws, forwarder, &metricsRec, logger)
 	r.Route("/requests", func(r chi.Router) {
 		r.Get("/{id}", webhookReqHandler.GetRequest)
 		r.Post("/{id}/delete", webhookReqHandler.DeleteRequest)
@@ -76,7 +77,7 @@ func NewWebRouter(
 	hh := handlers.NewHomeHandler(ws, authSvc, logger, metricsRec)
 	r.Get("/", hh.Home)
 
-	webhookHandler := handlers.NewWebhookHandler(ws, wrs, authSvc, logger, metricsRec)
+	webhookHandler := handlers.NewWebhookHandler(ws, wrs, authSvc, forwarder, logger, metricsRec)
 	r.Post("/create-webhook", webhookHandler.Create)
 	r.Post("/delete-requests/{id}", webhookHandler.DeleteRequests)
 	r.Post("/delete-webhook/{id}", webhookHandler.DeleteWebhook)

@@ -29,6 +29,7 @@ type WebhookHandler struct {
 	webhookSvc    *service.WebhookService
 	webhookReqSvc *service.WebhookRequestService
 	authSvc       *service.AuthService
+	forwarder     *service.Forwarder
 	logger        *log.Logger
 	metrics       metrics.Recorder
 }
@@ -37,12 +38,14 @@ func NewWebhookHandler(
 	webhookSvc *service.WebhookService,
 	webhookReqSvc *service.WebhookRequestService,
 	authSvc *service.AuthService,
+	forwarder *service.Forwarder,
 	logger *log.Logger,
 	metrics metrics.Recorder) *WebhookHandler {
 	return &WebhookHandler{
 		webhookSvc:    webhookSvc,
 		webhookReqSvc: webhookReqSvc,
 		authSvc:       authSvc,
+		forwarder:     forwarder,
 		logger:        logger,
 		metrics:       metrics,
 	}
@@ -218,7 +221,8 @@ func backURL(r *http.Request) string {
 }
 
 // HandleWebhookRequest captures a request sent to /webhooks/{id}, or to any
-// subpath of it, and answers with the webhook's configured response.
+// subpath of it, and answers with the webhook's configured response. If the
+// webhook forwards, the captured request is also relayed to its forward URL.
 func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Request) {
 	webhookID := chi.URLParam(r, "id")
 	var path string
@@ -273,6 +277,12 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 	}
 
 	h.metrics.IncWebhookRequest(webhookID)
+
+	// Relay in the background: the provider's response never waits on the
+	// forward target.
+	if webhook.Forwards() {
+		h.forwarder.ForwardAsync(*webhook, wr)
+	}
 
 	// Delay response
 	if webhook.ResponseDelay > 0 {
@@ -378,7 +388,7 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 				h.logger.Printf("stream for %s closed by broker", webhookID)
 				return
 			}
-			if stream.replayed[evt.Request.ID] {
+			if evt.Kind != service.EventRequestCaptured || stream.replayed[evt.Request.ID] {
 				continue
 			}
 			if err := stream.send([]models.WebhookRequest{evt.Request}, evt.Count); err != nil {

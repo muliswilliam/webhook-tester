@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"webhook-tester/config"
 	appMetrics "webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
 	"webhook-tester/internal/routers"
@@ -22,7 +23,8 @@ func newTestWebhookRouter(t *testing.T) (http.Handler, *gorm.DB) {
 	authSvc := service.NewAuthService(store.NewGormUserRepo(db, logger), db, "test-auth-secret")
 	webhookSvc := service.NewWebhookService(store.NewGormWebookRepo(db, logger))
 	webhookReqSvc := service.NewWebhookRequestService(store.NewGormWebhookRequestRepo(db, logger))
-	return routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, logger, &appMetrics.PrometheusRecorder{}), db
+	forwarder := newTestForwarder(t, db, webhookSvc, config.Forwarding{})
+	return routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, forwarder, logger, &appMetrics.PrometheusRecorder{}), db
 }
 
 func TestNewWebhookRouter_CapturesSubpaths(t *testing.T) {
@@ -66,7 +68,8 @@ func TestNewWebhookRouter_UnknownWebhookReturnsNotFound(t *testing.T) {
 
 	metricsRec := &appMetrics.PrometheusRecorder{}
 
-	r := routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, logger, metricsRec)
+	forwarder := newTestForwarder(t, db, webhookSvc, config.Forwarding{})
+	r := routers.NewWebhookRouter(webhookSvc, webhookReqSvc, authSvc, forwarder, logger, metricsRec)
 
 	req := httptest.NewRequest(http.MethodGet, "/some-webhook-id", nil)
 	rec := httptest.NewRecorder()

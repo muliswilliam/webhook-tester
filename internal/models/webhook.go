@@ -43,6 +43,13 @@ type Webhook struct {
 	Requests []WebhookRequest `gorm:"foreignKey:WebhookID" json:"requests,omitempty"`
 }
 
+// Forwards reports whether the webhook relays its captured requests: it has
+// a forward URL and an owner. Guest webhooks never forward, so they can't be
+// used as an open relay.
+func (w *Webhook) Forwards() bool {
+	return w.ForwardURL != nil && w.UserID != 0
+}
+
 // ValidateResponseCode reports whether code can be sent as an HTTP status.
 func ValidateResponseCode(code int) error {
 	if code < MinResponseCode || code > MaxResponseCode {
