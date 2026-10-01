@@ -193,6 +193,12 @@ func applyWebhookForm(r *http.Request, wh *models.Webhook) error {
 	next.ContentType = &contentType
 	next.Payload = &payload
 	next.NotifyOnEvent = r.FormValue("notify_on_event") == "true"
+	// Only webhooks in an account forward, so the form offers the field to
+	// owners alone; a guest webhook ignores it. A blank value clears it.
+	if next.UserID != 0 && r.PostForm.Has("forward_url") {
+		forwardURL := r.PostForm.Get("forward_url")
+		next.ForwardURL = &forwardURL
+	}
 
 	next.Normalize()
 	if err := next.Validate(); err != nil {

@@ -1,12 +1,14 @@
 package dtos
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
 	"webhook-tester/internal/models"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewWebhookDTO(t *testing.T) {
@@ -65,4 +67,47 @@ func TestNewWebhookDTO_NilFields(t *testing.T) {
 	assert.Equal(t, "", dto.Payload)
 	assert.NotNil(t, dto.Requests)
 	assert.NotNil(t, dto.ResponseHeaders)
+	assert.Nil(t, dto.ForwardURL)
+}
+
+func TestNewWebhookDTO_ForwardURL(t *testing.T) {
+	forwardURL := "https://api.example.com/hooks"
+	dto := NewWebhookDTO(models.Webhook{ID: "wh-1", ForwardURL: &forwardURL})
+
+	require.NotNil(t, dto.ForwardURL)
+	assert.Equal(t, forwardURL, *dto.ForwardURL)
+}
+
+func TestNullableString_JSON(t *testing.T) {
+	decode := func(body string) UpdateWebhookRequest {
+		t.Helper()
+		var req UpdateWebhookRequest
+		require.NoError(t, json.Unmarshal([]byte(body), &req))
+		return req
+	}
+
+	assert.False(t, decode(`{}`).ForwardURL.Set, "a missing field isn't set")
+
+	null := decode(`{"forward_url":null}`).ForwardURL
+	assert.True(t, null.Set, "an explicit null is set")
+	assert.Nil(t, null.Value)
+
+	value := decode(`{"forward_url":"https://x.example"}`).ForwardURL
+	assert.True(t, value.Set)
+	require.NotNil(t, value.Value)
+	assert.Equal(t, "https://x.example", *value.Value)
+
+	var req UpdateWebhookRequest
+	assert.ErrorContains(t, json.Unmarshal([]byte(`{"forward_url":true}`), &req), "expected a string or null, got a boolean")
+
+	// Encoding round-trips, leaving an unset field out.
+	out, err := json.Marshal(UpdateWebhookRequest{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), "forward_url")
+	out, err = json.Marshal(UpdateWebhookRequest{ForwardURL: NewNullableString(nil)})
+	require.NoError(t, err)
+	assert.Contains(t, string(out), `"forward_url":null`)
+	out, err = json.Marshal(UpdateWebhookRequest{ForwardURL: NewNullableString(value.Value)})
+	require.NoError(t, err)
+	assert.Contains(t, string(out), `"forward_url":"https://x.example"`)
 }

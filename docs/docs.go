@@ -328,6 +328,11 @@ const docTemplate = `{
                     "type": "string",
                     "example": "application/json"
                 },
+                "forward_url": {
+                    "description": "Absolute http or https URL every captured request is also relayed to.\nOmit it, or send \"\", to leave forwarding off.",
+                    "type": "string",
+                    "example": "https://example.ngrok-free.app/webhooks/stripe"
+                },
                 "notify_on_event": {
                     "type": "boolean"
                 },
@@ -376,6 +381,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "application/json"
                 },
+                "forward_url": {
+                    "description": "Absolute http or https URL every captured request is also relayed to.\nnull or \"\" turns forwarding off.",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "https://example.ngrok-free.app/webhooks/stripe"
+                },
                 "notify_on_event": {
                     "type": "boolean"
                 },
@@ -412,6 +423,12 @@ const docTemplate = `{
                 },
                 "created_at": {
                     "type": "string"
+                },
+                "forward_url": {
+                    "description": "Where captured requests are relayed; null when forwarding is off",
+                    "type": "string",
+                    "x-nullable": true,
+                    "example": "https://example.ngrok-free.app/webhooks/stripe"
                 },
                 "id": {
                     "type": "string"

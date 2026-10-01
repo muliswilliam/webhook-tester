@@ -343,6 +343,9 @@
 {"message":"ok"}</textarea>
           </div>
           {{ template "header-editor" }}
+          {{ if .User.ID }}
+            {{ template "forward-url-field" (forwardURLField "create_forward_url" nil) }}
+          {{ end }}
           <label class="check-row">
             <input type="checkbox" id="create_notify" name="notify_on_event" value="true" />
             <span>Notify me when a request arrives</span>
@@ -396,6 +399,49 @@
       {{ end }}
     </div>
     <input type="hidden" name="response_headers" />
+  </div>
+{{ end }}
+
+{{/* Forward URL input of a webhook form; expects a forwardURLField. The
+  server validates it too, and a blank value turns forwarding off.
+*/}}
+{{ define "forward-url-field" }}
+  <div>
+    <label for="{{ .ID }}" class="field-label">Forward URL</label>
+    <input
+      id="{{ .ID }}"
+      type="url"
+      name="forward_url"
+      class="field font-mono"
+      value="{{ .Value }}"
+      placeholder="https://your-tunnel.ngrok-free.app/webhooks"
+      pattern="[hH][tT][tT][pP][sS]?://.+"
+      title="An http:// or https:// URL"
+      maxlength="{{ maxForwardURLLength }}"
+      autocomplete="off"
+      spellcheck="false"
+      aria-describedby="{{ .ID }}_hint"
+    />
+    <p id="{{ .ID }}_hint" class="mt-1.5 text-xs leading-5 text-muted">
+      Every captured request is also sent here, with the same method, path, headers and body. Leave
+      blank to turn forwarding off.
+    </p>
+  </div>
+{{ end }}
+
+{{/* Shown instead of the forward URL input on webhooks without an owner,
+  which don't forward.
+*/}}
+{{ define "forward-url-signin" }}
+  <div class="rounded-lg border px-3.5 py-3">
+    <p class="field-label mb-0">Forward URL</p>
+    <p class="mt-1 text-sm leading-6 text-muted">
+      Send every captured request on to your own server.
+      <a href="/register" class="text-link font-semibold">Create an account</a>
+      or
+      <a href="/login" class="text-link font-semibold">sign in</a>
+      to set a forward URL.
+    </p>
   </div>
 {{ end }}
 

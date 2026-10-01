@@ -254,3 +254,37 @@ func TestHomeHandler_EditModalSelectsContentType(t *testing.T) {
 
 	assert.Regexp(t, `<option value="text/plain"\s+selected`, rec.Body.String())
 }
+
+func TestHomeHandler_EditModalForwardURL_Owner(t *testing.T) {
+	h, whRepo, userRepo, _, authSvc := newTestHomeHandler(t)
+	user := &models.User{Email: "jane@x.com"}
+	userRepo.addUser(user)
+	forwardURL := "https://api.example.com/hooks?a=1&b=2"
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "Mine", UserID: int(user.ID), ForwardURL: &forwardURL})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=wh1", nil)
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	body := rec.Body.String()
+	assert.Regexp(t, `<input\s+id="forward_url"\s+type="url"\s+name="forward_url"[^>]*value="https://api.example.com/hooks\?a=1&amp;b=2"`, body)
+	assert.Regexp(t, `id="create_forward_url"[^>]*value=""`, body, "the create form starts blank")
+	assert.NotContains(t, body, "to set a forward URL")
+}
+
+func TestHomeHandler_EditModalForwardURL_GuestSeesSignInPrompt(t *testing.T) {
+	h, whRepo, _, _, _ := newTestHomeHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "Guest"})
+
+	req := httptest.NewRequest(http.MethodGet, "/?address=wh1", nil)
+	rec := httptest.NewRecorder()
+
+	h.Home(rec, req)
+
+	body := rec.Body.String()
+	assert.NotContains(t, body, `name="forward_url"`)
+	assert.Contains(t, body, "to set a forward URL")
+	assert.Contains(t, body, `href="/login"`)
+}

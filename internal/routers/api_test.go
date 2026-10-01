@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -181,6 +182,97 @@ func TestNewApiRouter_JSONErrors(t *testing.T) {
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body), c.path)
 		require.NotEmpty(t, body.Error, c.path)
 	}
+}
+
+func TestNewApiRouter_ForwardURLRoundTrip(t *testing.T) {
+	t.Setenv("DOMAIN", "https://tester.example.com")
+	r, apiKey := setupAPIRouter(t)
+	do := func(method, path, body string) (int, dtos.Webhook, string) {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("X-API-Key", apiKey)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		var wh dtos.Webhook
+		if rec.Code < 300 && method != http.MethodDelete {
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &wh), rec.Body.String())
+		}
+		return rec.Code, wh, rec.Body.String()
+	}
+	getForwardURL := func(id string) *string {
+		t.Helper()
+		code, wh, _ := do(http.MethodGet, "/webhooks/"+id+"/", "")
+		require.Equal(t, http.StatusOK, code)
+		return wh.ForwardURL
+	}
+
+	// Create with a forward URL; surrounding whitespace is trimmed.
+	code, created, _ := do(http.MethodPost, "/webhooks/", `{"title":"fwd","forward_url":"  https://api.example.com/hooks  "}`)
+	require.Equal(t, http.StatusCreated, code)
+	require.NotNil(t, created.ForwardURL)
+	require.Equal(t, "https://api.example.com/hooks", *created.ForwardURL)
+	require.Equal(t, "https://api.example.com/hooks", *getForwardURL(created.ID))
+
+	// List includes it.
+	req := httptest.NewRequest(http.MethodGet, "/webhooks/", nil)
+	req.Header.Set("X-API-Key", apiKey)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var listed []dtos.Webhook
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &listed))
+	require.Len(t, listed, 1)
+	require.Equal(t, "https://api.example.com/hooks", *listed[0].ForwardURL)
+
+	path := "/webhooks/" + created.ID + "/"
+
+	// An update that leaves forward_url out keeps it.
+	code, _, _ = do(http.MethodPatch, path, `{"title":"renamed"}`)
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, "https://api.example.com/hooks", *getForwardURL(created.ID))
+
+	// Change it.
+	code, updated, _ := do(http.MethodPatch, path, `{"forward_url":"https://abc.ngrok-free.app/stripe"}`)
+	require.Equal(t, http.StatusOK, code)
+	require.Equal(t, "https://abc.ngrok-free.app/stripe", *updated.ForwardURL)
+
+	// Invalid values are rejected and change nothing.
+	for bad, wantErr := range map[string]string{
+		`"ftp://files.example.com"`: "absolute http or https URL",
+		`"/relative"`:               "absolute http or https URL",
+		`"https://tester.example.com/webhooks/` + created.ID + `"`: "own webhook endpoints",
+		`42`:            "expected a string or null, got a number",
+		`{"url":"x"}`:   "expected a string or null, got an object",
+		`["https://x"]`: "expected a string or null, got an array",
+	} {
+		code, _, body := do(http.MethodPatch, path, `{"forward_url":`+bad+`}`)
+		require.Equal(t, http.StatusBadRequest, code, bad)
+		require.Contains(t, body, wantErr, bad)
+		require.Equal(t, "https://abc.ngrok-free.app/stripe", *getForwardURL(created.ID), bad)
+	}
+
+	// An explicit null clears it, and so does an empty string.
+	code, updated, _ = do(http.MethodPatch, path, `{"forward_url":null}`)
+	require.Equal(t, http.StatusOK, code)
+	require.Nil(t, updated.ForwardURL)
+	require.Nil(t, getForwardURL(created.ID))
+
+	code, _, _ = do(http.MethodPatch, path, `{"forward_url":"https://api.example.com/hooks"}`)
+	require.Equal(t, http.StatusOK, code)
+	code, updated, _ = do(http.MethodPut, path, `{"forward_url":""}`)
+	require.Equal(t, http.StatusOK, code)
+	require.Nil(t, updated.ForwardURL)
+
+	// A webhook created without one reports null.
+	code, plain, body := do(http.MethodPost, "/webhooks/", `{"title":"plain"}`)
+	require.Equal(t, http.StatusCreated, code)
+	require.Nil(t, plain.ForwardURL)
+	require.Contains(t, body, `"forward_url":null`)
+
+	// Create rejects a forward URL that loops back to this instance.
+	code, _, body = do(http.MethodPost, "/webhooks/", `{"title":"loop","forward_url":"https://tester.example.com/webhooks/abc"}`)
+	require.Equal(t, http.StatusBadRequest, code)
+	require.Contains(t, body, "own webhook endpoints")
 }
 
 func TestNewApiRouter_InvalidKey(t *testing.T) {

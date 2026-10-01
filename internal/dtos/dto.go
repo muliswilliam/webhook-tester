@@ -1,6 +1,7 @@
 package dtos
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 	"webhook-tester/internal/models"
@@ -22,6 +23,9 @@ type CreateWebhookRequest struct {
 	// Extra response headers
 	ResponseHeaders map[string]string `json:"response_headers"`
 	NotifyOnEvent   bool              `json:"notify_on_event"`
+	// Absolute http or https URL every captured request is also relayed to.
+	// Omit it, or send "", to leave forwarding off.
+	ForwardURL string `json:"forward_url" example:"https://example.ngrok-free.app/webhooks/stripe"`
 } // @name CreateWebhookRequest
 
 // UpdateWebhookRequest changes only the fields it includes.
@@ -34,7 +38,62 @@ type UpdateWebhookRequest struct {
 	// Replaces all response headers
 	ResponseHeaders *map[string]string `json:"response_headers"`
 	NotifyOnEvent   *bool              `json:"notify_on_event"`
+	// Absolute http or https URL every captured request is also relayed to.
+	// null or "" turns forwarding off.
+	ForwardURL NullableString `json:"forward_url,omitzero" swaggertype:"string" extensions:"x-nullable" example:"https://example.ngrok-free.app/webhooks/stripe"`
 } // @name UpdateWebhookRequest
+
+// NullableString is an optional JSON string field that tells an explicit
+// null apart from a missing field: Set is true whenever the field is
+// present, and Value is nil for null.
+type NullableString struct {
+	Set   bool
+	Value *string
+}
+
+// NewNullableString returns a present field holding s, or null when s is nil.
+func NewNullableString(s *string) NullableString {
+	return NullableString{Set: true, Value: s}
+}
+
+// UnmarshalJSON records that the field is present. encoding/json calls it
+// for null too, which is what tells null from missing.
+func (n *NullableString) UnmarshalJSON(data []byte) error {
+	n.Set = true
+	n.Value = nil
+	if string(data) == "null" {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("expected a string or null, got %s", jsonKind(data))
+	}
+	n.Value = &s
+	return nil
+}
+
+// jsonKind names the kind of a valid JSON value, for error messages.
+func jsonKind(data []byte) string {
+	if len(data) == 0 {
+		return "nothing"
+	}
+	switch data[0] {
+	case '{':
+		return "an object"
+	case '[':
+		return "an array"
+	case 't', 'f':
+		return "a boolean"
+	default:
+		return "a number"
+	}
+}
+
+// MarshalJSON encodes the value, or null. Pair it with omitzero so an unset
+// field is left out.
+func (n NullableString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(n.Value)
+}
 
 // ErrorResponse represents an error payload
 type ErrorResponse struct {
@@ -62,10 +121,12 @@ type Webhook struct {
 	Payload         string            `json:"payload"`
 	ResponseHeaders map[string]string `json:"response_headers"`
 	NotifyOnEvent   bool              `json:"notify_on_event"`
-	UserID          int               `json:"user_id"`
-	CreatedAt       time.Time         `json:"created_at"`
-	UpdatedAt       time.Time         `json:"updated_at"`
-	Requests        []WebhookRequest  `json:"requests"`
+	// Where captured requests are relayed; null when forwarding is off
+	ForwardURL *string          `json:"forward_url" extensions:"x-nullable" example:"https://example.ngrok-free.app/webhooks/stripe"`
+	UserID     int              `json:"user_id"`
+	CreatedAt  time.Time        `json:"created_at"`
+	UpdatedAt  time.Time        `json:"updated_at"`
+	Requests   []WebhookRequest `json:"requests"`
 } // @name Webhook
 
 // NewWebhookDTO creates a Webhook DTO from a models.Webhook. Timestamps are
@@ -83,6 +144,7 @@ func NewWebhookDTO(w models.Webhook) Webhook {
 		CreatedAt:       w.CreatedAt.UTC(),
 		UpdatedAt:       w.UpdatedAt.UTC(),
 		NotifyOnEvent:   w.NotifyOnEvent,
+		ForwardURL:      w.ForwardURL,
 		Requests:        make([]WebhookRequest, len(w.Requests)),
 	}
 	for i, r := range w.Requests {

@@ -437,6 +437,85 @@ func TestWebhookHandler_UpdateWebhook_ServiceError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+// postUpdateForm submits the edit form for wh1, signed in when cookie is set.
+func postUpdateForm(h *WebhookHandler, form url.Values, cookie *http.Cookie) *httptest.ResponseRecorder {
+	router := routerWithParam("/update-webhook/{id}", http.MethodPost, h.UpdateWebhook)
+	req := httptest.NewRequest(http.MethodPost, "/update-webhook/wh1", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestWebhookHandler_UpdateWebhook_ForwardURL(t *testing.T) {
+	t.Setenv("DOMAIN", "https://tester.example.com")
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+	cookie := sessionCookieFor(t, authSvc, user)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200, UserID: int(user.ID)})
+	forwardURL := func() *string { return whRepo.webhooks["wh1"].ForwardURL }
+
+	// Set it; surrounding whitespace is trimmed.
+	rec := postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {" https://api.example.com/hooks "}}, cookie)
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+	require.NotNil(t, forwardURL())
+	assert.Equal(t, "https://api.example.com/hooks", *forwardURL())
+
+	// Invalid values are rejected with the reason and change nothing.
+	for bad, wantErr := range map[string]string{
+		"ftp://files.example.com":               "absolute http or https URL",
+		"api.example.com/hooks":                 "absolute http or https URL",
+		"https://tester.example.com/webhooks/x": "own webhook endpoints",
+	} {
+		rec = postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {bad}}, cookie)
+		flash := flashFrom(t, rec)
+		assert.Equal(t, utils.FlashError, flash.Kind, bad)
+		assert.Contains(t, flash.Message, wantErr, bad)
+		assert.Equal(t, "https://api.example.com/hooks", *forwardURL(), bad)
+	}
+
+	// Submitting it blank clears it.
+	rec = postUpdateForm(h, url.Values{"title": {"t"}, "forward_url": {""}}, cookie)
+	require.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind)
+	assert.Nil(t, forwardURL())
+}
+
+func TestWebhookHandler_UpdateWebhook_GuestCantSetForwardURL(t *testing.T) {
+	h, whRepo, _, _, _, _ := newTestWebhookHandler(t)
+	whRepo.put(&models.Webhook{ID: "wh1", Title: "t", ResponseCode: 200})
+
+	rec := postUpdateForm(h, url.Values{"title": {"renamed"}, "forward_url": {"https://api.example.com/hooks"}}, nil)
+
+	assert.Equal(t, utils.FlashSuccess, flashFrom(t, rec).Kind, "the rest of the form still saves")
+	assert.Equal(t, "renamed", whRepo.webhooks["wh1"].Title)
+	assert.Nil(t, whRepo.webhooks["wh1"].ForwardURL, "a guest webhook never gets a forward URL")
+}
+
+func TestWebhookHandler_Create_WithForwardURL(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	user := &models.User{Email: "a@b.com"}
+	userRepo.addUser(user)
+
+	form := url.Values{"title": {"fwd"}, "forward_url": {"https://api.example.com/hooks"}}
+	req := httptest.NewRequest(http.MethodPost, "/create-webhook", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(sessionCookieFor(t, authSvc, user))
+	rec := httptest.NewRecorder()
+
+	h.Create(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+	require.Len(t, whRepo.webhooks, 1)
+	for _, w := range whRepo.webhooks {
+		require.NotNil(t, w.ForwardURL)
+		assert.Equal(t, "https://api.example.com/hooks", *w.ForwardURL)
+	}
+}
+
 func TestWebhookHandler_HandleWebhookRequest_NotFound(t *testing.T) {
 	h, _, _, _, _, _ := newTestWebhookHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/webhooks/missing", nil)
