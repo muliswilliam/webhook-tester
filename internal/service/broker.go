@@ -16,17 +16,22 @@ const (
 	// EventDeliveryRecorded is published each time a delivery of one of the
 	// webhook's captured requests is recorded.
 	EventDeliveryRecorded EventKind = "delivery_recorded"
+	// EventWebhookUpdated is published each time the webhook's settings are
+	// saved.
+	EventWebhookUpdated EventKind = "webhook_updated"
 )
 
 // Event is published to a webhook's subscribers. Which fields are set
 // depends on Kind:
-//   - EventRequestCaptured: Request is the captured request, Count the
+//   - EventRequestCaptured: Request is the captured request, and Count the
 //     webhook's request total right after the insert, or nil if counting
-//     failed, and ForwardURL the webhook's forward URL at capture time if
-//     it forwards, "" otherwise.
+//     failed.
 //   - EventDeliveryRecorded: Delivery is the recorded delivery; its
 //     RequestID names the captured request it belongs to. Deliveries are
 //     all of that request's deliveries, Delivery included, newest first.
+//   - EventWebhookUpdated: ForwardURL is the webhook's forward URL as saved
+//     if it forwards, "" otherwise, which decides the replay targets
+//     subscribers offer.
 type Event struct {
 	Kind       EventKind
 	Request    models.WebhookRequest
@@ -57,9 +62,9 @@ func (s *Subscription) Close() {
 	s.broker.remove(s.webhookID, s)
 }
 
-// broker fans captured requests and deliveries out to live subscribers, and serializes
-// captures per webhook so each webhook's events are published in insert
-// order.
+// broker fans captured requests, deliveries and settings changes out to
+// live subscribers, and serializes them per webhook so each webhook's events
+// are published in the order they were stored.
 type broker struct {
 	mu   sync.Mutex
 	subs map[string]map[*Subscription]struct{}

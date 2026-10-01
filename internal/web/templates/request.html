@@ -7,6 +7,7 @@
   <div
     class="space-y-6"
     data-signals="{copiedId: false, copiedBody_{{ signalKey .Request.ID }}: false, rawBody_{{ signalKey .Request.ID }}: false}"
+    data-signals:forward-to="{{ jsString .Webhook.ActiveForwardURL }}"
   >
     <nav aria-label="Breadcrumb">
       <a
@@ -61,7 +62,7 @@
         </button>
       </div>
       <div class="flex flex-wrap gap-2">
-        {{ template "replay-control" (replayControl .Request.ID .Webhook.ActiveForwardURL .CSRFField true) }}
+        {{ template "replay-control" (replayControl .Request.ID .Webhook.CanForward .Webhook.ActiveForwardURL .CSRFField true) }}
         <form
           method="POST"
           action="/requests/{{ .Request.ID }}/delete"
@@ -97,8 +98,15 @@
           <span class="text-xs text-muted">Newest first</span>
         </div>
         {{ template "delivery-list" .Request }}
-        <p class="delivery-placeholder border-t px-4 py-8 text-center text-sm text-muted sm:px-5">
-          Not forwarded yet. Replay it to the forward URL to send it to your server.
+        <p
+          class="delivery-placeholder border-t px-4 py-8 text-center text-sm text-muted sm:px-5"
+          data-text="$forwardTo ? 'Not forwarded yet. Replay it to the forward URL to send it to your server.' : 'Not forwarded. This endpoint has no forward URL.'"
+        >
+          {{ if .Webhook.Forwards }}
+            Not forwarded yet. Replay it to the forward URL to send it to your server.
+          {{ else }}
+            Not forwarded. This endpoint has no forward URL.
+          {{ end }}
         </p>
       </section>
     {{ end }}

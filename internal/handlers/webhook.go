@@ -262,7 +262,7 @@ func (h *WebhookHandler) HandleWebhookRequest(w http.ResponseWriter, r *http.Req
 		RawQuery:  r.URL.RawQuery,
 		Body:      string(body),
 	}
-	if err := h.webhookSvc.RecordRequest(webhook, &wr); err != nil {
+	if err := h.webhookSvc.RecordRequest(&wr); err != nil {
 		h.logger.Printf("error creating webhook request: %s", err)
 		utils.RenderJSON(w, http.StatusInternalServerError, nil)
 		return
@@ -345,12 +345,6 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 	webhookID := chi.URLParam(r, "id")
 	userID, _ := h.authSvc.Authorize(r) // 0 for guests
 
-	webhook, err := h.webhookSvc.GetAccessibleWebhook(webhookID, userID)
-	if err != nil {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
 	rawCursor := r.Header.Get("Last-Event-ID")
 	if rawCursor == "" {
 		rawCursor = r.URL.Query().Get("since")
@@ -362,10 +356,17 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Subscribe before querying the backlog so nothing captured in between
-	// is missed; live events already replayed are skipped.
+	// Subscribe before loading the webhook and querying the backlog, so no
+	// settings change or capture in between is missed; live events already
+	// replayed are skipped.
 	sub := h.webhookSvc.Subscribe(webhookID)
 	defer sub.Close()
+
+	webhook, err := h.webhookSvc.GetAccessibleWebhook(webhookID, userID)
+	if err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	missed, err := h.webhookSvc.GetRequestsAfter(webhookID, cursor)
 	if err != nil {
@@ -376,6 +377,7 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 	stream := &requestStream{
 		sse:           datastar.NewSSE(w, r),
 		webhookID:     webhookID,
+		canForward:    webhook.CanForward(),
 		forwardURL:    webhook.ActiveForwardURL(),
 		mainPanel:     r.URL.Query().Has("active"),
 		pageRequestID: r.URL.Query().Get("request"),
@@ -411,10 +413,6 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 				if stream.replayed[evt.Request.ID] {
 					continue
 				}
-				// The forward URL may have changed since the stream
-				// started; new rows offer the replay targets current at
-				// capture.
-				stream.forwardURL = evt.ForwardURL
 				if err := stream.send([]models.WebhookRequest{evt.Request}, evt.Count); err != nil {
 					h.logger.Printf("error streaming request %s: %s", evt.Request.ID, err)
 					return
@@ -422,6 +420,11 @@ func (h *WebhookHandler) StreamWebhookEvents(w http.ResponseWriter, r *http.Requ
 			case service.EventDeliveryRecorded:
 				if err := stream.sendDeliveries(evt.Delivery.RequestID, evt.Deliveries); err != nil {
 					h.logger.Printf("error streaming delivery %s: %s", evt.Delivery.ID, err)
+					return
+				}
+			case service.EventWebhookUpdated:
+				if err := stream.sendForwardURL(evt.ForwardURL); err != nil {
+					h.logger.Printf("error streaming settings of %s: %s", webhookID, err)
 					return
 				}
 			}
@@ -436,8 +439,9 @@ type requestRowView struct {
 	Request   models.WebhookRequest
 	CSRFField template.HTML
 	IsNew     bool
-	// ForwardURL is the webhook's forward URL if it forwards, which offers
-	// the replay to it; "" otherwise.
+	// CanForward and ForwardURL decide the replay targets offered; see
+	// view.ReplayControl.
+	CanForward bool
 	ForwardURL string
 }
 
@@ -452,7 +456,8 @@ type requestCounterView struct {
 type requestStream struct {
 	sse        *datastar.ServerSentEventGenerator
 	webhookID  string
-	forwardURL string // see requestRowView.ForwardURL
+	canForward bool   // see requestRowView
+	forwardURL string // see requestRowView; kept current by settings events
 	mainPanel  bool   // the page shows the webhook's request list
 	// pageRequestID is the request whose page the stream is on, if any.
 	pageRequestID string
@@ -480,7 +485,7 @@ func (s *requestStream) send(requests []models.WebhookRequest, count *int64) err
 		}
 
 		if s.mainPanel {
-			row := requestRowView{Request: wr, CSRFField: s.csrfField, IsNew: true, ForwardURL: s.forwardURL}
+			row := requestRowView{Request: wr, CSRFField: s.csrfField, IsNew: true, CanForward: s.canForward, ForwardURL: s.forwardURL}
 			if err := s.patch("main-request-row", row,
 				datastar.WithSelectorID("request-log-list-"+s.webhookID),
 				datastar.WithModePrepend(),
@@ -513,6 +518,21 @@ func (s *requestStream) sendDeliveries(requestID string, deliveries []models.Del
 		}
 	}
 	return s.patch("delivery-list", wr)
+}
+
+// sendForwardURL updates the forward URL the page offers replays to, after
+// the webhook's settings were saved: the replay controls already shown
+// follow the forwardTo signal, and rows streamed later are rendered with it.
+// Pages that don't show the webhook's requests get nothing.
+func (s *requestStream) sendForwardURL(forwardURL string) error {
+	s.forwardURL = forwardURL
+	if !s.mainPanel && s.pageRequestID == "" {
+		return nil
+	}
+	if err := s.sse.MarshalAndPatchSignals(map[string]string{view.ForwardToSignal: forwardURL}); err != nil {
+		return fmt.Errorf("patching the forward URL: %w", err)
+	}
+	return nil
 }
 
 func (s *requestStream) patch(tmpl string, data any, opts ...datastar.PatchElementOption) error {

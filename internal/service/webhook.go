@@ -130,25 +130,31 @@ func (s *WebhookService) ListWebhooks(userID uint) ([]models.Webhook, error) {
 	return s.repo.GetAllByUser(userID)
 }
 
-// UpdateWebhook updates an existing webhook.
+// UpdateWebhook saves an existing webhook's settings and publishes the
+// change to its subscribers, so open pages offer the current replay targets.
 func (s *WebhookService) UpdateWebhook(w *models.Webhook) error {
-	return s.repo.Update(w)
+	var err error
+	s.broker.withWebhookLock(w.ID, func(time.Time) {
+		if err = s.repo.Update(w); err != nil {
+			return
+		}
+		s.broker.publish(w.ID, Event{Kind: EventWebhookUpdated, ForwardURL: w.ActiveForwardURL()})
+	})
+	return err
 }
 
 // RecordRequest stamps wr.ReceivedAt, stores it, and publishes it to the
 // webhook's subscribers. Captures for the same webhook are serialized, so
 // ReceivedAt order, insert order and publish order all agree - which is what
-// lets a subscriber resume from a models.RequestCursor without gaps. wh is
-// the webhook wr was sent to, as loaded for the capture; the event carries
-// its forward URL, so subscribers offer the current replay targets.
-func (s *WebhookService) RecordRequest(wh *models.Webhook, wr *models.WebhookRequest) error {
+// lets a subscriber resume from a models.RequestCursor without gaps.
+func (s *WebhookService) RecordRequest(wr *models.WebhookRequest) error {
 	var err error
 	s.broker.withWebhookLock(wr.WebhookID, func(stamp time.Time) {
 		wr.ReceivedAt = stamp
 		if err = s.repo.InsertRequest(wr); err != nil {
 			return
 		}
-		evt := Event{Kind: EventRequestCaptured, Request: *wr, ForwardURL: wh.ActiveForwardURL()}
+		evt := Event{Kind: EventRequestCaptured, Request: *wr}
 		if count, countErr := s.repo.CountRequests(wr.WebhookID); countErr == nil {
 			evt.Count = &count
 		}
@@ -177,9 +183,9 @@ func (s *WebhookService) RecordDelivery(d *models.Delivery) error {
 	return err
 }
 
-// Subscribe starts receiving the webhook's newly captured requests and
-// recorded deliveries. Callers
-// must Close the subscription when done.
+// Subscribe starts receiving the webhook's newly captured requests,
+// recorded deliveries and settings changes. Callers must Close the
+// subscription when done.
 func (s *WebhookService) Subscribe(webhookID string) *Subscription {
 	return s.broker.subscribe(webhookID)
 }

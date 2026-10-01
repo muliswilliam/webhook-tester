@@ -47,6 +47,7 @@ type testRequestRow struct {
 	Request    models.WebhookRequest
 	CSRFField  template.HTML
 	IsNew      bool
+	CanForward bool
 	ForwardURL string
 }
 

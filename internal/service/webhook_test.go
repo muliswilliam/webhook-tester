@@ -325,7 +325,7 @@ func TestWebhookService_RecordRequest_StoresStampsAndPublishes(t *testing.T) {
 
 	before := time.Now().UTC()
 	wr := &models.WebhookRequest{ID: "r1", WebhookID: "abc"}
-	require.NoError(t, svc.RecordRequest(&models.Webhook{}, wr))
+	require.NoError(t, svc.RecordRequest(wr))
 
 	assert.Equal(t, wr, repo.insertedRequest)
 	assert.False(t, wr.ReceivedAt.Before(before.Truncate(time.Microsecond)))
@@ -466,17 +466,31 @@ func TestWebhookService_Domain(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestWebhookService_RecordRequest_CarriesForwardURL(t *testing.T) {
-	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
+// Saving a webhook tells its subscribers the forward URL replays now go to.
+func TestWebhookService_UpdateWebhook_PublishesForwardURL(t *testing.T) {
+	repo := newFakeWebhookRepo()
+	svc := NewWebhookService(repo, &fakeDeliveryRepo{}, "", offlinePolicy)
 	sub := svc.Subscribe("abc")
 	defer sub.Close()
 	forwardURL := "https://hooks.example.com/in"
 
-	require.NoError(t, svc.RecordRequest(&models.Webhook{ID: "abc", UserID: 1, ForwardURL: &forwardURL}, &models.WebhookRequest{ID: "r1", WebhookID: "abc"}))
-	require.NoError(t, svc.RecordRequest(&models.Webhook{ID: "abc", ForwardURL: &forwardURL}, &models.WebhookRequest{ID: "r2", WebhookID: "abc"}))
+	require.NoError(t, svc.UpdateWebhook(&models.Webhook{ID: "abc", UserID: 1, ForwardURL: &forwardURL}))
+	require.NoError(t, svc.UpdateWebhook(&models.Webhook{ID: "abc", UserID: 1}))
+	require.NoError(t, svc.UpdateWebhook(&models.Webhook{ID: "abc", ForwardURL: &forwardURL}))
 
-	assert.Equal(t, forwardURL, receive(t, sub).ForwardURL)
+	evt := receive(t, sub)
+	assert.Equal(t, EventWebhookUpdated, evt.Kind)
+	assert.Equal(t, forwardURL, evt.ForwardURL)
+	assert.Empty(t, receive(t, sub).ForwardURL, "cleared")
 	assert.Empty(t, receive(t, sub).ForwardURL, "a guest webhook doesn't forward")
+
+	repo.updateErr = assert.AnError
+	require.ErrorIs(t, svc.UpdateWebhook(&models.Webhook{ID: "abc", UserID: 1, ForwardURL: &forwardURL}), assert.AnError)
+	select {
+	case evt := <-sub.Events:
+		t.Fatalf("a failed save published %+v", evt)
+	default:
+	}
 }
 
 func TestWebhookService_RecordRequest_CountErrorStillPublishes(t *testing.T) {
@@ -486,7 +500,7 @@ func TestWebhookService_RecordRequest_CountErrorStillPublishes(t *testing.T) {
 	sub := svc.Subscribe("abc")
 	defer sub.Close()
 
-	require.NoError(t, svc.RecordRequest(&models.Webhook{}, &models.WebhookRequest{ID: "r1", WebhookID: "abc"}))
+	require.NoError(t, svc.RecordRequest(&models.WebhookRequest{ID: "r1", WebhookID: "abc"}))
 
 	evt := receive(t, sub)
 	assert.Equal(t, "r1", evt.Request.ID)
@@ -500,7 +514,7 @@ func TestWebhookService_RecordRequest_InsertErrorPublishesNothing(t *testing.T) 
 	sub := svc.Subscribe("abc")
 	defer sub.Close()
 
-	err := svc.RecordRequest(&models.Webhook{}, &models.WebhookRequest{ID: "r1", WebhookID: "abc"})
+	err := svc.RecordRequest(&models.WebhookRequest{ID: "r1", WebhookID: "abc"})
 	assert.ErrorIs(t, err, assert.AnError)
 	assert.Empty(t, sub.Events)
 }
@@ -518,7 +532,7 @@ func TestWebhookService_RecordRequest_PublishesInCursorOrder(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			assert.NoError(t, svc.RecordRequest(&models.Webhook{}, &models.WebhookRequest{ID: fmt.Sprint(i), WebhookID: "abc"}))
+			assert.NoError(t, svc.RecordRequest(&models.WebhookRequest{ID: fmt.Sprint(i), WebhookID: "abc"}))
 		}()
 	}
 	wg.Wait()
@@ -534,7 +548,7 @@ func TestWebhookService_RecordRequest_PublishesInCursorOrder(t *testing.T) {
 func TestWebhookService_RecordRequest_ReleasesWebhookLocks(t *testing.T) {
 	svc := NewWebhookService(newFakeWebhookRepo(), &fakeDeliveryRepo{}, "", offlinePolicy)
 	for i := 0; i < 3; i++ {
-		require.NoError(t, svc.RecordRequest(&models.Webhook{}, &models.WebhookRequest{ID: fmt.Sprint(i), WebhookID: fmt.Sprint("wh", i)}))
+		require.NoError(t, svc.RecordRequest(&models.WebhookRequest{ID: fmt.Sprint(i), WebhookID: fmt.Sprint("wh", i)}))
 	}
 	assert.Empty(t, svc.broker.locks)
 }
@@ -547,7 +561,7 @@ func TestWebhookService_Subscribe_EvictsSlowSubscriber(t *testing.T) {
 	defer slow.Close()
 
 	for i := 0; i <= subscriptionBuffer; i++ {
-		require.NoError(t, svc.RecordRequest(&models.Webhook{}, &models.WebhookRequest{ID: fmt.Sprint(i), WebhookID: "abc"}))
+		require.NoError(t, svc.RecordRequest(&models.WebhookRequest{ID: fmt.Sprint(i), WebhookID: "abc"}))
 	}
 
 	for i := 0; i < subscriptionBuffer; i++ {

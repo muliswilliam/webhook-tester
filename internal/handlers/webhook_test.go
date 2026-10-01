@@ -844,10 +844,8 @@ func (s *streamRun) requireEnded(t *testing.T) {
 
 func recordRequest(t *testing.T, h *WebhookHandler, webhookID, id string) models.WebhookRequest {
 	t.Helper()
-	wh, err := h.webhookSvc.GetWebhook(webhookID)
-	require.NoError(t, err)
 	wr := models.WebhookRequest{ID: id, WebhookID: webhookID, Method: "POST", Body: `{"a":1}`}
-	require.NoError(t, h.webhookSvc.RecordRequest(wh, &wr))
+	require.NoError(t, h.webhookSvc.RecordRequest(&wr))
 	return wr
 }
 
@@ -944,6 +942,41 @@ func TestWebhookHandler_StreamWebhookEvents_ActivePatchesDeliveries(t *testing.T
 	run.waitFor(t,
 		`id="delivery-badge-req-1"`, "Last delivery: 502 Bad Gateway",
 		`id="delivery-list-req-1"`, `id="delivery-del-1"`)
+}
+
+// Saving the webhook's settings updates the replay targets of the page's
+// rows: the forwardTo signal they follow is patched, and rows streamed later
+// are rendered for the new forward URL. Other pages' streams get nothing.
+func TestWebhookHandler_StreamWebhookEvents_SettingsUpdateReplayTargets(t *testing.T) {
+	h, whRepo, _, userRepo, _, authSvc := newTestWebhookHandler(t)
+	owner := &models.User{Email: "owner@example.com"}
+	userRepo.addUser(owner)
+	forwardURL := "https://hooks.example.com/in"
+	whRepo.put(&models.Webhook{ID: "wh", UserID: int(owner.ID), ForwardURL: &forwardURL})
+	cookie := sessionCookieFor(t, authSvc, owner)
+
+	stream := func(query string) *streamRun {
+		req := httptest.NewRequest(http.MethodGet, "/webhook-stream/wh"+query, nil)
+		req.AddCookie(cookie)
+		return startStream(t, h, req)
+	}
+	page, requestPage, sidebar := stream("?active"), stream("?request=req-0"), stream("")
+
+	cleared, err := h.webhookSvc.GetWebhook("wh")
+	require.NoError(t, err)
+	cleared.ForwardURL = nil
+	require.NoError(t, h.webhookSvc.UpdateWebhook(cleared))
+
+	for _, run := range []*streamRun{page, requestPage} {
+		run.waitFor(t, "event: datastar-patch-signals", `"forwardTo":""`)
+	}
+	recordRequest(t, h, "wh", "req-1")
+	page.waitFor(t, "req-1")
+	row := page.rec.body()[strings.Index(page.rec.body(), "req-1"):]
+	assert.Contains(t, row, `style="display: none"`, "the new row's forward replay starts hidden")
+
+	sidebar.waitFor(t, "req-1")
+	assert.NotContains(t, sidebar.rec.body(), "datastar-patch-signals")
 }
 
 // Deliveries are listed by when they started, however they finish: an

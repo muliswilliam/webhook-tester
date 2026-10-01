@@ -1,6 +1,10 @@
 {{ define "title" }}Webhook workspace{{ end }}
 {{ define "content" }}
-  <div data-signals="{showEditModal: false, actionsOpen: false}" class="space-y-6">
+  <div
+    data-signals="{showEditModal: false, actionsOpen: false}"
+    data-signals:forward-to="{{ jsString .Webhook.ActiveForwardURL }}"
+    class="space-y-6"
+  >
     {{ if not .User.ID }}
       <aside
         class="temporary-banner flex flex-col gap-3 rounded-lg border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
