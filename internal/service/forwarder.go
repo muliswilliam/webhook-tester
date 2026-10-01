@@ -18,8 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"gorm.io/datatypes"
-
 	"webhook-tester/config"
 	"webhook-tester/internal/metrics"
 	"webhook-tester/internal/models"
@@ -113,7 +111,7 @@ func NewForwarder(
 }
 
 // newForwardClient returns the client forwards are sent with: bounded by the
-// timeout, without compression (which would add an Accept-Encoding header
+// timeout and the response header cap, without compression (which would add an Accept-Encoding header
 // the original request didn't have), without proxies, and without following
 // redirects, so a redirect is recorded as the answer and can't lead the
 // request past the dial guard's checks to a different host.
@@ -126,6 +124,7 @@ func newForwardClient(cfg config.Forwarding) *http.Client {
 	transport.Proxy = nil
 	transport.DialContext = dialer.DialContext
 	transport.DisableCompression = true
+	transport.MaxResponseHeaderBytes = models.MaxDeliveryResponseHeaders
 	return &http.Client{
 		Timeout:   cfg.Timeout,
 		Transport: transport,
@@ -272,10 +271,7 @@ func (f *Forwarder) send(ctx context.Context, wh models.Webhook, wr models.Webho
 	defer func() { _ = resp.Body.Close() }()
 
 	d.StatusCode = &resp.StatusCode
-	d.ResponseHeaders = datatypes.JSONMap{}
-	for k, v := range resp.Header {
-		d.ResponseHeaders[k] = strings.Join(v, ",")
-	}
+	d.ResponseHeaders = models.CapturedValues(resp.Header)
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, models.MaxDeliveryResponseBody+1))
 	if len(body) > models.MaxDeliveryResponseBody {
@@ -377,6 +373,9 @@ func (f *Forwarder) describeError(err error) string {
 		return "TLS handshake failed: the target didn't answer with TLS"
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
 		return "the target closed the connection without answering"
+	case strings.Contains(err.Error(), "server response headers exceeded"):
+		// net/http reports the cap with an untyped error.
+		return fmt.Sprintf("the target's response headers exceeded %d KiB", models.MaxDeliveryResponseHeaders>>10)
 	}
 	return innermost(err).Error()
 }

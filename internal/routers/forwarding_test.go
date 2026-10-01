@@ -438,6 +438,47 @@ func TestForwarding_TruncatesLargeResponseBody(t *testing.T) {
 	assert.Equal(t, large[:models.MaxDeliveryResponseBody], d.ResponseBody)
 }
 
+// Response headers past the cap abort the response, so a target can't make
+// a delivery store megabytes of them.
+func TestForwarding_RejectsOversizedResponseHeaders(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		chunk := strings.Repeat("h", 4<<10)
+		for i := range models.MaxDeliveryResponseHeaders / len(chunk) {
+			w.Header().Set(fmt.Sprintf("X-Big-%d", i), chunk)
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	env.createWebhook(t, "wh1", tg.URL, false)
+
+	env.capture(t, http.MethodPost, "/wh1", "{}", nil)
+
+	d := env.awaitDelivery(t, env.onlyRequest(t, "wh1").ID)
+	assert.Nil(t, d.StatusCode)
+	assert.Empty(t, d.ResponseHeaders)
+	require.NotNil(t, d.Error)
+	assert.Equal(t, "the target's response headers exceeded 64 KiB", *d.Error)
+	assert.Equal(t, models.DeliveryOutcomeError, d.Outcome)
+}
+
+// A repeated response header keeps each value, as captured headers do, so
+// values containing commas (Set-Cookie) stay unambiguous.
+func TestForwarding_KeepsRepeatedResponseHeaders(t *testing.T) {
+	env := newForwardingEnv(t, allowLoopback)
+	tg := newTarget(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Set-Cookie", "a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT")
+		w.Header().Add("Set-Cookie", "b=2")
+		w.Header().Set("X-Single", "one")
+	})
+	env.createWebhook(t, "wh1", tg.URL, false)
+
+	env.capture(t, http.MethodPost, "/wh1", "{}", nil)
+
+	d := env.awaitDelivery(t, env.onlyRequest(t, "wh1").ID)
+	assert.Equal(t, []string{"a=1; Expires=Wed, 21 Oct 2026 07:28:00 GMT", "b=2"}, models.FieldValues(d.ResponseHeaders["Set-Cookie"]))
+	assert.Equal(t, "one", d.ResponseHeaders["X-Single"])
+}
+
 func TestForwarding_GuestWebhookDoesNotForward(t *testing.T) {
 	env := newForwardingEnv(t, allowLoopback)
 	tg := newTarget(t, nil)

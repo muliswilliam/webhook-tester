@@ -61,7 +61,7 @@ func testDeliveries() []models.Delivery {
 		{
 			ID: "del-replay", RequestID: "req-1", Trigger: models.DeliveryTriggerReplay,
 			TargetURL: "https://hooks.example.com/stripe", Outcome: models.DeliveryOutcome5xx, StatusCode: ptr(500), DurationMs: 1234,
-			ResponseHeaders: datatypes.JSONMap{"X-Handler": "orders"},
+			ResponseHeaders: datatypes.JSONMap{"X-Handler": "orders", "Set-Cookie": []any{"a=1", "b=2"}},
 			ResponseBody:    `{"error":"boom"}`, ResponseBodyTruncated: true,
 			StartedAt: started.Add(time.Minute),
 		},
@@ -94,6 +94,7 @@ func TestRenderPartialMainRequestRowDeliveries(t *testing.T) {
 	assert.Contains(t, list, "&#34;error&#34;: &#34;boom&#34;", "formatted JSON response body")
 	assert.Contains(t, list, "Truncated to the first 64 KiB")
 	assert.Contains(t, list, "X-Handler")
+	assert.Contains(t, list, "a=1,b=2", "a repeated header shows each value")
 	assert.Contains(t, list, "connection refused")
 
 	// Both replay targets are offered.

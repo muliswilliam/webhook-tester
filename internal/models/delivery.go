@@ -82,20 +82,27 @@ func (o DeliveryOutcome) Answered() bool {
 // longer.
 const MaxDeliveryResponseBody = 64 << 10 // 64 KiB
 
+// MaxDeliveryResponseHeaders caps how many bytes of response headers a
+// forward target may send. A longer response is aborted and recorded as an
+// error, so a delivery never stores more than this of them.
+const MaxDeliveryResponseHeaders = 64 << 10 // 64 KiB
+
 // Delivery is one attempt to relay a captured request to a forward target.
 // A delivery that reached the target has a StatusCode; one that failed at
 // the network level (DNS, connection refused, TLS, timeout, blocked
 // destination) has an Error instead. Outcome tells them apart.
 type Delivery struct {
-	ID                    string            `gorm:"primaryKey" json:"id"`
-	RequestID             string            `gorm:"index;not null" json:"request_id"`
-	WebhookID             string            `gorm:"index;not null" json:"webhook_id"`
-	Trigger               DeliveryTrigger   `gorm:"not null" json:"trigger"`
-	TargetURL             string            `json:"target_url"`
-	Outcome               DeliveryOutcome   `gorm:"not null;default:''" json:"outcome"`
-	StatusCode            *int              `json:"status_code"`
-	Error                 *string           `json:"error"`
-	DurationMs            int64             `json:"duration_ms"`
+	ID         string          `gorm:"primaryKey" json:"id"`
+	RequestID  string          `gorm:"index;not null" json:"request_id"`
+	WebhookID  string          `gorm:"index;not null" json:"webhook_id"`
+	Trigger    DeliveryTrigger `gorm:"not null" json:"trigger"`
+	TargetURL  string          `json:"target_url"`
+	Outcome    DeliveryOutcome `gorm:"not null;default:''" json:"outcome"`
+	StatusCode *int            `json:"status_code"`
+	Error      *string         `json:"error"`
+	DurationMs int64           `json:"duration_ms"`
+	// ResponseHeaders map each name to its value, or to the list of its
+	// values when it was repeated, as WebhookRequest.Headers do.
 	ResponseHeaders       datatypes.JSONMap `json:"response_headers"`
 	ResponseBody          string            `json:"response_body"`
 	ResponseBodyTruncated bool              `json:"response_body_truncated"`

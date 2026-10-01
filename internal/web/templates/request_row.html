@@ -299,7 +299,7 @@
                   {{ range $key, $val := .ResponseHeaders }}
                     <tr>
                       <td>{{ $key }}</td>
-                      <td class="break-all">{{ $val }}</td>
+                      <td class="break-all">{{ fieldValue $val }}</td>
                     </tr>
                   {{ else }}
                     <tr><td colspan="2">No response headers</td></tr>
