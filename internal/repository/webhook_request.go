@@ -5,7 +5,7 @@ import "webhook-tester/internal/models"
 type WebhookRequestRepository interface {
 	// Insert a new request record
 	Insert(req *models.WebhookRequest) error
-	// GetByID retrieves one request by its ID
+	// GetByID retrieves one request by its ID, with its deliveries newest first
 	GetByID(id string) (*models.WebhookRequest, error)
 	// ListByWebhook returns all requests for a given webhook
 	ListByWebhook(webhookID string) ([]models.WebhookRequest, error)

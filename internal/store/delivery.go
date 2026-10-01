@@ -41,7 +41,7 @@ func (r *GormDeliveryRepo) ListByRequest(requestID string) ([]models.Delivery, e
 	var list []models.Delivery
 	if err := r.DB.
 		Where("request_id = ?", requestID).
-		Order("started_at DESC, id DESC").
+		Order(newestDeliveriesFirst).
 		Find(&list).Error; err != nil {
 		r.logger.Printf("list deliveries for request %s failed: %v", requestID, err)
 		return nil, err
@@ -79,4 +79,41 @@ func deleteDeliveriesByRequest(tx *gorm.DB, requestID string) error {
 // transaction, before deleting the requests, so no delivery is orphaned.
 func deleteDeliveriesByWebhooks(tx *gorm.DB, webhookIDs ...string) error {
 	return tx.Where("webhook_id IN ?", webhookIDs).Delete(&models.Delivery{}).Error
+}
+
+// newestDeliveriesFirst orders deliveries newest first.
+const newestDeliveriesFirst = "started_at DESC, id DESC"
+
+// deliveriesQueryChunk bounds how many request IDs one deliveries query
+// matches, keeping it well below the databases' bind parameter limits.
+const deliveriesQueryChunk = 500
+
+// attachDeliveries loads the deliveries of the given captured requests into
+// each request's Deliveries, newest first.
+func attachDeliveries(db *gorm.DB, lists ...[]models.WebhookRequest) error {
+	var ids []string
+	for _, list := range lists {
+		for _, wr := range list {
+			ids = append(ids, wr.ID)
+		}
+	}
+
+	byRequest := make(map[string][]models.Delivery)
+	for start := 0; start < len(ids); start += deliveriesQueryChunk {
+		chunk := ids[start:min(start+deliveriesQueryChunk, len(ids))]
+		var found []models.Delivery
+		if err := db.Where("request_id IN ?", chunk).Order(newestDeliveriesFirst).Find(&found).Error; err != nil {
+			return err
+		}
+		for _, d := range found {
+			byRequest[d.RequestID] = append(byRequest[d.RequestID], d)
+		}
+	}
+
+	for _, list := range lists {
+		for i := range list {
+			list[i].Deliveries = byRequest[list[i].ID]
+		}
+	}
+	return nil
 }

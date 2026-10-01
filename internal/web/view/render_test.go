@@ -44,9 +44,10 @@ func newTestWebhook() models.Webhook {
 
 // testRequestRow and testRequestCounter mirror the handlers package's views.
 type testRequestRow struct {
-	Request   models.WebhookRequest
-	CSRFField template.HTML
-	IsNew     bool
+	Request    models.WebhookRequest
+	CSRFField  template.HTML
+	IsNew      bool
+	ForwardURL string
 }
 
 type testRequestCounter struct {

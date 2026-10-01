@@ -83,6 +83,15 @@ func (r GormWebhookRepo) GetAllByUser(userID uint) ([]models.Webhook, error) {
 		r.logger.Printf("Error loading user webhooks: %v", err)
 		return webhooks, err
 	}
+
+	lists := make([][]models.WebhookRequest, len(webhooks))
+	for i, wh := range webhooks {
+		lists[i] = wh.Requests
+	}
+	if err := attachDeliveries(r.DB, lists...); err != nil {
+		r.logger.Printf("Error loading user webhooks' deliveries: %v", err)
+		return webhooks, err
+	}
 	return webhooks, nil
 }
 
@@ -133,7 +142,14 @@ func (r GormWebhookRepo) GetWithRequests(id string) (*models.Webhook, error) {
 	err := r.DB.Preload("Requests", func(db *gorm.DB) *gorm.DB {
 		return db.Order("received_at DESC")
 	}).First(&webhook, "id = ?", id).Error
-	return &webhook, err
+	if err != nil {
+		return &webhook, err
+	}
+	if err := attachDeliveries(r.DB, webhook.Requests); err != nil {
+		r.logger.Printf("failed to load deliveries of webhook %s: %v", id, err)
+		return &webhook, err
+	}
+	return &webhook, nil
 }
 
 // CountRequests returns the number of requests captured for a webhook.
@@ -155,11 +171,15 @@ func (r GormWebhookRepo) GetRequestsAfter(webhookID string, after models.Request
 		q = r.DB.Where("webhook_id = ? AND (received_at > ? OR (received_at = ? AND id > ?))",
 			webhookID, after.ReceivedAt, after.ReceivedAt, after.ID)
 	}
-	err := q.Order("received_at ASC, id ASC").Find(&requests).Error
-	if err != nil {
+	if err := q.Order("received_at ASC, id ASC").Find(&requests).Error; err != nil {
 		r.logger.Printf("failed to get webhook requests after cursor: %v", err)
+		return requests, err
 	}
-	return requests, err
+	if err := attachDeliveries(r.DB, requests); err != nil {
+		r.logger.Printf("failed to get deliveries of webhook requests after cursor: %v", err)
+		return requests, err
+	}
+	return requests, nil
 }
 
 // CleanPublic deletes anonymous (public) webhooks, i.e. those with user_id = 0,

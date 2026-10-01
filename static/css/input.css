@@ -25,6 +25,10 @@
     --danger-soft: #fef3f2;
     --danger-solid: #b42318;
     --danger-solid-hover: #912018;
+    --success: #137333;
+    --success-soft: #e6f4ea;
+    --warning: #8c4a00;
+    --warning-soft: #fef3e0;
   }
 
   .dark,
@@ -47,6 +51,10 @@
     --focus: #8ab4f8;
     --danger: #ff8a80;
     --danger-soft: #351917;
+    --success: #81c995;
+    --success-soft: #11291a;
+    --warning: #fdd663;
+    --warning-soft: #33290d;
   }
 
   * {
@@ -302,7 +310,7 @@
   }
 
   .data-table td {
-    @apply border-t px-4 py-3 text-sm align-top;
+    @apply border-t px-4 py-3 sm:px-5 text-sm align-top;
     border-color: var(--app-border);
     color: var(--app-secondary);
   }
@@ -334,6 +342,42 @@
     @apply rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide;
     background-color: var(--interact-soft);
     color: var(--accent-text);
+  }
+
+  /* A delivery's outcome; a tone-* class, defined below, picks its colors. */
+  .delivery-badge {
+    @apply inline-flex shrink-0 items-center justify-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[11px] font-bold tracking-wide;
+  }
+  .trigger-chip {
+    @apply min-w-[4.25rem] shrink-0 rounded-full border px-2 text-center py-0.5 text-[10px] font-semibold uppercase tracking-wide;
+    border-color: var(--app-border);
+    background-color: var(--app-muted-surface);
+    color: var(--app-muted);
+  }
+  .delivery-item {
+    @apply border-t;
+  }
+  .delivery-summary {
+    @apply flex min-h-14 list-none items-center gap-3 px-4 py-3 sm:px-5;
+    color: var(--app-secondary);
+  }
+  details > .delivery-summary {
+    @apply transition-colors;
+  }
+  details > .delivery-summary:hover {
+    background-color: var(--app-muted-surface);
+  }
+  .delivery-summary::-webkit-details-marker {
+    display: none;
+  }
+  details[open] > .delivery-summary .details-chevron {
+    transform: rotate(180deg);
+  }
+  .delivery-error {
+    color: var(--danger);
+  }
+  .delivery-body {
+    @apply block max-h-96 flex-1 min-h-24 overflow-auto border-t p-5 text-xs leading-6;
   }
 
   /* Code blocks are dark in both themes, so they pin the dark palette's
@@ -393,7 +437,7 @@
   }
 
   .request-body {
-    @apply block min-h-40 overflow-x-auto border-t p-5 text-xs leading-6;
+    @apply block min-h-40 flex-1 overflow-x-auto border-t p-5 text-xs leading-6;
   }
   .request-detail-body .request-body {
     @apply min-h-56 sm:text-sm;
@@ -535,6 +579,37 @@
 /* A request log's placeholder only shows while the log has no requests, so
    live rows streamed into the log hide it without any extra patch. */
 .request-log:has(> :not(.request-placeholder)) > .request-placeholder {
+  display: none;
+}
+
+/* Delivery badge tones. Templates pick them by name (tone-{{ .Tone }}),
+   which Tailwind's content scan can't see, so they live outside @layer to
+   escape purging. */
+.tone-success {
+  background-color: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 35%, var(--app-border));
+  color: var(--success);
+}
+.tone-neutral {
+  background-color: var(--app-muted-surface);
+  border-color: var(--app-border-strong);
+  color: var(--app-secondary);
+}
+.tone-warning {
+  background-color: var(--warning-soft);
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--app-border));
+  color: var(--warning);
+}
+.tone-danger {
+  background-color: var(--danger-soft);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--app-border));
+  color: var(--danger);
+}
+
+/* Likewise for deliveries: a request row's section stays hidden until the
+   request has one, and the request page's placeholder hides once it does. */
+.row-deliveries:not(:has(.delivery-item)),
+.delivery-log:has(> .delivery-item) + .delivery-placeholder {
   display: none;
 }
 

@@ -31,7 +31,10 @@ func (r *GormWebhookRequestRepo) Insert(req *models.WebhookRequest) error {
 
 func (r *GormWebhookRequestRepo) GetByID(id string) (*models.WebhookRequest, error) {
 	var wr models.WebhookRequest
-	if err := r.DB.First(&wr, "id = ?", id).Error; err != nil {
+	err := r.DB.Preload("Deliveries", func(db *gorm.DB) *gorm.DB {
+		return db.Order(newestDeliveriesFirst)
+	}).First(&wr, "id = ?", id).Error
+	if err != nil {
 		r.logger.Printf("get request %s failed: %v", id, err)
 		return nil, err
 	}
