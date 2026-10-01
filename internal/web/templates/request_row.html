@@ -60,12 +60,12 @@
           </div>
           {{ template "request-body" .Request }}
         </section>
-        <section>
+        <section class="flex min-w-0 flex-col">
           <div class="section-bar">
             <h3>Headers</h3>
             <span class="text-xs text-muted">{{ .Request.Method }}</span>
           </div>
-          <div class="max-h-72 overflow-auto">
+          <div class="headers-pane">
             <table class="data-table w-full">
               <tbody>
                 {{ range $key, $val := .Request.Headers }}
@@ -320,11 +320,11 @@
               <p class="border-t px-4 py-3 text-sm text-muted sm:px-5">Empty response body</p>
             {{ end }}
           </section>
-          <section class="min-w-0">
+          <section class="flex min-w-0 flex-col">
             <div class="section-bar">
               <h4 class="text-sm font-semibold">Response headers</h4>
             </div>
-            <div class="max-h-72 overflow-auto">
+            <div class="headers-pane">
               <table class="data-table w-full">
                 <tbody>
                   {{ range $key, $val := .ResponseHeaders }}

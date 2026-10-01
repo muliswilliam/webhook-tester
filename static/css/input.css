@@ -433,6 +433,16 @@
   .request-detail-body .request-body {
     @apply min-h-56 sm:text-sm;
   }
+  /* Beside a body, the pane fills the body's height and scrolls, rather than
+     stopping short of it. contain: size keeps it from stretching the row. */
+  .headers-pane {
+    @apply max-h-72 overflow-auto lg:max-h-none lg:min-h-72 lg:flex-1;
+  }
+  @screen lg {
+    .headers-pane {
+      contain: size;
+    }
+  }
   .segmented {
     @apply inline-flex rounded-lg border p-0.5;
     border-color: var(--app-border-strong);
